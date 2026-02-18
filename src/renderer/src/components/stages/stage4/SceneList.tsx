@@ -31,9 +31,7 @@ export function SceneList({ scenes, onUpdateScene }: SceneListProps): React.JSX.
               <span className="text-xs text-text-muted">
                 {msToDisplay(scene.startMs)} - {msToDisplay(scene.endMs)}
               </span>
-              <span className="text-xs text-text-muted">
-                ({scene.blockIds.length} blocos)
-              </span>
+              <span className="text-xs text-text-muted">({scene.blockIds.length} blocos)</span>
             </div>
             <select
               value={scene.mediaType}

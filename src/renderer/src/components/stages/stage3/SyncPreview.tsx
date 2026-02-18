@@ -18,14 +18,18 @@ interface SyncPreviewProps {
   onBack: () => void
 }
 
-export function SyncPreview({ blocks, linkedCount, unlinkedCount, onConfirm, onBack }: SyncPreviewProps): React.JSX.Element {
+export function SyncPreview({
+  blocks,
+  linkedCount,
+  unlinkedCount,
+  onConfirm,
+  onBack
+}: SyncPreviewProps): React.JSX.Element {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-text">
-            Resultado da sincronizacao
-          </h3>
+          <h3 className="text-sm font-medium text-text">Resultado da sincronizacao</h3>
           <p className="text-xs text-text-muted">
             {linkedCount} blocos sincronizados
             {unlinkedCount > 0 && ` | ${unlinkedCount} sem audio`}
@@ -64,11 +68,13 @@ export function SyncPreview({ blocks, linkedCount, unlinkedCount, onConfirm, onB
                 <td className="px-3 py-2 text-text-muted">{block.index}</td>
                 <td className="px-3 py-2 text-text max-w-sm truncate">{block.text}</td>
                 <td className="px-3 py-2 text-center">
-                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                    block.linkedAudioId
-                      ? 'bg-success/10 text-success'
-                      : 'bg-warning/10 text-warning'
-                  }`}>
+                  <span
+                    className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                      block.linkedAudioId
+                        ? 'bg-success/10 text-success'
+                        : 'bg-warning/10 text-warning'
+                    }`}
+                  >
                     {block.linkedAudioId ? 'Sync' : 'Sem audio'}
                   </span>
                 </td>

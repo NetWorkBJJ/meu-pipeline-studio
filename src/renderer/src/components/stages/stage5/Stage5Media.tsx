@@ -15,9 +15,7 @@ export function Stage5Media(): React.JSX.Element {
       ])
       if (files.length === 0) return
 
-      const updated = scenes.map((s) =>
-        s.id === sceneId ? { ...s, mediaPath: files[0] } : s
-      )
+      const updated = scenes.map((s) => (s.id === sceneId ? { ...s, mediaPath: files[0] } : s))
       setScenes(updated)
       addToast({ type: 'success', message: 'Midia selecionada.' })
     } catch {
@@ -63,17 +61,20 @@ export function Stage5Media(): React.JSX.Element {
 
       <div className="space-y-2 overflow-auto max-h-[calc(100vh-280px)]">
         {scenes.map((scene) => (
-          <div key={scene.id} className="flex items-center gap-3 rounded-md border border-border bg-surface p-3">
+          <div
+            key={scene.id}
+            className="flex items-center gap-3 rounded-md border border-border bg-surface p-3"
+          >
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
               {scene.index}
             </span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 text-xs text-text-muted">
-                <span>{msToDisplay(scene.startMs)} - {msToDisplay(scene.endMs)}</span>
+                <span>
+                  {msToDisplay(scene.startMs)} - {msToDisplay(scene.endMs)}
+                </span>
                 <span className="rounded bg-bg px-1.5 py-0.5">{scene.mediaType}</span>
-                {scene.mediaKeyword && (
-                  <span className="text-primary">{scene.mediaKeyword}</span>
-                )}
+                {scene.mediaKeyword && <span className="text-primary">{scene.mediaKeyword}</span>}
               </div>
               {scene.mediaPath ? (
                 <p className="mt-0.5 truncate text-xs text-success">{scene.mediaPath}</p>

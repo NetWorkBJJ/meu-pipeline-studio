@@ -44,10 +44,15 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {data.map((item) => (
-            <tr key={keyExtractor(item)} className="border-b border-border/50 hover:bg-surface-hover">
+            <tr
+              key={keyExtractor(item)}
+              className="border-b border-border/50 hover:bg-surface-hover"
+            >
               {columns.map((col) => (
                 <td key={col.key} className="px-3 py-2 text-text">
-                  {col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '')}
+                  {col.render
+                    ? col.render(item)
+                    : String((item as Record<string, unknown>)[col.key] ?? '')}
                 </td>
               ))}
             </tr>

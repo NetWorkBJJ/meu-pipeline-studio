@@ -23,9 +23,7 @@ export function Stage4Director(): React.JSX.Element {
   }
 
   const handleUpdateScene = (id: string, field: string, value: string): void => {
-    const updated = scenes.map((s) =>
-      s.id === id ? { ...s, [field]: value } : s
-    )
+    const updated = scenes.map((s) => (s.id === id ? { ...s, [field]: value } : s))
     setScenes(updated)
   }
 

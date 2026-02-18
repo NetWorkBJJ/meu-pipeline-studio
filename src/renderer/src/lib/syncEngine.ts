@@ -37,7 +37,7 @@ export function autoSyncBlocks(storyBlocks: StoryBlock[], audioBlocks: AudioBloc
         startMs: audio.startMs,
         endMs: audio.endMs,
         durationMs: audio.durationMs,
-        linkedAudioId: audio.id,
+        linkedAudioId: audio.id
       }
     }
     return { ...block, linkedAudioId: null }
@@ -46,6 +46,6 @@ export function autoSyncBlocks(storyBlocks: StoryBlock[], audioBlocks: AudioBloc
   return {
     syncedBlocks: synced,
     linkedCount,
-    unlinkedCount: sorted.length - linkedCount,
+    unlinkedCount: sorted.length - linkedCount
   }
 }

@@ -15,7 +15,7 @@ export function DraftSelector({ onDraftLoaded }: DraftSelectorProps): React.JSX.
       if (!draftPath) return
       setCapCutDraftPath(draftPath)
       addToast({ type: 'success', message: 'Projeto CapCut selecionado.' })
-    } catch (err) {
+    } catch {
       addToast({ type: 'error', message: 'Erro ao selecionar projeto CapCut.' })
     }
   }
@@ -29,7 +29,7 @@ export function DraftSelector({ onDraftLoaded }: DraftSelectorProps): React.JSX.
       setLoading(false)
       addToast({ type: 'success', message: 'Projeto CapCut carregado.' })
       onDraftLoaded()
-    } catch (err) {
+    } catch {
       setLoading(false)
       addToast({ type: 'error', message: 'Erro ao ler projeto CapCut.' })
     }

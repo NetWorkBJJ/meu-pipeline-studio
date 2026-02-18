@@ -24,8 +24,7 @@ export const useUIStore = create<UIState>((set) => ({
   toasts: [],
   settingsOpen: false,
 
-  setLoading: (loading, message = ''): void =>
-    set({ isLoading: loading, loadingMessage: message }),
+  setLoading: (loading, message = ''): void => set({ isLoading: loading, loadingMessage: message }),
 
   addToast: (toast): void =>
     set((state) => ({

@@ -9,9 +9,7 @@ interface AudioBlocksListProps {
 export function AudioBlocksList({ onConfirm, onBack }: AudioBlocksListProps): React.JSX.Element {
   const { audioBlocks } = useProjectStore()
 
-  const totalDurationMs = audioBlocks.length > 0
-    ? audioBlocks[audioBlocks.length - 1].endMs
-    : 0
+  const totalDurationMs = audioBlocks.length > 0 ? audioBlocks[audioBlocks.length - 1].endMs : 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -20,9 +18,7 @@ export function AudioBlocksList({ onConfirm, onBack }: AudioBlocksListProps): Re
           <h3 className="text-sm font-medium text-text">
             {audioBlocks.length} blocos de audio detectados
           </h3>
-          <p className="text-xs text-text-muted">
-            Duracao total: {msToDisplay(totalDurationMs)}
-          </p>
+          <p className="text-xs text-text-muted">Duracao total: {msToDisplay(totalDurationMs)}</p>
         </div>
         <div className="flex gap-2">
           <button

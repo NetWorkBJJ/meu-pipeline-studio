@@ -40,7 +40,7 @@ export function Stage2Audio(): React.JSX.Element {
         endMs: raw.end_ms,
         durationMs: raw.duration_ms,
         linkedBlockId: null,
-        source: 'capcut' as const,
+        source: 'capcut' as const
       }))
 
       setAudioBlocks(audioBlocks)
@@ -53,7 +53,7 @@ export function Stage2Audio(): React.JSX.Element {
 
       addToast({ type: 'success', message: `${audioBlocks.length} blocos de audio detectados.` })
       setView('preview')
-    } catch (err) {
+    } catch {
       setLoading(false)
       addToast({ type: 'error', message: 'Erro ao ler blocos de audio.' })
     }

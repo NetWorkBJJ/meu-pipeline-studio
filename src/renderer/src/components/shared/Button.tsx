@@ -13,7 +13,8 @@ export function Button({
   children,
   ...props
 }: ButtonProps): React.JSX.Element {
-  const base = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed'
+  const base =
+    'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed'
 
   const variants = {
     primary: 'bg-primary text-white hover:bg-primary-hover',

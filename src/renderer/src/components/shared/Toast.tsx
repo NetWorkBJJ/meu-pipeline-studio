@@ -7,7 +7,13 @@ export function ToastContainer(): React.JSX.Element {
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
       {toasts.map((toast) => (
-        <ToastItem key={toast.id} id={toast.id} type={toast.type} message={toast.message} onDismiss={removeToast} />
+        <ToastItem
+          key={toast.id}
+          id={toast.id}
+          type={toast.type}
+          message={toast.message}
+          onDismiss={removeToast}
+        />
       ))}
     </div>
   )
@@ -34,8 +40,6 @@ function ToastItem({ id, type, message, onDismiss }: ToastItemProps): React.JSX.
   }
 
   return (
-    <div className={`rounded-md border px-4 py-2 text-sm shadow-lg ${colors[type]}`}>
-      {message}
-    </div>
+    <div className={`rounded-md border px-4 py-2 text-sm shadow-lg ${colors[type]}`}>{message}</div>
   )
 }

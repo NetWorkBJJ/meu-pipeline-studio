@@ -9,16 +9,13 @@ interface BlocksPreviewProps {
 export function BlocksPreview({ onConfirm, onBack }: BlocksPreviewProps): React.JSX.Element {
   const { storyBlocks } = useProjectStore()
 
-  const totalDurationMs =
-    storyBlocks.length > 0 ? storyBlocks[storyBlocks.length - 1].endMs : 0
+  const totalDurationMs = storyBlocks.length > 0 ? storyBlocks[storyBlocks.length - 1].endMs : 0
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-text">
-            {storyBlocks.length} blocos gerados
-          </h3>
+          <h3 className="text-sm font-medium text-text">{storyBlocks.length} blocos gerados</h3>
           <p className="text-xs text-text-muted">
             Duracao estimada: {msToDisplay(totalDurationMs)}
           </p>

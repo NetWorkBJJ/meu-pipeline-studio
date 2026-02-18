@@ -31,10 +31,7 @@ export function Modal({ open, onClose, title, children }: ModalProps): React.JSX
       <div className="w-full max-w-md rounded-lg border border-border bg-surface p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-text">{title}</h3>
-          <button
-            onClick={onClose}
-            className="text-text-muted hover:text-text transition-colors"
-          >
+          <button onClick={onClose} className="text-text-muted hover:text-text transition-colors">
             X
           </button>
         </div>

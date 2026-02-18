@@ -36,14 +36,17 @@ export function autoGroupScenes(blocks: StoryBlock[], blocksPerScene: number = 3
     scenes.push({
       id: uuidv4(),
       index: scenes.length + 1,
-      description: group.map((b) => b.text).join(' ').slice(0, 100),
+      description: group
+        .map((b) => b.text)
+        .join(' ')
+        .slice(0, 100),
       startMs: first.startMs,
       endMs: last.endMs,
       durationMs: last.endMs - first.startMs,
       mediaKeyword: '',
       mediaType: 'video',
       mediaPath: null,
-      blockIds: group.map((b) => b.id),
+      blockIds: group.map((b) => b.id)
     })
   }
 

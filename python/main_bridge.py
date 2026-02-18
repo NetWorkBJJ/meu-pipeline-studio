@@ -86,8 +86,7 @@ def main():
                     "error": {"message": str(e)}
                 }
 
-        sys.stdout.write(json.dumps(response) + "
-")
+        sys.stdout.write(json.dumps(response) + "\n")
         sys.stdout.flush()
 
 

@@ -43,13 +43,16 @@ export function Stage3Sync(): React.JSX.Element {
           .map((b) => ({
             material_id: b.linkedAudioId,
             start_ms: b.startMs,
-            end_ms: b.endMs,
+            end_ms: b.endMs
           }))
 
         await window.api.updateSubtitleTimings(capCutDraftPath, timingBlocks)
         await window.api.syncMetadata(capCutDraftPath)
       } catch {
-        addToast({ type: 'warning', message: 'Timings salvos localmente (erro ao gravar no CapCut).' })
+        addToast({
+          type: 'warning',
+          message: 'Timings salvos localmente (erro ao gravar no CapCut).'
+        })
       }
     }
 
@@ -78,7 +81,8 @@ export function Stage3Sync(): React.JSX.Element {
       <div>
         <h3 className="text-sm font-medium text-text">Sincronizar legendas com audio</h3>
         <p className="text-xs text-text-muted mt-1">
-          Vincula cada bloco de texto ao bloco de audio correspondente, ajustando os tempos automaticamente.
+          Vincula cada bloco de texto ao bloco de audio correspondente, ajustando os tempos
+          automaticamente.
         </p>
       </div>
       <div className="flex gap-4">
