@@ -38,3 +38,15 @@ config.local.json
 # Logs
 *.log
 npm-debug.log*
+
+# AI tools
+.agent/
+.agents/
+.cursor/
+
+# Cache
+.eslintcache
+
+# Local scripts
+launch-dev.bat
+launch-dev.vbs

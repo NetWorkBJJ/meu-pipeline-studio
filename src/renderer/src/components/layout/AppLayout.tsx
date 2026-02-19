@@ -1,20 +1,73 @@
-import { Sidebar } from './Sidebar'
-import { StageHeader } from './StageHeader'
-import { StatusBar } from './StatusBar'
+import { useEffect } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useUIStore } from '@/stores/useUIStore'
+import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
+import { WorkspaceSelectorScreen } from './WorkspaceSelectorScreen'
+import { PipelineWorkspace } from './PipelineWorkspace'
+import { ProjectDashboard } from '../projects/ProjectDashboard'
+import { SettingsModal } from '../shared/SettingsModal'
 
-interface AppLayoutProps {
-  children: React.ReactNode
-}
+export function AppLayout(): React.JSX.Element {
+  const { currentView, setCurrentView } = useUIStore()
+  const { activeWorkspaceId, activeWorkspace, loadRegistry, openWorkspace } = useWorkspaceStore()
 
-export function AppLayout({ children }: AppLayoutProps): React.JSX.Element {
+  // Auto-restore workspace on mount (like NardotoStudio App.tsx:97-110)
+  useEffect(() => {
+    const init = async (): Promise<void> => {
+      await loadRegistry()
+      if (activeWorkspaceId && !activeWorkspace) {
+        try {
+          await openWorkspace(activeWorkspaceId)
+          setCurrentView('projectDashboard')
+        } catch {
+          setCurrentView('workspaceSelector')
+        }
+      }
+    }
+    init()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg">
-      <Sidebar />
-      <div className="flex flex-1 flex-col min-w-0">
-        <StageHeader />
-        <main className="flex-1 overflow-auto p-4">{children}</main>
-        <StatusBar />
-      </div>
+    <div className="h-screen w-screen overflow-hidden bg-bg">
+      <AnimatePresence mode="wait">
+        {currentView === 'workspaceSelector' && (
+          <motion.div
+            key="workspaceSelector"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="h-full"
+          >
+            <WorkspaceSelectorScreen />
+          </motion.div>
+        )}
+        {currentView === 'projectDashboard' && (
+          <motion.div
+            key="projectDashboard"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="h-full"
+          >
+            <ProjectDashboard />
+          </motion.div>
+        )}
+        {currentView === 'pipeline' && (
+          <motion.div
+            key="pipeline"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="h-full"
+          >
+            <PipelineWorkspace />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <SettingsModal />
     </div>
   )
 }

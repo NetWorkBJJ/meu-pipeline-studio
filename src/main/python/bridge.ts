@@ -2,15 +2,48 @@ import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { app } from 'electron'
+import { appendFile, mkdir } from 'fs/promises'
+import { StringDecoder } from 'string_decoder'
 
 interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (reason: Error) => void
+  method: string
+  startTime: number
 }
 
 let pythonProcess: ChildProcess | null = null
 const pendingRequests = new Map<string, PendingRequest>()
 let buffer = ''
+let logFilePath = ''
+
+async function ensureLogFile(): Promise<void> {
+  if (logFilePath) return
+  const logDir = join(app.getPath('appData'), 'meu-pipeline-studio', 'logs')
+  await mkdir(logDir, { recursive: true })
+  const date = new Date().toISOString().split('T')[0]
+  logFilePath = join(logDir, `bridge-node-${date}.log`)
+}
+
+async function bridgeLog(level: string, msg: string): Promise<void> {
+  const timestamp = new Date().toISOString().split('T')[1]?.slice(0, 8) || ''
+  const line = `${timestamp} | ${level.padEnd(5)} | ${msg}\n`
+  try {
+    await ensureLogFile()
+    await appendFile(logFilePath, line, 'utf-8')
+  } catch {
+    // silent
+  }
+}
+
+function summarize(obj: unknown, maxLen = 200): string {
+  try {
+    const s = JSON.stringify(obj)
+    return s.length > maxLen ? s.slice(0, maxLen) + '...' : s
+  } catch {
+    return '[unserializable]'
+  }
+}
 
 function getPythonPath(): string {
   return 'python'
@@ -18,9 +51,9 @@ function getPythonPath(): string {
 
 function getScriptPath(): string {
   if (app.isPackaged) {
-    return join(process.resourcesPath, 'python', 'main_bridge.py')
+    return join(process.resourcesPath, 'executions', 'main_bridge.py')
   }
-  return join(app.getAppPath(), 'python', 'main_bridge.py')
+  return join(app.getAppPath(), 'executions', 'main_bridge.py')
 }
 
 export function startPythonBridge(): void {
@@ -28,11 +61,15 @@ export function startPythonBridge(): void {
 
   const scriptPath = getScriptPath()
   pythonProcess = spawn(getPythonPath(), [scriptPath], {
-    stdio: ['pipe', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, PYTHONUTF8: '1' }
   })
 
+  bridgeLog('INFO', `Python bridge started (script=${scriptPath}, pid=${pythonProcess.pid})`)
+
+  const stdoutDecoder = new StringDecoder('utf8')
   pythonProcess.stdout?.on('data', (data: Buffer) => {
-    buffer += data.toString()
+    buffer += stdoutDecoder.write(data)
     const lines = buffer.split('\n')
     buffer = lines.pop() || ''
 
@@ -43,9 +80,18 @@ export function startPythonBridge(): void {
         const pending = pendingRequests.get(response.id)
         if (pending) {
           pendingRequests.delete(response.id)
+          const elapsed = Date.now() - pending.startTime
           if (response.error) {
+            bridgeLog(
+              'ERROR',
+              `<<< [${response.id.slice(0, 8)}] ${pending.method} ERROR (${elapsed}ms): ${response.error.message}`
+            )
             pending.reject(new Error(response.error.message))
           } else {
+            bridgeLog(
+              'INFO',
+              `<<< [${response.id.slice(0, 8)}] ${pending.method} OK (${elapsed}ms) result=${summarize(response.result)}`
+            )
             pending.resolve(response.result)
           }
         }
@@ -55,11 +101,17 @@ export function startPythonBridge(): void {
     }
   })
 
+  const stderrDecoder = new StringDecoder('utf8')
   pythonProcess.stderr?.on('data', (data: Buffer) => {
-    console.error('[Python Bridge] stderr:', data.toString())
+    const msg = stderrDecoder.write(data).trim()
+    if (msg) {
+      bridgeLog('WARN', `stderr: ${msg}`)
+      console.error('[Python Bridge] stderr:', msg)
+    }
   })
 
   pythonProcess.on('close', (code) => {
+    bridgeLog('INFO', `Python bridge exited (code=${code})`)
     console.log('[Python Bridge] Process exited with code', code)
     pythonProcess = null
     for (const [id, pending] of pendingRequests) {
@@ -71,6 +123,7 @@ export function startPythonBridge(): void {
 
 export function stopPythonBridge(): void {
   if (pythonProcess) {
+    bridgeLog('INFO', 'Stopping Python bridge')
     pythonProcess.kill()
     pythonProcess = null
   }
@@ -86,7 +139,8 @@ export function callPython(method: string, params: Record<string, unknown> = {})
     const id = uuidv4()
     const request = JSON.stringify({ id, method, params }) + '\n'
 
-    pendingRequests.set(id, { resolve, reject })
+    bridgeLog('INFO', `>>> [${id.slice(0, 8)}] ${method} params=${summarize(params)}`)
+    pendingRequests.set(id, { resolve, reject, method, startTime: Date.now() })
     pythonProcess.stdin.write(request)
   })
 }

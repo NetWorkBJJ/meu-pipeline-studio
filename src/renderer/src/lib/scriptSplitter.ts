@@ -14,11 +14,15 @@ export function splitScriptIntoBlocks(rawScript: string): StoryBlock[] {
     const trimmed = sentence.trim()
     if (!trimmed) continue
 
-    if (currentText && (currentText + ' ' + trimmed).length > MAX_BLOCK_CHARS) {
-      blocks.push(createBlock(currentText, blocks.length))
-      currentText = trimmed
-    } else {
-      currentText = currentText ? currentText + ' ' + trimmed : trimmed
+    const chunks = splitLongSentence(trimmed)
+
+    for (const chunk of chunks) {
+      if (currentText && (currentText + ' ' + chunk).length > MAX_BLOCK_CHARS) {
+        blocks.push(createBlock(currentText, blocks.length))
+        currentText = chunk
+      } else {
+        currentText = currentText ? currentText + ' ' + chunk : chunk
+      }
     }
   }
 
@@ -27,6 +31,42 @@ export function splitScriptIntoBlocks(rawScript: string): StoryBlock[] {
   }
 
   return recalculateTimings(blocks)
+}
+
+function splitLongSentence(sentence: string): string[] {
+  if (sentence.length <= MAX_BLOCK_CHARS) return [sentence]
+
+  const chunks: string[] = []
+  const clauses = sentence.split(/,\s*/)
+  let current = ''
+
+  for (const clause of clauses) {
+    if (clause.length > MAX_BLOCK_CHARS) {
+      if (current) {
+        chunks.push(current)
+        current = ''
+      }
+      const words = clause.split(/\s+/)
+      let wordChunk = ''
+      for (const word of words) {
+        if (wordChunk && (wordChunk + ' ' + word).length > MAX_BLOCK_CHARS) {
+          chunks.push(wordChunk)
+          wordChunk = word
+        } else {
+          wordChunk = wordChunk ? wordChunk + ' ' + word : word
+        }
+      }
+      if (wordChunk) current = wordChunk
+    } else if (current && (current + ', ' + clause).length > MAX_BLOCK_CHARS) {
+      chunks.push(current)
+      current = clause
+    } else {
+      current = current ? current + ', ' + clause : clause
+    }
+  }
+
+  if (current) chunks.push(current)
+  return chunks
 }
 
 function createBlock(text: string, index: number): StoryBlock {
@@ -44,7 +84,9 @@ function createBlock(text: string, index: number): StoryBlock {
     endMs: durationMs,
     durationMs,
     characterCount: charCount,
-    linkedAudioId: null
+    linkedAudioId: null,
+    textMaterialId: null,
+    textSegmentId: null
   }
 }
 

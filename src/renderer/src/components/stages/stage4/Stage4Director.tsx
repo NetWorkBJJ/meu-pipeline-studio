@@ -53,12 +53,12 @@ export function Stage4Director(): React.JSX.Element {
           max={10}
           value={blocksPerScene}
           onChange={(e) => setBlocksPerScene(Math.max(1, parseInt(e.target.value) || 1))}
-          className="w-16 rounded border border-border bg-surface px-2 py-1 text-sm text-text focus:border-primary focus:outline-none"
+          className="w-16 rounded-md border border-border bg-bg px-2 py-1.5 text-sm tabular-nums text-text transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
         />
         <button
           onClick={handleAutoGroup}
           disabled={storyBlocks.length === 0}
-          className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Agrupar automaticamente
         </button>
@@ -70,7 +70,7 @@ export function Stage4Director(): React.JSX.Element {
             <span className="text-xs text-text-muted">{scenes.length} cenas</span>
             <button
               onClick={handleConfirm}
-              className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
             >
               Confirmar cenas
             </button>

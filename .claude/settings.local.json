@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(wc:*)",
+      "Bash(dir:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npx prettier:*)"
+    ]
+  }
+}

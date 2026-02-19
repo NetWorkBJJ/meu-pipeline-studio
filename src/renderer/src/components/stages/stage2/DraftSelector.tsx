@@ -1,3 +1,4 @@
+import { CheckCircle } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 
@@ -40,19 +41,24 @@ export function DraftSelector({ onDraftLoaded }: DraftSelectorProps): React.JSX.
       <div>
         <h3 className="text-sm font-medium text-text">Projeto CapCut</h3>
         <p className="text-xs text-text-muted mt-1">
-          Selecione a pasta do projeto CapCut que contem o draft_content.json
+          {capCutDraftPath
+            ? 'Projeto selecionado na tela inicial. Carregue o audio ou troque o projeto.'
+            : 'Selecione a pasta do projeto CapCut que contem o draft_content.json'}
         </p>
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-muted truncate">
+        {capCutDraftPath && (
+          <CheckCircle className="h-4 w-4 shrink-0 text-success" />
+        )}
+        <div className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs text-text-muted truncate">
           {capCutDraftPath || 'Nenhum projeto selecionado'}
         </div>
         <button
           onClick={handleSelectDraft}
-          className="shrink-0 rounded-md border border-border px-3 py-2 text-sm text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+          className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
         >
-          Selecionar
+          {capCutDraftPath ? 'Trocar' : 'Selecionar'}
         </button>
       </div>
 
@@ -60,7 +66,7 @@ export function DraftSelector({ onDraftLoaded }: DraftSelectorProps): React.JSX.
         <button
           onClick={handleLoadDraft}
           disabled={!capCutDraftPath}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Carregar audio
         </button>

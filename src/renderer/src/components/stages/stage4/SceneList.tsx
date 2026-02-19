@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { msToDisplay } from '@/lib/time'
 
 interface Scene {
@@ -22,7 +23,12 @@ export function SceneList({ scenes, onUpdateScene }: SceneListProps): React.JSX.
   return (
     <div className="space-y-3">
       {scenes.map((scene) => (
-        <div key={scene.id} className="rounded-md border border-border bg-surface p-3">
+        <motion.div
+          key={scene.id}
+          whileHover={{ borderColor: 'rgba(99, 102, 241, 0.3)' }}
+          transition={{ duration: 0.15 }}
+          className="rounded-lg border border-border bg-surface p-4 shadow-surface"
+        >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
@@ -36,7 +42,7 @@ export function SceneList({ scenes, onUpdateScene }: SceneListProps): React.JSX.
             <select
               value={scene.mediaType}
               onChange={(e) => onUpdateScene(scene.id, 'mediaType', e.target.value)}
-              className="rounded border border-border bg-bg px-2 py-0.5 text-xs text-text"
+              className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-text transition-colors focus:border-primary focus:outline-none"
             >
               <option value="video">Video</option>
               <option value="photo">Foto</option>
@@ -49,13 +55,13 @@ export function SceneList({ scenes, onUpdateScene }: SceneListProps): React.JSX.
               value={scene.mediaKeyword}
               onChange={(e) => onUpdateScene(scene.id, 'mediaKeyword', e.target.value)}
               placeholder="Palavra-chave para midia..."
-              className="flex-1 rounded border border-border bg-bg px-2 py-1 text-xs text-text placeholder:text-text-muted/50 focus:border-primary focus:outline-none"
+              className="flex-1 rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-text placeholder:text-text-muted/40 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
             />
           </div>
           {scene.mediaPath && (
             <p className="mt-1 truncate text-xs text-success">{scene.mediaPath}</p>
           )}
-        </div>
+        </motion.div>
       ))}
     </div>
   )

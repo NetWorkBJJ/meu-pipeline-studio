@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -11,12 +12,51 @@ interface InsertLog {
   detail?: string
 }
 
+interface TrackInfo {
+  index: number
+  type: string
+  segments: number
+  duration_ms: number
+  name: string
+}
+
 export function Stage6Insert(): React.JSX.Element {
   const [status, setStatus] = useState<InsertStatus>('idle')
   const [logs, setLogs] = useState<InsertLog[]>([])
-  const { storyBlocks, scenes, capCutDraftPath } = useProjectStore()
+  const [existingTracks, setExistingTracks] = useState<TrackInfo[]>([])
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const { storyBlocks, scenes, capCutDraftPath, updateStoryBlock } = useProjectStore()
   const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
+
+  const existingTextCount = existingTracks
+    .filter((t) => t.type === 'text')
+    .reduce((sum, t) => sum + t.segments, 0)
+  const existingVideoCount = existingTracks
+    .filter((t) => t.type === 'video')
+    .reduce((sum, t) => sum + t.segments, 0)
+  const hasExistingContent = existingTextCount > 0 || existingVideoCount > 0
+
+  useEffect(() => {
+    if (capCutDraftPath) {
+      analyzeExisting()
+    }
+  }, [capCutDraftPath])
+
+  const analyzeExisting = async (): Promise<void> => {
+    if (!capCutDraftPath) return
+    setIsAnalyzing(true)
+    try {
+      const result = (await window.api.analyzeProject(capCutDraftPath)) as {
+        tracks: TrackInfo[]
+      }
+      setExistingTracks(result.tracks)
+    } catch {
+      setExistingTracks([])
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
 
   const addLog = (step: string, logStatus: InsertLog['status'], detail?: string): void => {
     setLogs((prev) => {
@@ -30,25 +70,69 @@ export function Stage6Insert(): React.JSX.Element {
     })
   }
 
-  const handleInsert = async (): Promise<void> => {
-    if (!capCutDraftPath) {
-      addToast({ type: 'error', message: 'Nenhum projeto CapCut selecionado.' })
-      return
-    }
+  const handleClearAndInsert = async (): Promise<void> => {
+    if (!capCutDraftPath) return
 
     setStatus('inserting')
     setLogs([])
 
     try {
+      // Step 1: Backup
+      addLog('Criando backup...', 'running')
+      await window.api.createBackup(capCutDraftPath)
+      addLog('Criando backup...', 'done', 'Backup salvo')
+
+      // Step 2: Clear existing content if needed
+      if (hasExistingContent) {
+        if (existingTextCount > 0) {
+          addLog('Limpando legendas anteriores...', 'running')
+          const clearResult = (await window.api.clearTextSegments(capCutDraftPath)) as {
+            removed_segments: number
+          }
+          addLog(
+            'Limpando legendas anteriores...',
+            'done',
+            `${clearResult.removed_segments} removidas`
+          )
+        }
+        if (existingVideoCount > 0) {
+          addLog('Limpando midias anteriores...', 'running')
+          const clearResult = (await window.api.clearVideoSegments(capCutDraftPath)) as {
+            removed_segments: number
+          }
+          addLog(
+            'Limpando midias anteriores...',
+            'done',
+            `${clearResult.removed_segments} removidas`
+          )
+        }
+      }
+
+      // Step 3: Write text segments
       addLog('Escrevendo legendas...', 'running')
       const textBlocks = storyBlocks.map((b) => ({
         text: b.text,
         start_ms: b.startMs,
         end_ms: b.endMs
       }))
-      await window.api.writeTextSegments(capCutDraftPath, textBlocks)
-      addLog('Escrevendo legendas...', 'done', `${textBlocks.length} legendas`)
+      const textResult = (await window.api.writeTextSegments(capCutDraftPath, textBlocks)) as {
+        added_count: number
+        segments: Array<{ segment_id: string; material_id: string; text: string }>
+      }
+      addLog('Escrevendo legendas...', 'done', `${textResult.added_count} legendas`)
 
+      // Store CapCut IDs on each storyBlock for future re-sync
+      if (textResult.segments) {
+        for (let i = 0; i < textResult.segments.length && i < storyBlocks.length; i++) {
+          const seg = textResult.segments[i]
+          updateStoryBlock(storyBlocks[i].id, {
+            textMaterialId: seg.material_id,
+            textSegmentId: seg.segment_id
+          })
+        }
+      }
+
+      // Step 4: Write video segments
       const scenesWithMedia = scenes.filter((s) => s.mediaPath)
       if (scenesWithMedia.length > 0) {
         addLog('Escrevendo midias...', 'running')
@@ -58,10 +142,14 @@ export function Stage6Insert(): React.JSX.Element {
           end_ms: s.endMs,
           media_type: s.mediaType
         }))
-        await window.api.writeVideoSegments(capCutDraftPath, videoScenes)
-        addLog('Escrevendo midias...', 'done', `${videoScenes.length} midias`)
+        const videoResult = (await window.api.writeVideoSegments(
+          capCutDraftPath,
+          videoScenes
+        )) as { added_count: number }
+        addLog('Escrevendo midias...', 'done', `${videoResult.added_count} midias`)
       }
 
+      // Step 5: Sync metadata
       addLog('Sincronizando metadata...', 'running')
       await window.api.syncMetadata(capCutDraftPath)
       addLog('Sincronizando metadata...', 'done')
@@ -69,6 +157,9 @@ export function Stage6Insert(): React.JSX.Element {
       setStatus('done')
       completeStage(6)
       addToast({ type: 'success', message: 'Insercao concluida! Abra o projeto no CapCut.' })
+
+      // Refresh analysis
+      await analyzeExisting()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       addLog('Erro', 'error', message)
@@ -82,44 +173,72 @@ export function Stage6Insert(): React.JSX.Element {
       <div>
         <h3 className="text-sm font-medium text-text">Insercao no CapCut</h3>
         <p className="text-xs text-text-muted mt-1">
-          Escreve todas as legendas e midias no projeto CapCut e sincroniza os metadados.
+          Escreve todas as legendas e midias no projeto CapCut e sincroniza os metadados. Um backup
+          e criado automaticamente antes de cada insercao.
         </p>
       </div>
 
       <div className="flex gap-4">
-        <div className="flex-1 rounded-md border border-border bg-surface p-4">
-          <p className="text-xs text-text-muted">Legendas</p>
-          <p className="text-2xl font-semibold text-text mt-1">{storyBlocks.length}</p>
+        <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+            Legendas
+          </p>
+          <p className="text-2xl font-bold tabular-nums text-text mt-1.5">{storyBlocks.length}</p>
         </div>
-        <div className="flex-1 rounded-md border border-border bg-surface p-4">
-          <p className="text-xs text-text-muted">Midias</p>
-          <p className="text-2xl font-semibold text-text mt-1">
+        <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Midias</p>
+          <p className="text-2xl font-bold tabular-nums text-text mt-1.5">
             {scenes.filter((s) => s.mediaPath).length}
           </p>
         </div>
-        <div className="flex-1 rounded-md border border-border bg-surface p-4">
-          <p className="text-xs text-text-muted">Projeto</p>
-          <p className="mt-1 truncate text-xs text-text-muted">
+        <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+            Projeto
+          </p>
+          <p className="mt-1.5 truncate font-mono text-xs text-text-muted">
             {capCutDraftPath || 'Nao selecionado'}
           </p>
         </div>
       </div>
 
+      {/* Existing content warning */}
+      {hasExistingContent && status !== 'inserting' && status !== 'done' && (
+        <div className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-500 mt-0.5" />
+          <div className="text-xs text-yellow-500">
+            <p className="font-medium">Conteudo existente detectado na timeline:</p>
+            <p className="mt-1">
+              {existingTextCount > 0 && `${existingTextCount} legendas`}
+              {existingTextCount > 0 && existingVideoCount > 0 && ' + '}
+              {existingVideoCount > 0 && `${existingVideoCount} midias`}
+            </p>
+            <p className="mt-1 text-yellow-500/70">
+              O conteudo anterior sera removido automaticamente antes da nova insercao.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isAnalyzing && (
+        <div className="flex items-center gap-2 text-xs text-text-muted">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Analisando projeto...
+        </div>
+      )}
+
       {logs.length > 0 && (
-        <div className="rounded-md border border-border bg-surface p-3 space-y-2">
+        <div className="rounded-lg border border-border bg-bg p-3 space-y-2 font-mono">
           {logs.map((log, i) => (
             <div key={i} className="flex items-center gap-2 text-xs">
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  log.status === 'done'
-                    ? 'bg-success'
-                    : log.status === 'running'
-                      ? 'bg-primary animate-pulse'
-                      : log.status === 'error'
-                        ? 'bg-error'
-                        : 'bg-border'
-                }`}
-              />
+              {log.status === 'done' ? (
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
+              ) : log.status === 'running' ? (
+                <Loader2 className="h-3 w-3 shrink-0 text-primary animate-spin" />
+              ) : log.status === 'error' ? (
+                <AlertTriangle className="h-3 w-3 shrink-0 text-error" />
+              ) : (
+                <span className="h-3 w-3 shrink-0 rounded-full bg-border" />
+              )}
               <span className="text-text">{log.step}</span>
               {log.detail && <span className="text-text-muted">{log.detail}</span>}
             </div>
@@ -129,18 +248,29 @@ export function Stage6Insert(): React.JSX.Element {
 
       <div className="flex justify-end gap-2">
         {status === 'done' && (
-          <span className="self-center text-xs text-success">Concluido com sucesso!</span>
+          <span className="flex items-center gap-1.5 self-center text-xs text-success">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Concluido com backup!
+          </span>
         )}
         <button
-          onClick={handleInsert}
+          onClick={handleClearAndInsert}
           disabled={status === 'inserting' || !capCutDraftPath}
-          className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {status === 'inserting'
-            ? 'Inserindo...'
-            : status === 'done'
-              ? 'Inserir novamente'
-              : 'Inserir no CapCut'}
+          {status === 'inserting' ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Inserindo...
+            </>
+          ) : hasExistingContent ? (
+            <>
+              <Trash2 className="h-4 w-4" />
+              Limpar e inserir
+            </>
+          ) : (
+            'Inserir no CapCut'
+          )}
         </button>
       </div>
     </div>

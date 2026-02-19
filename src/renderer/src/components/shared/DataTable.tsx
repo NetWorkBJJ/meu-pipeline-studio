@@ -27,14 +27,14 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="overflow-auto rounded-md border border-border">
-      <table className="w-full text-sm">
+    <div className="overflow-auto rounded-lg border border-border">
+      <table className="w-full table-fixed text-sm">
         <thead>
-          <tr className="border-b border-border bg-surface">
+          <tr className="border-b border-border bg-surface text-xs font-medium uppercase tracking-wider text-text-muted">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className="px-3 py-2 text-left text-xs font-medium text-text-muted"
+                className="px-3 py-2.5 text-left"
                 style={col.width ? { width: col.width } : undefined}
               >
                 {col.header}
@@ -46,10 +46,10 @@ export function DataTable<T>({
           {data.map((item) => (
             <tr
               key={keyExtractor(item)}
-              className="border-b border-border/50 hover:bg-surface-hover"
+              className="border-b border-border/50 transition-colors even:bg-surface/50 hover:bg-surface-hover"
             >
               {columns.map((col) => (
-                <td key={col.key} className="px-3 py-2 text-text">
+                <td key={col.key} className="px-3 py-2.5 text-text">
                   {col.render
                     ? col.render(item)
                     : String((item as Record<string, unknown>)[col.key] ?? '')}

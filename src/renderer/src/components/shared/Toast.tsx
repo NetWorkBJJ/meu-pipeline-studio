@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useUIStore } from '../../stores/useUIStore'
 
 export function ToastContainer(): React.JSX.Element {
@@ -6,15 +7,17 @@ export function ToastContainer(): React.JSX.Element {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-      {toasts.map((toast) => (
-        <ToastItem
-          key={toast.id}
-          id={toast.id}
-          type={toast.type}
-          message={toast.message}
-          onDismiss={removeToast}
-        />
-      ))}
+      <AnimatePresence>
+        {toasts.map((toast) => (
+          <ToastItem
+            key={toast.id}
+            id={toast.id}
+            type={toast.type}
+            message={toast.message}
+            onDismiss={removeToast}
+          />
+        ))}
+      </AnimatePresence>
     </div>
   )
 }
@@ -40,6 +43,14 @@ function ToastItem({ id, type, message, onDismiss }: ToastItemProps): React.JSX.
   }
 
   return (
-    <div className={`rounded-md border px-4 py-2 text-sm shadow-lg ${colors[type]}`}>{message}</div>
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 100 }}
+      transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+      className={`rounded-lg border px-4 py-2.5 text-sm shadow-popover backdrop-blur-sm ${colors[type]}`}
+    >
+      {message}
+    </motion.div>
   )
 }

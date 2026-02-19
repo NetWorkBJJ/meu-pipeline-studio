@@ -7,6 +7,8 @@ interface StoryBlock {
   durationMs: number
   characterCount: number
   linkedAudioId: string | null
+  textMaterialId: string | null
+  textSegmentId: string | null
 }
 
 interface AudioBlock {

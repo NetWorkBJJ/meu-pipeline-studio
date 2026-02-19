@@ -1,18 +1,49 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-primary: #f97316;
-  --color-primary-hover: #ea580c;
-  --color-primary-light: #fb923c;
-  --color-bg: #1a1a1a;
-  --color-surface: #242424;
-  --color-surface-hover: #2a2a2a;
-  --color-border: #3a3a3a;
-  --color-text: #f5f5f5;
-  --color-text-muted: #a3a3a3;
+  --color-primary: #6366F1;
+  --color-primary-hover: #4F46E5;
+  --color-primary-light: #818CF8;
+  --color-bg: #09090B;
+  --color-surface: #111113;
+  --color-surface-hover: #1E1E22;
+  --color-surface-2: #18181B;
+  --color-surface-3: #1E1E22;
+  --color-border: #27272A;
+  --color-border-light: #3F3F46;
+  --color-text: #FAFAFA;
+  --color-text-muted: #A1A1AA;
   --color-success: #22c55e;
   --color-error: #ef4444;
   --color-warning: #eab308;
+}
+
+@utility shadow-surface {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px -1px rgb(0 0 0 / 0.2);
+}
+
+@utility shadow-elevated {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+}
+
+@utility shadow-popover {
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+}
+
+@utility shadow-glow {
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.3);
+}
+
+@utility shadow-glow-sm {
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+}
+
+@utility gradient-primary {
+  background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+}
+
+@utility gradient-card {
+  background: linear-gradient(180deg, #161618 0%, #0e0e10 100%);
 }
 
 *,
@@ -53,9 +84,14 @@ body {
   width: 100vw;
 }
 
+::selection {
+  background: rgba(99, 102, 241, 0.3);
+  color: var(--color-text);
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -64,9 +100,13 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

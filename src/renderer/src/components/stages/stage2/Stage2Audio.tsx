@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { v4 as uuidv4 } from 'uuid'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
@@ -68,9 +69,21 @@ export function Stage2Audio(): React.JSX.Element {
     setView('select')
   }
 
-  if (view === 'preview') {
-    return <AudioBlocksList onConfirm={handleConfirm} onBack={handleBack} />
-  }
-
-  return <DraftSelector onDraftLoaded={handleDraftLoaded} />
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={view}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.15 }}
+      >
+        {view === 'preview' ? (
+          <AudioBlocksList onConfirm={handleConfirm} onBack={handleBack} />
+        ) : (
+          <DraftSelector onDraftLoaded={handleDraftLoaded} />
+        )}
+      </motion.div>
+    </AnimatePresence>
+  )
 }

@@ -7,6 +7,8 @@ export interface StoryBlock {
   durationMs: number
   characterCount: number
   linkedAudioId: string | null
+  textMaterialId: string | null
+  textSegmentId: string | null
 }
 
 export interface AudioBlock {
@@ -44,6 +46,20 @@ export interface MediaPreset {
   defaultType: 'video' | 'photo'
   defaultDurationMs: number
   transitionMs: number
+}
+
+export interface CapCutProjectInfo {
+  name: string
+  path: string
+  draftPath: string
+  modifiedUs: number
+  createdUs: number
+  durationUs: number
+  materialsSize: number
+  cover: string
+  exists: boolean
+  pipelineStatus: import('./workspace').PipelineStatus | null
+  workspaceId: string | null
 }
 
 export interface Project {
