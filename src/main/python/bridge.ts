@@ -1,7 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { v4 as uuidv4 } from 'uuid'
-import { app } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { appendFile, mkdir } from 'fs/promises'
 import { StringDecoder } from 'string_decoder'
 
@@ -77,6 +77,17 @@ export function startPythonBridge(): void {
       if (!line.trim()) continue
       try {
         const response = JSON.parse(line)
+
+        // Intercept progress side-channel messages (do NOT resolve pending requests)
+        if (response.type === 'progress') {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              win.webContents.send('tts:progress', response.data)
+            }
+          }
+          continue
+        }
+
         const pending = pendingRequests.get(response.id)
         if (pending) {
           pendingRequests.delete(response.id)

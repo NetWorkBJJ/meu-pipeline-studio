@@ -23,6 +23,8 @@ import { ProjectCard } from './ProjectCard'
 import { ProjectContextMenu } from './ProjectContextMenu'
 import { ProjectCreateModal } from './ProjectCreateModal'
 import { ProjectPickerModal } from './ProjectPickerModal'
+import { ConfirmDeleteModal } from './ConfirmDeleteModal'
+import { useStageStore } from '@/stores/useStageStore'
 import type { PipelineStatus, WorkspaceRecentProject } from '@/types/workspace'
 
 interface ProjectInfo {
@@ -49,6 +51,10 @@ export function ProjectDashboard(): React.JSX.Element {
     x: number
     y: number
     project: ProjectInfo
+  } | null>(null)
+  const [deleteModal, setDeleteModal] = useState<{
+    names: string[]
+    paths: string[]
   } | null>(null)
 
   const {
@@ -109,6 +115,17 @@ export function ProjectDashboard(): React.JSX.Element {
     setCurrentView('workspaceSelector')
   }
 
+  const triggerFullLoad = useCallback(
+    async (draftPath: string): Promise<void> => {
+      try {
+        await useProjectStore.getState().loadFullProject(draftPath)
+      } catch {
+        addToast({ type: 'warning', message: 'Erro ao carregar dados do projeto.' })
+      }
+    },
+    [addToast]
+  )
+
   const handleOpenProject = (project: ProjectInfo): void => {
     setCapCutDraftPath(project.draftPath)
 
@@ -125,6 +142,7 @@ export function ProjectDashboard(): React.JSX.Element {
     )
     saveRecentProjects(updated)
     setCurrentView('pipeline')
+    triggerFullLoad(project.draftPath)
   }
 
   const handleSelectRecent = (path: string): void => {
@@ -137,6 +155,7 @@ export function ProjectDashboard(): React.JSX.Element {
     const updated = [recent, ...recentProjects.filter((r) => r.path !== path)].slice(0, 10)
     saveRecentProjects(updated)
     setCurrentView('pipeline')
+    triggerFullLoad(path)
   }
 
   const handleOpenFolder = async (): Promise<void> => {
@@ -151,6 +170,7 @@ export function ProjectDashboard(): React.JSX.Element {
       const updated = [recent, ...recentProjects.filter((r) => r.path !== path)].slice(0, 10)
       saveRecentProjects(updated)
       setCurrentView('pipeline')
+      triggerFullLoad(path)
     }
   }
 
@@ -208,12 +228,94 @@ export function ProjectDashboard(): React.JSX.Element {
   }
 
   const handleDeleteSelected = (): void => {
-    addToast({
-      type: 'warning',
-      message: `Exclusao de ${selectedPaths.size} projetos nao implementada (protecao de seguranca).`
+    const selected = projects.filter((p) => selectedPaths.has(p.path))
+    if (selected.length === 0) return
+    setDeleteModal({
+      names: selected.map((p) => p.name),
+      paths: selected.map((p) => p.path)
     })
-    setSelectedPaths(new Set())
-    setMultiSelect(false)
+  }
+
+  const handleDeleteProjects = async (paths: string[]): Promise<void> => {
+    try {
+      const result = await window.api.deleteCapCutProjects(paths)
+
+      if (result.totalDeleted === result.totalRequested) {
+        addToast({
+          type: 'success',
+          message:
+            result.totalDeleted === 1
+              ? 'Projeto excluido com sucesso.'
+              : `${result.totalDeleted} projetos excluidos com sucesso.`
+        })
+      } else if (result.totalDeleted > 0) {
+        addToast({
+          type: 'warning',
+          message: `${result.totalDeleted} excluido(s), ${result.totalRequested - result.totalDeleted} falha(s).`
+        })
+      } else {
+        const firstError = result.results.find((r) => !r.success)
+        addToast({
+          type: 'error',
+          message: firstError?.error || 'Erro ao excluir projetos.'
+        })
+      }
+
+      // Clean up references
+      const deletedPaths = result.results.filter((r) => r.success).map((r) => r.path)
+      if (deletedPaths.length > 0) {
+        cleanupAfterDelete(deletedPaths)
+      }
+
+      loadProjects()
+      setSelectedPaths(new Set())
+      setMultiSelect(false)
+      setDeleteModal(null)
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Erro ao excluir projetos'
+      })
+    }
+  }
+
+  const cleanupAfterDelete = (deletedPaths: string[]): void => {
+    const normalized = deletedPaths.map((p) => p.replace(/\\/g, '/'))
+
+    // Clean workspace recentProjects
+    const updatedRecent = recentProjects.filter(
+      (r) => !normalized.some((dp) => r.path.replace(/\\/g, '/').startsWith(dp))
+    )
+    if (updatedRecent.length !== recentProjects.length) {
+      saveRecentProjects(updatedRecent)
+    }
+
+    // Clean project store recentProjects
+    const projectStore = useProjectStore.getState()
+    for (const dp of normalized) {
+      projectStore.recentProjects
+        .filter((rp) => rp.path.replace(/\\/g, '/').startsWith(dp))
+        .forEach((rp) => projectStore.removeRecentProject(rp.path))
+    }
+
+    // Reset pipeline if current project was deleted
+    const currentDraft = projectStore.capCutDraftPath
+    if (currentDraft) {
+      const normalizedDraft = currentDraft.replace(/\\/g, '/')
+      if (normalized.some((dp) => normalizedDraft.startsWith(dp))) {
+        projectStore.resetProject()
+        useStageStore.getState().reset()
+      }
+    }
+
+    // Unlink from custom workspace
+    if (!isDefaultWorkspace) {
+      try {
+        unlinkProjects(deletedPaths)
+      } catch {
+        // silent - folder is already gone
+      }
+    }
   }
 
   const toggleSelect = (path: string): void => {
@@ -517,9 +619,10 @@ export function ProjectDashboard(): React.JSX.Element {
             onOpenExplorer={() => handleOpenExplorer(contextMenu.project.path)}
             onBackup={() => handleBackup(contextMenu.project.draftPath)}
             onDelete={() => {
-              addToast({
-                type: 'warning',
-                message: 'Exclusao de projetos nao implementada (protecao de seguranca).'
+              setContextMenu(null)
+              setDeleteModal({
+                names: [contextMenu.project.name],
+                paths: [contextMenu.project.path]
               })
             }}
             onUnlink={
@@ -544,6 +647,14 @@ export function ProjectDashboard(): React.JSX.Element {
           onLink={handleLinkProjects}
         />
       )}
+
+      <ConfirmDeleteModal
+        open={deleteModal !== null}
+        onClose={() => setDeleteModal(null)}
+        projectNames={deleteModal?.names || []}
+        projectPaths={deleteModal?.paths || []}
+        onConfirm={handleDeleteProjects}
+      />
     </div>
   )
 }

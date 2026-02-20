@@ -13,9 +13,13 @@ const api = {
   createCapCutProject: (name: string): Promise<unknown> =>
     ipcRenderer.invoke('project:create-capcut', name),
   listCapCutProjects: (): Promise<unknown[]> => ipcRenderer.invoke('project:list-capcut'),
+  deleteCapCutProjects: (projectPaths: string[]): Promise<unknown> =>
+    ipcRenderer.invoke('project:delete-capcut', { projectPaths }),
 
   readCapCutDraft: (draftPath: string): Promise<unknown> =>
     ipcRenderer.invoke('capcut:read-draft', draftPath),
+  loadFullProject: (draftPath: string): Promise<unknown> =>
+    ipcRenderer.invoke('capcut:load-full-project', draftPath),
   writeTextSegments: (draftPath: string, blocks: unknown[]): Promise<unknown> =>
     ipcRenderer.invoke('capcut:write-text-segments', draftPath, blocks),
   readAudioBlocks: (draftPath: string): Promise<unknown[]> =>
@@ -121,6 +125,27 @@ const api = {
     const handler = (_event: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('capcut:project-changed', handler)
     return () => ipcRenderer.removeListener('capcut:project-changed', handler)
+  },
+
+  // TTS generation
+  ttsGenerate: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('tts:generate', params),
+  ttsPreviewVoice: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('tts:preview-voice', params),
+  ttsListVoices: (): Promise<unknown> => ipcRenderer.invoke('tts:list-voices'),
+  ttsListStyles: (): Promise<unknown> => ipcRenderer.invoke('tts:list-styles'),
+
+  // TTS API key
+  ttsSaveApiKey: (apiKey: string): Promise<unknown> =>
+    ipcRenderer.invoke('tts:save-api-key', apiKey),
+  ttsHasApiKey: (): Promise<boolean> => ipcRenderer.invoke('tts:has-api-key'),
+  ttsDeleteApiKey: (): Promise<unknown> => ipcRenderer.invoke('tts:delete-api-key'),
+
+  // TTS progress listener
+  onTtsProgress: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown): void => callback(data)
+    ipcRenderer.on('tts:progress', handler)
+    return () => ipcRenderer.removeListener('tts:progress', handler)
   }
 }
 

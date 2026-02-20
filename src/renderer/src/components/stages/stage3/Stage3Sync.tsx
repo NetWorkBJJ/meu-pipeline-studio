@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Wand2, Sparkles, Loader2, RefreshCw } from 'lucide-react'
+import { Wand2, Sparkles, Loader2, RefreshCw, CheckCircle2, Link2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { autoSyncBlocks } from '@/lib/syncEngine'
 import { SyncPreview } from './SyncPreview'
 
-type Stage3View = 'action' | 'preview'
+type Stage3View = 'status' | 'action' | 'preview'
 
 interface SyncStats {
   gapsRemoved: number
@@ -17,16 +17,31 @@ interface SyncStats {
 }
 
 export function Stage3Sync(): React.JSX.Element {
-  const [view, setView] = useState<Stage3View>('action')
+  const storyBlocks = useProjectStore((s) => s.storyBlocks)
+  const audioBlocks = useProjectStore((s) => s.audioBlocks)
+  const projectLoaded = useProjectStore((s) => s.projectLoaded)
+  const capCutDraftPath = useProjectStore((s) => s.capCutDraftPath)
+  const { setStoryBlocks } = useProjectStore()
+  const { completeStage } = useStageStore()
+  const completedStages = useStageStore((s) => s.completedStages)
+  const { addToast } = useUIStore()
+
+  // Detect if blocks are already synced from CapCut (both have timings from same project)
+  const hasExistingSync = projectLoaded &&
+    storyBlocks.length > 0 &&
+    audioBlocks.length > 0 &&
+    storyBlocks.some((b) => b.textMaterialId)
+  const stageAlreadyComplete = completedStages.has(3)
+
+  const [view, setView] = useState<Stage3View>(
+    hasExistingSync && !stageAlreadyComplete ? 'status' : 'action'
+  )
   const [linkedCount, setLinkedCount] = useState(0)
   const [unlinkedCount, setUnlinkedCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
   const [syncStats, setSyncStats] = useState<SyncStats | null>(null)
   const [applyAnim, setApplyAnim] = useState(false)
   const [resyncingTimings, setResyncingTimings] = useState(false)
-  const { storyBlocks, audioBlocks, setStoryBlocks, capCutDraftPath } = useProjectStore()
-  const { completeStage } = useStageStore()
-  const { addToast } = useUIStore()
 
   const handleLocalSync = (): void => {
     if (storyBlocks.length === 0) {
@@ -129,6 +144,15 @@ export function Stage3Sync(): React.JSX.Element {
     }
   }
 
+  const handleAcceptExisting = (): void => {
+    completeStage(3)
+    addToast({ type: 'success', message: 'Sincronizacao existente aceita.' })
+  }
+
+  const handleGoToAction = (): void => {
+    setView('action')
+  }
+
   const handleConfirm = async (): Promise<void> => {
     if (capCutDraftPath) {
       try {
@@ -146,7 +170,11 @@ export function Stage3Sync(): React.JSX.Element {
   }
 
   const handleBack = (): void => {
-    setView('action')
+    if (hasExistingSync) {
+      setView('status')
+    } else {
+      setView('action')
+    }
     setSyncStats(null)
   }
 
@@ -159,7 +187,49 @@ export function Stage3Sync(): React.JSX.Element {
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.15 }}
       >
-        {view === 'preview' ? (
+        {view === 'status' ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+              <Link2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="flex-1">
+                <h3 className="text-sm font-medium text-text">
+                  Projeto ja sincronizado
+                </h3>
+                <p className="mt-1 text-xs text-text-muted">
+                  {storyBlocks.length} legendas e {audioBlocks.length} blocos de audio carregados
+                  do CapCut com timings sincronizados.
+                </p>
+                <div className="mt-3 flex gap-4">
+                  <div className="rounded-lg border border-border bg-surface px-4 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Texto</p>
+                    <p className="text-xl font-bold tabular-nums text-text mt-1">{storyBlocks.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-surface px-4 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Audio</p>
+                    <p className="text-xl font-bold tabular-nums text-text mt-1">{audioBlocks.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleGoToAction}
+                className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
+              >
+                <Wand2 className="h-3.5 w-3.5" />
+                Re-sincronizar
+              </button>
+              <button
+                onClick={handleAcceptExisting}
+                className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Aceitar e avancar
+              </button>
+            </div>
+          </div>
+        ) : view === 'preview' ? (
           <div className="flex flex-col gap-4">
             {syncStats && (
               <div className="flex gap-3 text-xs">

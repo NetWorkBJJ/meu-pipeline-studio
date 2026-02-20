@@ -11,8 +11,14 @@ interface ElectronAppAPI {
   loadProject: (path: string) => Promise<string>
   createCapCutProject: (name: string) => Promise<unknown>
   listCapCutProjects: () => Promise<unknown[]>
+  deleteCapCutProjects: (projectPaths: string[]) => Promise<{
+    totalRequested: number
+    totalDeleted: number
+    results: Array<{ path: string; success: boolean; error?: string }>
+  }>
 
   readCapCutDraft: (draftPath: string) => Promise<unknown>
+  loadFullProject: (draftPath: string) => Promise<unknown>
   writeTextSegments: (draftPath: string, blocks: unknown[]) => Promise<unknown>
   readAudioBlocks: (draftPath: string) => Promise<unknown[]>
   readSubtitles: (draftPath: string) => Promise<unknown[]>
@@ -73,6 +79,35 @@ interface ElectronAppAPI {
 
   onProgress: (callback: (event: unknown) => void) => () => void
   onProjectChanged: (callback: (event: unknown) => void) => () => void
+
+  // TTS generation
+  ttsGenerate: (params: {
+    text?: string
+    chunks?: string[]
+    voice?: string
+    style?: string
+    customStylePrompt?: string
+    ttsModel?: string
+    outputDir?: string
+    generateSrt?: boolean
+    maxWorkers?: number
+  }) => Promise<unknown>
+  ttsPreviewVoice: (params: {
+    voice: string
+    style?: string
+    sampleText?: string
+    ttsModel?: string
+  }) => Promise<unknown>
+  ttsListVoices: () => Promise<unknown>
+  ttsListStyles: () => Promise<unknown>
+
+  // TTS API key
+  ttsSaveApiKey: (apiKey: string) => Promise<unknown>
+  ttsHasApiKey: () => Promise<boolean>
+  ttsDeleteApiKey: () => Promise<unknown>
+
+  // TTS progress
+  onTtsProgress: (callback: (data: unknown) => void) => () => void
 }
 
 declare global {

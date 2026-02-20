@@ -180,3 +180,163 @@ def read_subtitles(draft_path: str) -> list:
             })
 
     return subtitles
+
+
+def load_full_project(draft_path: str) -> dict:
+    """Read a CapCut draft fully and return all data for app hydration.
+
+    Reads draft_content.json once and extracts audio segments, text segments,
+    video segments, track overview, and project summary.
+    """
+    path = Path(draft_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Draft not found: {draft_path}")
+
+    with open(path, "r", encoding="utf-8") as f:
+        draft = json.load(f)
+
+    canvas = draft.get("canvas_config", {})
+    duration_us = draft.get("duration", 0)
+    tracks_raw = draft.get("tracks", [])
+    materials = draft.get("materials", {})
+
+    # Build material maps for fast lookup
+    audio_mat_map = {m["id"]: m for m in materials.get("audios", []) if "id" in m}
+    video_mat_map = {m["id"]: m for m in materials.get("videos", []) if "id" in m}
+
+    text_mat_map = {}
+    for txt in materials.get("texts", []):
+        tid = txt.get("id", "")
+        if not tid:
+            continue
+        raw = txt.get("content", "")
+        try:
+            parsed = json.loads(raw)
+            text_mat_map[tid] = parsed.get("text", raw)
+        except (json.JSONDecodeError, TypeError):
+            text_mat_map[tid] = raw
+
+    # Iterate tracks once, collect everything
+    audio_segments = []
+    text_segments = []
+    video_segments = []
+    tracks_overview = []
+
+    for track_idx, track in enumerate(tracks_raw):
+        track_type = track.get("type", "unknown")
+        segs = track.get("segments", [])
+
+        # Track overview
+        track_max_end_us = 0
+        for seg in segs:
+            tr = seg.get("target_timerange", {})
+            seg_end = tr.get("start", 0) + tr.get("duration", 0)
+            if seg_end > track_max_end_us:
+                track_max_end_us = seg_end
+
+        tracks_overview.append({
+            "index": track_idx,
+            "type": track_type,
+            "id": track.get("id", ""),
+            "segment_count": len(segs),
+            "duration_ms": track_max_end_us / 1000,
+        })
+
+        # Audio segments
+        if track_type == "audio":
+            for seg in segs:
+                tr = seg.get("target_timerange", {})
+                start_us = tr.get("start", 0)
+                dur_us = tr.get("duration", 0)
+                mat_id = seg.get("material_id", "")
+                mat = audio_mat_map.get(mat_id, {})
+
+                audio_segments.append({
+                    "id": seg.get("id", ""),
+                    "material_id": mat_id,
+                    "start_ms": start_us / 1000,
+                    "end_ms": (start_us + dur_us) / 1000,
+                    "duration_ms": dur_us / 1000,
+                    "file_path": mat.get("path", ""),
+                    "tone_type": mat.get("tone_type", ""),
+                    "tone_platform": mat.get("tone_platform", ""),
+                    "track_index": track_idx,
+                })
+
+        # Text segments
+        elif track_type in ("text", "subtitle"):
+            for seg_idx, seg in enumerate(segs):
+                tr = seg.get("target_timerange", {})
+                start_us = tr.get("start", 0)
+                dur_us = tr.get("duration", 0)
+                mat_id = seg.get("material_id", "")
+                content = text_mat_map.get(mat_id, "")
+
+                text_segments.append({
+                    "index": len(text_segments),
+                    "track_idx": track_idx,
+                    "segment_idx": seg_idx,
+                    "segment_id": seg.get("id", ""),
+                    "material_id": mat_id,
+                    "text": content,
+                    "start_ms": start_us / 1000,
+                    "end_ms": (start_us + dur_us) / 1000,
+                    "duration_ms": dur_us / 1000,
+                })
+
+        # Video segments
+        elif track_type == "video":
+            for seg in segs:
+                tr = seg.get("target_timerange", {})
+                start_us = tr.get("start", 0)
+                dur_us = tr.get("duration", 0)
+                mat_id = seg.get("material_id", "")
+                mat = video_mat_map.get(mat_id, {})
+
+                # Detect media type from material or file extension
+                mat_type = mat.get("type", "")
+                file_path = mat.get("path", "")
+                if mat_type == "photo" or file_path.lower().endswith(
+                    (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+                ):
+                    media_type = "photo"
+                else:
+                    media_type = "video"
+
+                video_segments.append({
+                    "id": seg.get("id", ""),
+                    "material_id": mat_id,
+                    "start_ms": start_us / 1000,
+                    "end_ms": (start_us + dur_us) / 1000,
+                    "duration_ms": dur_us / 1000,
+                    "file_path": file_path,
+                    "width": mat.get("width", 0),
+                    "height": mat.get("height", 0),
+                    "media_type": media_type,
+                    "track_index": track_idx,
+                })
+
+    # Sort by start time
+    audio_segments.sort(key=lambda s: s["start_ms"])
+    text_segments.sort(key=lambda s: s["start_ms"])
+    video_segments.sort(key=lambda s: s["start_ms"])
+
+    return {
+        "summary": {
+            "name": draft.get("name", ""),
+            "duration_ms": duration_us / 1000,
+            "canvas_config": {
+                "width": canvas.get("width", 0),
+                "height": canvas.get("height", 0),
+                "ratio": canvas.get("ratio", ""),
+            },
+            "track_count": len(tracks_raw),
+            "audio_material_count": len(materials.get("audios", [])),
+            "text_material_count": len(materials.get("texts", [])),
+            "video_material_count": len(materials.get("videos", [])),
+        },
+        "audio_segments": audio_segments,
+        "text_segments": text_segments,
+        "video_segments": video_segments,
+        "tracks": tracks_overview,
+    }

@@ -35,6 +35,40 @@ export interface Scene {
   blockIds: string[]
 }
 
+export interface VideoSegment {
+  id: string
+  index: number
+  materialId: string
+  filePath: string
+  startMs: number
+  endMs: number
+  durationMs: number
+  width: number
+  height: number
+  mediaType: 'video' | 'photo'
+  trackIndex: number
+}
+
+export interface TrackInfo {
+  index: number
+  type: string
+  id: string
+  segmentCount: number
+  durationMs: number
+}
+
+export interface ProjectSummary {
+  name: string
+  durationMs: number
+  canvasWidth: number
+  canvasHeight: number
+  canvasRatio: string
+  trackCount: number
+  audioMaterialCount: number
+  textMaterialCount: number
+  videoMaterialCount: number
+}
+
 export interface Character {
   id: string
   name: string

@@ -3,17 +3,20 @@ import { create } from 'zustand'
 interface StageState {
   currentStage: number
   completedStages: Set<number>
+  freeNavigation: boolean
 
   setCurrentStage: (stage: number) => void
   completeStage: (stage: number) => void
   invalidateFrom: (stage: number) => void
   canNavigateTo: (stage: number) => boolean
+  setFreeNavigation: (free: boolean) => void
   reset: () => void
 }
 
 export const useStageStore = create<StageState>((set, get) => ({
   currentStage: 1,
   completedStages: new Set<number>(),
+  freeNavigation: false,
 
   setCurrentStage: (stage): void => {
     const { canNavigateTo } = get()
@@ -39,9 +42,12 @@ export const useStageStore = create<StageState>((set, get) => ({
     }),
 
   canNavigateTo: (stage): boolean => {
+    if (get().freeNavigation) return true
     if (stage === 1) return true
     return get().completedStages.has(stage - 1)
   },
 
-  reset: (): void => set({ currentStage: 1, completedStages: new Set<number>() })
+  setFreeNavigation: (free): void => set({ freeNavigation: free }),
+
+  reset: (): void => set({ currentStage: 1, completedStages: new Set<number>(), freeNavigation: false })
 }))

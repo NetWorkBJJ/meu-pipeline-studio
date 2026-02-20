@@ -5,10 +5,12 @@ import { useUIStore } from '@/stores/useUIStore'
 import { TimelineRuler } from './TimelineRuler'
 import { TimelineTrack } from './TimelineTrack'
 
+// CapCut native track colors
 const TRACK_COLORS = {
-  text: '#60A5FA',
-  video: '#22C55E',
-  audio: '#F59E0B'
+  text: '#9c4937',
+  video: '#175d62',
+  audio: '#0e3058',
+  scene: '#22C55E'
 }
 
 const DEFAULT_ZOOM = 20
@@ -18,7 +20,7 @@ const MAX_ZOOM = 200
 export function TimelinePanel(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const { storyBlocks, audioBlocks, scenes } = useProjectStore()
+  const { storyBlocks, audioBlocks, scenes, videoSegments: capCutVideos } = useProjectStore()
   const {
     timelineOpen,
     timelineZoom,
@@ -28,16 +30,21 @@ export function TimelinePanel(): React.JSX.Element {
     setSelectedSegment
   } = useUIStore()
 
-  const hasData = storyBlocks.length > 0 || audioBlocks.length > 0 || scenes.length > 0
+  const hasData =
+    storyBlocks.length > 0 ||
+    audioBlocks.length > 0 ||
+    scenes.length > 0 ||
+    capCutVideos.length > 0
 
   const totalDurationMs = useMemo(() => {
     return Math.max(
       storyBlocks.length > 0 ? Math.max(...storyBlocks.map((b) => b.endMs)) : 0,
       audioBlocks.length > 0 ? Math.max(...audioBlocks.map((b) => b.endMs)) : 0,
       scenes.length > 0 ? Math.max(...scenes.map((s) => s.endMs)) : 0,
+      capCutVideos.length > 0 ? Math.max(...capCutVideos.map((v) => v.endMs)) : 0,
       1000
     )
-  }, [storyBlocks, audioBlocks, scenes])
+  }, [storyBlocks, audioBlocks, scenes, capCutVideos])
 
   const totalWidthPx = (totalDurationMs / 1000) * timelineZoom
 
@@ -52,7 +59,7 @@ export function TimelinePanel(): React.JSX.Element {
     [storyBlocks]
   )
 
-  const videoSegments = useMemo(
+  const sceneSegments = useMemo(
     () =>
       scenes.map((s) => ({
         id: s.id,
@@ -61,6 +68,17 @@ export function TimelinePanel(): React.JSX.Element {
         label: s.description || s.mediaKeyword
       })),
     [scenes]
+  )
+
+  const capCutVideoSegments = useMemo(
+    () =>
+      capCutVideos.map((v) => ({
+        id: v.id,
+        startMs: v.startMs,
+        durationMs: v.durationMs,
+        label: v.filePath.split(/[/\\]/).pop() || `Video ${v.index}`
+      })),
+    [capCutVideos]
   )
 
   const audioSegments = useMemo(
@@ -76,7 +94,8 @@ export function TimelinePanel(): React.JSX.Element {
 
   const trackCount =
     (textSegments.length > 0 ? 1 : 0) +
-    (videoSegments.length > 0 ? 1 : 0) +
+    (capCutVideoSegments.length > 0 ? 1 : 0) +
+    (sceneSegments.length > 0 ? 1 : 0) +
     (audioSegments.length > 0 ? 1 : 0)
 
   const handleZoomIn = useCallback((): void => {
@@ -234,12 +253,24 @@ export function TimelinePanel(): React.JSX.Element {
                     onSelectSegment={setSelectedSegment}
                   />
                 )}
-                {videoSegments.length > 0 && (
+                {capCutVideoSegments.length > 0 && (
                   <TimelineTrack
-                    label="Video"
+                    label="Video (CapCut)"
                     type="video"
-                    segments={videoSegments}
+                    segments={capCutVideoSegments}
                     color={TRACK_COLORS.video}
+                    totalWidthPx={totalWidthPx}
+                    pixelsPerSecond={timelineZoom}
+                    selectedSegmentId={selectedSegmentId}
+                    onSelectSegment={setSelectedSegment}
+                  />
+                )}
+                {sceneSegments.length > 0 && (
+                  <TimelineTrack
+                    label="Cenas"
+                    type="video"
+                    segments={sceneSegments}
+                    color={TRACK_COLORS.scene}
                     totalWidthPx={totalWidthPx}
                     pixelsPerSecond={timelineZoom}
                     selectedSegmentId={selectedSegmentId}

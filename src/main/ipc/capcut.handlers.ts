@@ -7,6 +7,10 @@ export function registerCapCutHandlers(): void {
     return callPython('read_draft', { draft_path: draftPath })
   })
 
+  ipcMain.handle('capcut:load-full-project', async (_event, draftPath: string) => {
+    return callPython('load_full_project', { draft_path: draftPath })
+  })
+
   ipcMain.handle(
     'capcut:write-text-segments',
     async (_event, draftPath: string, blocks: unknown[]) => {

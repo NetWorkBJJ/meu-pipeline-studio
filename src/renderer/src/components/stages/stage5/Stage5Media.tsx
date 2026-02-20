@@ -1,17 +1,26 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { FolderOpen, Loader2, Image } from 'lucide-react'
+import { FolderOpen, Loader2, Image, Film, CheckCircle2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { msToDisplay } from '@/lib/time'
 
 export function Stage5Media(): React.JSX.Element {
-  const { scenes, setScenes, capCutDraftPath, mediaPreset } = useProjectStore()
+  const scenes = useProjectStore((s) => s.scenes)
+  const videoSegments = useProjectStore((s) => s.videoSegments)
+  const projectLoaded = useProjectStore((s) => s.projectLoaded)
+  const capCutDraftPath = useProjectStore((s) => s.capCutDraftPath)
+  const mediaPreset = useProjectStore((s) => s.mediaPreset)
+  const { setScenes } = useProjectStore()
   const { completeStage } = useStageStore()
+  const completedStages = useStageStore((s) => s.completedStages)
   const { addToast } = useUIStore()
   const [batchLoading, setBatchLoading] = useState(false)
   const [imageDuration, setImageDuration] = useState(mediaPreset.defaultDurationMs / 1000)
+
+  const hasExistingMedia = projectLoaded && videoSegments.length > 0
+  const stageAlreadyComplete = completedStages.has(5)
 
   const handleSelectMedia = async (sceneId: string): Promise<void> => {
     try {
@@ -99,6 +108,38 @@ export function Stage5Media(): React.JSX.Element {
           </button>
         )}
       </div>
+
+      {/* Existing media from CapCut */}
+      {hasExistingMedia && !stageAlreadyComplete && scenes.length === 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+            <Film className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-text">
+                {videoSegments.length} midias ja existem no projeto
+              </h3>
+              <p className="mt-1 text-xs text-text-muted">
+                {videoSegments.filter((v) => v.mediaType === 'video').length} videos,{' '}
+                {videoSegments.filter((v) => v.mediaType === 'photo').length} fotos na timeline.
+                Voce pode aceitar ou importar novas midias.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              completeStage(5)
+              addToast({
+                type: 'success',
+                message: `${videoSegments.length} midias existentes aceitas.`
+              })
+            }}
+            className="flex w-fit items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Manter midias existentes
+          </button>
+        </div>
+      )}
 
       {/* Batch import section */}
       <div className="rounded-lg border border-border bg-surface p-4 shadow-surface">

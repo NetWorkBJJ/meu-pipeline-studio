@@ -266,8 +266,43 @@ def get_project_health(params):
     return _health(params["project_path"])
 
 
+# ---------------------------------------------------------------------------
+# TTS methods
+# ---------------------------------------------------------------------------
+
+def tts_generate(params):
+    """Generate TTS audio from text using Google Gemini."""
+    from tts_generator import generate_tts
+    return generate_tts(params)
+
+
+def tts_preview_voice(params):
+    """Generate a short voice preview."""
+    from tts_generator import preview_voice
+    return preview_voice(params)
+
+
+def tts_list_voices(params):
+    """List available Gemini TTS voices."""
+    from tts_generator import list_voices
+    return list_voices(params)
+
+
+def tts_list_styles(params):
+    """List available narration styles."""
+    from tts_generator import list_narration_styles
+    return list_narration_styles(params)
+
+
+def load_full_project(params):
+    """Load full project data for app hydration."""
+    from capcut_reader import load_full_project as _load
+    return _load(params["draft_path"])
+
+
 METHODS = {
     "read_draft": read_draft,
+    "load_full_project": load_full_project,
     "read_audio_blocks": read_audio_blocks,
     "read_subtitles": read_subtitles,
     "update_subtitle_texts": update_subtitle_texts,
@@ -296,6 +331,11 @@ METHODS = {
     "diagnose_root_meta": diagnose_root_meta,
     "check_capcut_running": check_capcut_running,
     "get_project_health": get_project_health,
+    # TTS methods
+    "tts_generate": tts_generate,
+    "tts_preview_voice": tts_preview_voice,
+    "tts_list_voices": tts_list_voices,
+    "tts_list_styles": tts_list_styles,
 }
 
 
@@ -337,6 +377,7 @@ def main():
             }
         else:
             try:
+                params["_request_id"] = request_id
                 result = METHODS[method_name](params)
                 elapsed_ms = int((time.time() - start_time) * 1000)
                 log.info(

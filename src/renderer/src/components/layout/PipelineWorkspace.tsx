@@ -1,8 +1,9 @@
 import { useEffect, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { RefreshCw, X } from 'lucide-react'
+import { RefreshCw, X, Loader2 } from 'lucide-react'
 import { TopBar } from './TopBar'
 import { StageProgress } from './StageProgress'
+import { ProjectSummaryBar } from './ProjectSummaryBar'
 import { TimelinePanel } from '../timeline/TimelinePanel'
 import { StatusBar } from './StatusBar'
 import { useStageStore } from '@/stores/useStageStore'
@@ -39,7 +40,8 @@ function StageContent(): React.JSX.Element {
 export function PipelineWorkspace(): React.JSX.Element {
   const { currentStage } = useStageStore()
   const { capCutDraftPath } = useProjectStore()
-  const { setCurrentView, externalChange, setExternalChange } = useUIStore()
+  const projectLoaded = useProjectStore((s) => s.projectLoaded)
+  const { setCurrentView, externalChange, setExternalChange, addToast } = useUIStore()
 
   // Start/stop file watcher when draft path changes
   useEffect(() => {
@@ -49,6 +51,11 @@ export function PipelineWorkspace(): React.JSX.Element {
     }
 
     window.api.watchDraft(capCutDraftPath)
+
+    // Fallback: if project not loaded yet (e.g. page reload), trigger load
+    if (!useProjectStore.getState().projectLoaded) {
+      useProjectStore.getState().loadFullProject(capCutDraftPath).catch(() => {})
+    }
 
     return () => {
       window.api.unwatchDraft()
@@ -77,44 +84,20 @@ export function PipelineWorkspace(): React.JSX.Element {
     if (!capCutDraftPath) return
 
     try {
-      // Re-read audio blocks and subtitles from CapCut
-      const [audioBlocks, subtitles] = await Promise.all([
-        window.api.readAudioBlocks(capCutDraftPath),
-        window.api.readSubtitles(capCutDraftPath)
-      ])
-
-      const { setAudioBlocks } = useProjectStore.getState()
-      const mapped = (audioBlocks as Array<Record<string, unknown>>).map((a, i) => ({
-        id: (a.segment_id as string) || crypto.randomUUID(),
-        index: i,
-        filePath: (a.file_path as string) || '',
-        startMs: (a.start_ms as number) || 0,
-        endMs: (a.end_ms as number) || 0,
-        durationMs: (a.duration_ms as number) || 0,
-        linkedBlockId: null,
-        source: 'capcut' as const,
-        textMaterialId: null,
-        textSegmentId: null
-      }))
-      setAudioBlocks(mapped)
-
-      const { addToast } = useUIStore.getState()
-      addToast({
-        type: 'info',
-        message: `Recarregado: ${mapped.length} audios, ${(subtitles as unknown[]).length} legendas.`
-      })
+      await useProjectStore.getState().loadFullProject(capCutDraftPath)
+      addToast({ type: 'info', message: 'Projeto recarregado.' })
     } catch {
-      const { addToast } = useUIStore.getState()
       addToast({ type: 'error', message: 'Erro ao recarregar dados do CapCut.' })
     }
 
     setExternalChange(null)
-  }, [capCutDraftPath, setExternalChange])
+  }, [capCutDraftPath, setExternalChange, addToast])
 
   return (
     <div className="flex h-full flex-col bg-bg">
       <TopBar />
       <StageProgress />
+      <ProjectSummaryBar />
 
       {/* External change banner */}
       {externalChange && (
@@ -147,19 +130,31 @@ export function PipelineWorkspace(): React.JSX.Element {
         </motion.div>
       )}
 
-      <main className="flex-1 overflow-auto p-6">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentStage}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
-          >
-            <StageContent />
-          </motion.div>
-        </AnimatePresence>
-      </main>
+      {/* Loading state */}
+      {!projectLoaded && capCutDraftPath && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="mr-3 h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm text-text-muted">Carregando projeto...</span>
+        </div>
+      )}
+
+      {/* Main content - only show when loaded or no draft path */}
+      {(projectLoaded || !capCutDraftPath) && (
+        <main className="flex-1 overflow-auto p-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentStage}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+            >
+              <StageContent />
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      )}
+
       <TimelinePanel />
       <StatusBar />
     </div>

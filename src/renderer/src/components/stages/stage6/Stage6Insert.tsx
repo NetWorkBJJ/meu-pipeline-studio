@@ -12,7 +12,7 @@ interface InsertLog {
   detail?: string
 }
 
-interface TrackInfo {
+interface AnalysisTrackInfo {
   index: number
   type: string
   segments: number
@@ -23,32 +23,37 @@ interface TrackInfo {
 export function Stage6Insert(): React.JSX.Element {
   const [status, setStatus] = useState<InsertStatus>('idle')
   const [logs, setLogs] = useState<InsertLog[]>([])
-  const [existingTracks, setExistingTracks] = useState<TrackInfo[]>([])
+  const [existingTracks, setExistingTracks] = useState<AnalysisTrackInfo[]>([])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const { storyBlocks, scenes, capCutDraftPath, updateStoryBlock } = useProjectStore()
+  const storyBlocks = useProjectStore((s) => s.storyBlocks)
+  const scenes = useProjectStore((s) => s.scenes)
+  const capCutDraftPath = useProjectStore((s) => s.capCutDraftPath)
+  const trackOverview = useProjectStore((s) => s.trackOverview)
+  const { updateStoryBlock } = useProjectStore()
   const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
 
-  const existingTextCount = existingTracks
-    .filter((t) => t.type === 'text')
-    .reduce((sum, t) => sum + t.segments, 0)
-  const existingVideoCount = existingTracks
-    .filter((t) => t.type === 'video')
-    .reduce((sum, t) => sum + t.segments, 0)
-  const hasExistingContent = existingTextCount > 0 || existingVideoCount > 0
+  // Use store track data if available, otherwise use analyzed tracks
+  const textCount = existingTracks.length > 0
+    ? existingTracks.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segments, 0)
+    : trackOverview.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segmentCount, 0)
+  const videoCount = existingTracks.length > 0
+    ? existingTracks.filter((t) => t.type === 'video').reduce((sum, t) => sum + t.segments, 0)
+    : trackOverview.filter((t) => t.type === 'video').reduce((sum, t) => sum + t.segmentCount, 0)
+  const hasExistingContent = textCount > 0 || videoCount > 0
 
   useEffect(() => {
-    if (capCutDraftPath) {
+    if (capCutDraftPath && trackOverview.length === 0) {
       analyzeExisting()
     }
-  }, [capCutDraftPath])
+  }, [capCutDraftPath, trackOverview.length])
 
   const analyzeExisting = async (): Promise<void> => {
     if (!capCutDraftPath) return
     setIsAnalyzing(true)
     try {
       const result = (await window.api.analyzeProject(capCutDraftPath)) as {
-        tracks: TrackInfo[]
+        tracks: AnalysisTrackInfo[]
       }
       setExistingTracks(result.tracks)
     } catch {
@@ -84,7 +89,7 @@ export function Stage6Insert(): React.JSX.Element {
 
       // Step 2: Clear existing content if needed
       if (hasExistingContent) {
-        if (existingTextCount > 0) {
+        if (textCount > 0) {
           addLog('Limpando legendas anteriores...', 'running')
           const clearResult = (await window.api.clearTextSegments(capCutDraftPath)) as {
             removed_segments: number
@@ -95,7 +100,7 @@ export function Stage6Insert(): React.JSX.Element {
             `${clearResult.removed_segments} removidas`
           )
         }
-        if (existingVideoCount > 0) {
+        if (videoCount > 0) {
           addLog('Limpando midias anteriores...', 'running')
           const clearResult = (await window.api.clearVideoSegments(capCutDraftPath)) as {
             removed_segments: number
@@ -158,8 +163,13 @@ export function Stage6Insert(): React.JSX.Element {
       completeStage(6)
       addToast({ type: 'success', message: 'Insercao concluida! Abra o projeto no CapCut.' })
 
-      // Refresh analysis
-      await analyzeExisting()
+      // Re-load full project to refresh all store data
+      try {
+        await useProjectStore.getState().loadFullProject(capCutDraftPath)
+      } catch {
+        // Fallback to analyze
+        await analyzeExisting()
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido'
       addLog('Erro', 'error', message)
@@ -208,9 +218,9 @@ export function Stage6Insert(): React.JSX.Element {
           <div className="text-xs text-yellow-500">
             <p className="font-medium">Conteudo existente detectado na timeline:</p>
             <p className="mt-1">
-              {existingTextCount > 0 && `${existingTextCount} legendas`}
-              {existingTextCount > 0 && existingVideoCount > 0 && ' + '}
-              {existingVideoCount > 0 && `${existingVideoCount} midias`}
+              {textCount > 0 && `${textCount} legendas`}
+              {textCount > 0 && videoCount > 0 && ' + '}
+              {videoCount > 0 && `${videoCount} midias`}
             </p>
             <p className="mt-1 text-yellow-500/70">
               O conteudo anterior sera removido automaticamente antes da nova insercao.
