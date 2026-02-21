@@ -1,19 +1,21 @@
 import { Home, Settings, ChevronRight } from 'lucide-react'
+import { CapCutIcon } from '@/components/shared/CapCutIcon'
 import { motion } from 'framer-motion'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 
-function extractProjectName(path: string | null): string {
+function extractProjectFolder(path: string | null): string {
   if (!path) return 'Sem projeto'
-  const parts = path.replace(/\\/g, '/').split('/')
-  return parts[parts.length - 1] || parts[parts.length - 2] || 'Projeto'
+  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
+  // Return parent folder (project ID), not the filename (draft_content.json)
+  return parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1] || 'Projeto'
 }
 
 export function TopBar(): React.JSX.Element {
-  const { capCutDraftPath, resetProject } = useProjectStore()
-  const { setCurrentView, setSettingsOpen } = useUIStore()
+  const { capCutDraftPath, projectSummary, resetProject } = useProjectStore()
+  const { setCurrentView, setSettingsOpen, addToast } = useUIStore()
   const { reset } = useStageStore()
   const { activeWorkspace } = useWorkspaceStore()
 
@@ -46,21 +48,38 @@ export function TopBar(): React.JSX.Element {
             </>
           )}
           <span className="font-medium text-text" title={capCutDraftPath || undefined}>
-            {extractProjectName(capCutDraftPath)}
+            {projectSummary?.name || extractProjectFolder(capCutDraftPath)}
           </span>
         </div>
       </div>
 
-      <motion.button
-        type="button"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setSettingsOpen(true)}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
-        title="Configuracoes"
-      >
-        <Settings className="h-4 w-4" />
-      </motion.button>
+      <div className="flex items-center gap-1">
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={async () => {
+            const result = await window.api.openCapCut()
+            if (!result.success) {
+              addToast({ type: 'error', message: result.error || 'Erro ao abrir CapCut.' })
+            }
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+          title="Abrir CapCut"
+        >
+          <CapCutIcon className="h-4 w-4" />
+        </motion.button>
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setSettingsOpen(true)}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+          title="Configuracoes"
+        >
+          <Settings className="h-4 w-4" />
+        </motion.button>
+      </div>
     </div>
   )
 }

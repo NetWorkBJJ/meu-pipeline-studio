@@ -7,7 +7,17 @@
       "Bash(dir:*)",
       "Bash(npm run build:*)",
       "Bash(npm run lint:*)",
-      "Bash(npx prettier:*)"
+      "Bash(npx prettier:*)",
+      "Bash(pip install:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:www.capcut.com)",
+      "Bash(# Find .js files in CapCut installation \\(top-level and Resources\\) find \"\"/c/Users/ander/AppData/Local/CapCut/8.1.1.3417/Resources/\"\" -name \"\"*.js\"\" -type f)",
+      "Bash(# Find .json files in Resources find \"\"/c/Users/ander/AppData/Local/CapCut/8.1.1.3417/Resources/\"\" -name \"\"*.json\"\" -type f)",
+      "Bash(# Find .db and .sqlite files across all CapCut directories find \"\"/c/Users/ander/AppData/Local/CapCut/\"\" -name \"\"*.db\"\" -o -name \"\"*.sqlite\"\" -o -name \"\"*.sqlite3\"\")",
+      "Bash(python -c:*)",
+      "WebFetch(domain:docs.byteplus.com)",
+      "Bash(xargs:*)"
     ]
   }
 }

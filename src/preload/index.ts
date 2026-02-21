@@ -59,6 +59,9 @@ const api = {
   loopAudio: (params: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke('capcut:loop-audio', params),
 
+  openCapCut: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('project:open-capcut'),
+
   selectFiles: (filters: FileFilter[]): Promise<string[]> =>
     ipcRenderer.invoke('file:select-files', filters),
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('file:select-directory'),

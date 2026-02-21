@@ -40,6 +40,8 @@ interface ElectronAppAPI {
   loopVideo: (params: Record<string, unknown>) => Promise<unknown>
   loopAudio: (params: Record<string, unknown>) => Promise<unknown>
 
+  openCapCut: () => Promise<{ success: boolean; error?: string }>
+
   selectFiles: (filters: FileFilter[]) => Promise<string[]>
   selectDirectory: () => Promise<string | null>
 

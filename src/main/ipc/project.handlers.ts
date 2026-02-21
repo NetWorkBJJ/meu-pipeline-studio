@@ -1,6 +1,8 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, shell } from 'electron'
 import { readFile, writeFile, rm, stat } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join } from 'path'
+import { homedir } from 'os'
 import { callPython } from '../python/bridge'
 import { watchDraft, unwatchDraft, isWatching } from './draft-watcher'
 
@@ -107,4 +109,20 @@ export function registerProjectHandlers(): void {
       }
     }
   )
+
+  ipcMain.handle('project:open-capcut', async () => {
+    const home = homedir()
+    const directPath = join(home, 'AppData/Local/CapCut/CapCut.exe')
+
+    if (existsSync(directPath)) {
+      const error = await shell.openPath(directPath)
+      if (error) return { success: false, error }
+      return { success: true }
+    }
+
+    return {
+      success: false,
+      error: 'CapCut.exe nao encontrado. Verifique se o CapCut esta instalado.'
+    }
+  })
 }

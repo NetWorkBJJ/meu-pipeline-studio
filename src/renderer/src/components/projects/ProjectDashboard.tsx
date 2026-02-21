@@ -16,6 +16,7 @@ import {
   X,
   Link
 } from 'lucide-react'
+import { CapCutIcon } from '@/components/shared/CapCutIcon'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -401,16 +402,33 @@ export function ProjectDashboard(): React.JSX.Element {
             )}
           </div>
         </div>
-        <motion.button
-          type="button"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setSettingsOpen(true)}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
-          title="Configuracoes"
-        >
-          <Settings className="h-4 w-4" />
-        </motion.button>
+        <div className="flex items-center gap-1">
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={async () => {
+              const result = await window.api.openCapCut()
+              if (!result.success) {
+                addToast({ type: 'error', message: result.error || 'Erro ao abrir CapCut.' })
+              }
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+            title="Abrir CapCut"
+          >
+            <CapCutIcon className="h-4 w-4" />
+          </motion.button>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setSettingsOpen(true)}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+            title="Configuracoes"
+          >
+            <Settings className="h-4 w-4" />
+          </motion.button>
+        </div>
       </div>
 
       {/* Action bar */}

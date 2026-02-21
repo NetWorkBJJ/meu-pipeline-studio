@@ -81,7 +81,7 @@ def read_audio_blocks(draft_path: str) -> list:
     """Read audio segments from the draft and return as blocks.
 
     Each block contains: id, material_id, start_ms, end_ms, duration_ms,
-    file_path, tone_type, tone_platform.
+    file_path, tone_type, tone_platform, track_index.
     """
     path = Path(draft_path)
     if not path.exists():
@@ -98,7 +98,7 @@ def read_audio_blocks(draft_path: str) -> list:
         audio_materials_map[m["id"]] = m
 
     blocks = []
-    for track in tracks:
+    for track_idx, track in enumerate(tracks):
         if track.get("type") != "audio":
             continue
         for seg in track.get("segments", []):
@@ -117,6 +117,7 @@ def read_audio_blocks(draft_path: str) -> list:
                 "file_path": mat.get("path", ""),
                 "tone_type": mat.get("tone_type", ""),
                 "tone_platform": mat.get("tone_platform", ""),
+                "track_index": track_idx,
             })
 
     blocks.sort(key=lambda b: b["start_ms"])

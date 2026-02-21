@@ -64,3 +64,13 @@ Key fields: `caption_info`, `cartoon`, `clip`, `common_keyframes`, `enable_adjus
 - Read-then-edit can fail if another agent modifies between operations
 - Use specific, unique search strings in Edit to avoid ambiguity
 - May need multiple read attempts before successful edit
+
+## capcut_tts.py Voice System
+- `VOICE_NAMES` dict: 254 voices (251 SAMI + 3 ElevenLabs), 33 languages, 37 tags
+- Voice ID patterns: `BV{NNN}_streaming`, `BV{NNN}_V2_streaming`, `jp_{NNN}_streaming`, `ICL_en_{gender}_{name}`, `VOV{NNN}_bytesing3_{suffix}`
+- ElevenLabs IDs are raw strings (not BV-prefixed)
+- Discovery generates ~1447 candidate IDs, tests with ThreadPoolExecutor(max_workers=10)
+- Cache: JSON file with version + discovered_at + voices[], 7-day TTL
+- `_try_catalog_endpoints` tries 5 CapCut API endpoints before falling back to BV scan
+- `_test_voice_id` uses WebSocket with 5s timeout, sends text "a" to validate
+- main_bridge.py has 31+ methods in METHODS dict, CapCut TTS uses `capcut_tts_` prefix

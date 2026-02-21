@@ -67,7 +67,6 @@ export function registerTtsHandlers(): void {
         throw new Error('Google API key not configured. Set it in Settings > TTS.')
       }
 
-      // Create output directory if not provided
       let outputDir = params.outputDir
       if (!outputDir) {
         const baseDir = join(app.getPath('appData'), 'meu-pipeline-studio', 'tts-output')

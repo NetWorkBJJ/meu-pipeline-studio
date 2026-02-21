@@ -158,6 +158,18 @@ interface RawFullProjectResponse {
   }>
 }
 
+interface RawAudioBlock {
+  id: string
+  material_id: string
+  start_ms: number
+  end_ms: number
+  duration_ms: number
+  file_path: string
+  tone_type: string
+  tone_platform: string
+  track_index: number
+}
+
 interface ProjectState {
   capCutDraftPath: string | null
   rawScript: string
@@ -190,6 +202,7 @@ interface ProjectState {
   setTtsDefaults: (defaults: TtsDefaults) => void
   addRecentProject: (project: RecentProject) => void
   removeRecentProject: (path: string) => void
+  reloadAudioBlocks: (draftPath: string) => Promise<void>
   fetchCapCutProjects: () => Promise<void>
   resetProject: () => void
 }
@@ -358,6 +371,20 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => ({
           recentProjects: state.recentProjects.filter((p) => p.path !== path)
         }))
+      },
+      reloadAudioBlocks: async (draftPath) => {
+        const raw = (await window.api.readAudioBlocks(draftPath)) as RawAudioBlock[]
+        const audioBlocks: AudioBlock[] = raw.map((seg, i) => ({
+          id: seg.id || crypto.randomUUID(),
+          index: i + 1,
+          filePath: seg.file_path,
+          startMs: seg.start_ms,
+          endMs: seg.end_ms,
+          durationMs: seg.duration_ms,
+          linkedBlockId: null,
+          source: 'capcut' as const
+        }))
+        set({ audioBlocks })
       },
       fetchCapCutProjects: async () => {
         set({ capCutProjectsLoading: true })

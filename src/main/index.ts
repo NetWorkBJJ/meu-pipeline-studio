@@ -4,8 +4,10 @@ import icon from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
 
+let mainWindow: BrowserWindow | null = null
+
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
@@ -21,7 +23,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow!.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
