@@ -1,36 +1,48 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Film, CheckCircle2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { autoGroupScenes } from '@/lib/sceneGrouper'
 import { msToDisplay } from '@/lib/time'
-import { SceneList } from './SceneList'
+import { DirectorStepper } from './DirectorStepper'
+import type { DirectorStep } from './DirectorStepper'
+import { DirectorConfigPanel } from './DirectorConfigPanel'
+import { ScenePlannerPanel } from './ScenePlannerPanel'
+import { PromptStudio } from './PromptStudio'
+import { MediaImporter } from './MediaImporter'
+
+const STEP_ANIMATION = {
+  initial: { opacity: 0, x: 20 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -20 },
+  transition: { duration: 0.2 }
+}
 
 export function Stage4Director(): React.JSX.Element {
-  const [blocksPerScene, setBlocksPerScene] = useState(3)
-  const storyBlocks = useProjectStore((s) => s.storyBlocks)
-  const scenes = useProjectStore((s) => s.scenes)
+  const [currentStep, setCurrentStep] = useState<DirectorStep>(0)
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set())
+
   const videoSegments = useProjectStore((s) => s.videoSegments)
+  const scenes = useProjectStore((s) => s.scenes)
   const projectLoaded = useProjectStore((s) => s.projectLoaded)
-  const { setScenes } = useProjectStore()
-  const { completeStage } = useStageStore()
   const completedStages = useStageStore((s) => s.completedStages)
+  const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
 
   const hasExistingVideos = projectLoaded && videoSegments.length > 0
   const stageAlreadyComplete = completedStages.has(4)
 
-  const handleAutoGroup = (): void => {
-    if (storyBlocks.length === 0) {
-      addToast({ type: 'warning', message: 'Nenhum bloco de texto disponivel.' })
-      return
+  const handleCompleteStep = useCallback((step: DirectorStep) => {
+    setCompletedSteps((prev) => {
+      const next = new Set(prev)
+      next.add(step)
+      return next
+    })
+    if (step < 3) {
+      setCurrentStep((step + 1) as DirectorStep)
     }
-
-    const grouped = autoGroupScenes(storyBlocks, blocksPerScene)
-    setScenes(grouped)
-    addToast({ type: 'success', message: `${grouped.length} cenas criadas.` })
-  }
+  }, [])
 
   const handleSkipWithVideos = (): void => {
     completeStage(4)
@@ -40,30 +52,16 @@ export function Stage4Director(): React.JSX.Element {
     })
   }
 
-  const handleUpdateScene = (id: string, field: string, value: string): void => {
-    const updated = scenes.map((s) => (s.id === id ? { ...s, [field]: value } : s))
-    setScenes(updated)
-  }
-
-  const handleConfirm = (): void => {
-    if (scenes.length === 0) {
-      addToast({ type: 'warning', message: 'Crie pelo menos uma cena antes de confirmar.' })
-      return
-    }
-    completeStage(4)
-    addToast({ type: 'success', message: 'Etapa 4 concluida. Avance para Midias.' })
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div>
         <h3 className="text-sm font-medium text-text">Direcao de Cenas</h3>
         <p className="text-xs text-text-muted mt-1">
-          Agrupe os blocos de texto em cenas e defina o tipo de midia para cada uma.
+          Configure, planeje cenas, gere prompts e importe midias.
         </p>
       </div>
 
-      {/* Show existing video segments from CapCut */}
+      {/* Existing videos shortcut */}
       {hasExistingVideos && !stageAlreadyComplete && scenes.length === 0 && (
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
@@ -85,7 +83,9 @@ export function Stage4Director(): React.JSX.Element {
                         <td className="max-w-0 truncate px-2 py-1.5 font-mono text-text-muted">
                           {v.filePath.split(/[/\\]/).pop() || 'Video'}
                         </td>
-                        <td className="w-14 px-2 py-1.5 text-right text-text-muted">{v.mediaType}</td>
+                        <td className="w-14 px-2 py-1.5 text-right text-text-muted">
+                          {v.mediaType}
+                        </td>
                         <td className="w-16 px-2 py-1.5 text-right font-mono text-text-muted">
                           {msToDisplay(v.durationMs)}
                         </td>
@@ -115,41 +115,36 @@ export function Stage4Director(): React.JSX.Element {
         </div>
       )}
 
-      <div className="flex items-center gap-3">
-        <label className="text-xs text-text-muted">Blocos por cena:</label>
-        <input
-          type="number"
-          min={1}
-          max={10}
-          value={blocksPerScene}
-          onChange={(e) => setBlocksPerScene(Math.max(1, parseInt(e.target.value) || 1))}
-          className="w-16 rounded-md border border-border bg-bg px-2 py-1.5 text-sm tabular-nums text-text transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-        />
-        <button
-          onClick={handleAutoGroup}
-          disabled={storyBlocks.length === 0}
-          className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Agrupar automaticamente
-        </button>
-      </div>
+      {/* Director Stepper */}
+      <DirectorStepper
+        currentStep={currentStep}
+        completedSteps={completedSteps}
+        onStepClick={setCurrentStep}
+      />
 
-      {scenes.length > 0 && (
-        <>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">{scenes.length} cenas</span>
-            <button
-              onClick={handleConfirm}
-              className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
-            >
-              Confirmar cenas
-            </button>
-          </div>
-          <div className="overflow-auto max-h-[calc(100vh-320px)]">
-            <SceneList scenes={scenes} onUpdateScene={handleUpdateScene} />
-          </div>
-        </>
-      )}
+      {/* Step content */}
+      <AnimatePresence mode="wait">
+        {currentStep === 0 && (
+          <motion.div key="config" {...STEP_ANIMATION}>
+            <DirectorConfigPanel onConfirm={() => handleCompleteStep(0)} />
+          </motion.div>
+        )}
+        {currentStep === 1 && (
+          <motion.div key="planner" {...STEP_ANIMATION}>
+            <ScenePlannerPanel onConfirm={() => handleCompleteStep(1)} />
+          </motion.div>
+        )}
+        {currentStep === 2 && (
+          <motion.div key="prompts" {...STEP_ANIMATION}>
+            <PromptStudio onConfirm={() => handleCompleteStep(2)} />
+          </motion.div>
+        )}
+        {currentStep === 3 && (
+          <motion.div key="import" {...STEP_ANIMATION}>
+            <MediaImporter />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

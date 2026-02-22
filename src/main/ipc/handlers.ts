@@ -3,6 +3,7 @@ import { registerFileHandlers } from './file.handlers'
 import { registerProjectHandlers } from './project.handlers'
 import { registerWorkspaceHandlers } from './workspace.handlers'
 import { registerTtsHandlers } from './tts.handlers'
+import { registerDirectorHandlers } from './director.handlers'
 
 export function registerAllHandlers(): void {
   registerCapCutHandlers()
@@ -10,4 +11,5 @@ export function registerAllHandlers(): void {
   registerProjectHandlers()
   registerWorkspaceHandlers()
   registerTtsHandlers()
+  registerDirectorHandlers()
 }

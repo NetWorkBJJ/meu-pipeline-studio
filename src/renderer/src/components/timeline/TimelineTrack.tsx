@@ -6,6 +6,7 @@ interface Segment {
   startMs: number
   durationMs: number
   label: string
+  color?: string
 }
 
 type TrackType = 'text' | 'video' | 'audio'
@@ -73,7 +74,7 @@ export function TimelineTrack({
             startMs={seg.startMs}
             durationMs={seg.durationMs}
             label={seg.label}
-            color={color}
+            color={seg.color || color}
             pixelsPerSecond={pixelsPerSecond}
             isSelected={seg.id === selectedSegmentId}
             onSelect={onSelectSegment}

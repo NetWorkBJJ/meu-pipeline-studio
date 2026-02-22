@@ -1,102 +1,24 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { useStageStore } from './useStageStore'
-
-interface StoryBlock {
-  id: string
-  index: number
-  text: string
-  startMs: number
-  endMs: number
-  durationMs: number
-  characterCount: number
-  linkedAudioId: string | null
-  textMaterialId: string | null
-  textSegmentId: string | null
-}
-
-interface AudioBlock {
-  id: string
-  index: number
-  filePath: string
-  startMs: number
-  endMs: number
-  durationMs: number
-  linkedBlockId: string | null
-  source: 'capcut' | 'tts' | 'external'
-}
-
-interface Scene {
-  id: string
-  index: number
-  description: string
-  startMs: number
-  endMs: number
-  durationMs: number
-  mediaKeyword: string
-  mediaType: 'video' | 'photo'
-  mediaPath: string | null
-  blockIds: string[]
-}
-
-interface VideoSegment {
-  id: string
-  index: number
-  materialId: string
-  filePath: string
-  startMs: number
-  endMs: number
-  durationMs: number
-  width: number
-  height: number
-  mediaType: 'video' | 'photo'
-  trackIndex: number
-}
-
-interface TrackInfo {
-  index: number
-  type: string
-  id: string
-  segmentCount: number
-  durationMs: number
-}
-
-interface ProjectSummary {
-  name: string
-  durationMs: number
-  canvasWidth: number
-  canvasHeight: number
-  canvasRatio: string
-  trackCount: number
-  audioMaterialCount: number
-  textMaterialCount: number
-  videoMaterialCount: number
-}
-
-interface MediaPreset {
-  defaultType: 'video' | 'photo'
-  defaultDurationMs: number
-  transitionMs: number
-}
+import type {
+  StoryBlock,
+  AudioBlock,
+  Scene,
+  VideoSegment,
+  TrackInfo,
+  ProjectSummary,
+  MediaPreset,
+  CapCutProjectInfo,
+  DirectorConfig,
+  DirectorProgress,
+  CharacterRef
+} from '@/types/project'
 
 interface RecentProject {
   name: string
   path: string
   lastOpened: number
-}
-
-interface CapCutProjectInfo {
-  name: string
-  path: string
-  draftPath: string
-  modifiedUs: number
-  createdUs: number
-  durationUs: number
-  materialsSize: number
-  cover: string
-  exists: boolean
-  pipelineStatus: unknown | null
-  workspaceId: string | null
 }
 
 interface TtsDefaults {
@@ -185,6 +107,9 @@ interface ProjectState {
   recentProjects: RecentProject[]
   capCutProjects: CapCutProjectInfo[]
   capCutProjectsLoading: boolean
+  directorConfig: DirectorConfig
+  directorProgress: DirectorProgress
+  characterRefs: CharacterRef[]
 
   setCapCutDraftPath: (path: string | null) => void
   setRawScript: (script: string) => void
@@ -205,6 +130,14 @@ interface ProjectState {
   reloadAudioBlocks: (draftPath: string) => Promise<void>
   fetchCapCutProjects: () => Promise<void>
   resetProject: () => void
+  setDirectorConfig: (updates: Partial<DirectorConfig>) => void
+  updateScene: (id: string, updates: Partial<Scene>) => void
+  removeScene: (id: string) => void
+  insertScene: (afterIndex: number, scene: Scene) => void
+  reorderScenes: (sceneIds: string[]) => void
+  bulkUpdateScenes: (updates: Array<{ id: string; updates: Partial<Scene> }>) => void
+  setDirectorProgress: (progress: Partial<DirectorProgress>) => void
+  setCharacterRefs: (refs: CharacterRef[]) => void
 }
 
 const initialState = {
@@ -229,7 +162,27 @@ const initialState = {
   },
   recentProjects: [] as RecentProject[],
   capCutProjects: [] as CapCutProjectInfo[],
-  capCutProjectsLoading: false
+  capCutProjectsLoading: false,
+  directorConfig: {
+    sequenceMode: 'video-only',
+    videoMinDurationMs: 6000,
+    videoMaxDurationMs: 8000,
+    imageMinDurationMs: 3000,
+    imageMaxDurationMs: 5000,
+    llmProvider: 'claude',
+    llmModel: '',
+    promptTemplate: '',
+    promptExamples: '',
+    variationSeed: Math.floor(Math.random() * 100000)
+  } as DirectorConfig,
+  directorProgress: {
+    isPlanning: false,
+    isGeneratingPrompts: false,
+    currentSceneIndex: 0,
+    totalScenes: 0,
+    error: null
+  } as DirectorProgress,
+  characterRefs: [] as CharacterRef[]
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -410,6 +363,57 @@ export const useProjectStore = create<ProjectState>()(
           set({ capCutProjectsLoading: false })
         }
       },
+      setDirectorConfig: (updates) => {
+        set((state) => ({
+          directorConfig: { ...state.directorConfig, ...updates }
+        }))
+      },
+      updateScene: (id, updates) => {
+        set((state) => ({
+          scenes: state.scenes.map((s) => (s.id === id ? { ...s, ...updates } : s))
+        }))
+      },
+      removeScene: (id) => {
+        set((state) => ({
+          scenes: state.scenes
+            .filter((s) => s.id !== id)
+            .map((s, i) => ({ ...s, index: i + 1 }))
+        }))
+      },
+      insertScene: (afterIndex, scene) => {
+        set((state) => {
+          const newScenes = [...state.scenes]
+          newScenes.splice(afterIndex, 0, scene)
+          return { scenes: newScenes.map((s, i) => ({ ...s, index: i + 1 })) }
+        })
+      },
+      reorderScenes: (sceneIds) => {
+        set((state) => {
+          const ordered = sceneIds
+            .map((id) => state.scenes.find((s) => s.id === id))
+            .filter(Boolean) as Scene[]
+          return { scenes: ordered.map((s, i) => ({ ...s, index: i + 1 })) }
+        })
+      },
+      bulkUpdateScenes: (updates) => {
+        set((state) => {
+          const map = new Map(updates.map((u) => [u.id, u.updates]))
+          return {
+            scenes: state.scenes.map((s) => {
+              const u = map.get(s.id)
+              return u ? { ...s, ...u } : s
+            })
+          }
+        })
+      },
+      setDirectorProgress: (progress) => {
+        set((state) => ({
+          directorProgress: { ...state.directorProgress, ...progress }
+        }))
+      },
+      setCharacterRefs: (refs) => {
+        set({ characterRefs: refs })
+      },
       resetProject: () => {
         set((state) => ({
           ...initialState,
@@ -420,12 +424,25 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'meu-pipeline-project',
+      version: 1,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         mediaPreset: state.mediaPreset,
         ttsDefaults: state.ttsDefaults,
-        recentProjects: state.recentProjects
-      })
+        recentProjects: state.recentProjects,
+        directorConfig: state.directorConfig,
+        characterRefs: state.characterRefs
+      }),
+      migrate: (persisted, version) => {
+        const state = persisted as Record<string, unknown>
+        if (version === 0) {
+          const dc = state.directorConfig as Record<string, unknown> | undefined
+          if (dc && dc.llmProvider === 'chatgpt') {
+            dc.llmProvider = 'codex'
+          }
+        }
+        return state as unknown as ProjectState
+      }
     }
   )
 )

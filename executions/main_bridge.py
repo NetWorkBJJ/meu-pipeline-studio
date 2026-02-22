@@ -300,6 +300,46 @@ def load_full_project(params):
     return _load(params["draft_path"])
 
 
+# ---------------------------------------------------------------------------
+# Director methods
+# ---------------------------------------------------------------------------
+
+def director_check_llm(params):
+    """Check if an LLM CLI tool is available."""
+    from llm_director import check_llm_cli
+    return check_llm_cli(params)
+
+
+def director_analyze_narrative(params):
+    """Analyze script narrative using LLM."""
+    from llm_director import analyze_narrative
+    return analyze_narrative(params)
+
+
+def director_generate_prompts(params):
+    """Generate media prompts for scenes using LLM."""
+    from llm_director import generate_prompts
+    return generate_prompts(params)
+
+
+def director_decide_media_types(params):
+    """Let LLM decide video vs image per scene."""
+    from llm_director import decide_media_types
+    return decide_media_types(params)
+
+
+def director_export_prompts(params):
+    """Export scene prompts as structured document."""
+    from llm_director import export_prompts
+    return export_prompts(params)
+
+
+def director_match_media(params):
+    """Match imported media files to planned scenes."""
+    from media_matcher import match_media_to_scenes
+    return match_media_to_scenes(params)
+
+
 METHODS = {
     "read_draft": read_draft,
     "load_full_project": load_full_project,
@@ -336,6 +376,13 @@ METHODS = {
     "tts_preview_voice": tts_preview_voice,
     "tts_list_voices": tts_list_voices,
     "tts_list_styles": tts_list_styles,
+    # Director methods
+    "director_check_llm": director_check_llm,
+    "director_analyze_narrative": director_analyze_narrative,
+    "director_generate_prompts": director_generate_prompts,
+    "director_decide_media_types": director_decide_media_types,
+    "director_export_prompts": director_export_prompts,
+    "director_match_media": director_match_media,
 }
 
 

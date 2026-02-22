@@ -110,6 +110,17 @@ interface ElectronAppAPI {
 
   // TTS progress
   onTtsProgress: (callback: (data: unknown) => void) => () => void
+
+  // Director
+  directorCheckLlm: (provider: string) => Promise<unknown>
+  directorInstallCli: (provider: string) => Promise<unknown>
+  directorAnalyzeNarrative: (params: Record<string, unknown>) => Promise<unknown>
+  directorGeneratePrompts: (params: Record<string, unknown>) => Promise<unknown>
+  directorDecideMediaTypes: (params: Record<string, unknown>) => Promise<unknown>
+  directorExportPrompts: (params: Record<string, unknown>) => Promise<unknown>
+  directorMatchMediaFiles: (params: Record<string, unknown>) => Promise<unknown>
+  directorSelectMediaFiles: () => Promise<string[]>
+  directorImportCharacters: () => Promise<{ files: string[]; directory?: string; error?: string }>
 }
 
 declare global {

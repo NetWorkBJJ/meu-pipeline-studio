@@ -1,3 +1,38 @@
+// Director types
+export type SequenceMode = 'video-only' | 'image-only' | 'alternating' | 'ai-decided'
+export type GenerationStatus = 'pending' | 'generated' | 'imported' | 'failed' | 'skipped'
+export type MediaPlatform = 'vo3' | 'nano-banana-pro'
+
+export interface DirectorConfig {
+  sequenceMode: SequenceMode
+  videoMinDurationMs: number
+  videoMaxDurationMs: number
+  imageMinDurationMs: number
+  imageMaxDurationMs: number
+  llmProvider: 'claude' | 'codex' | 'gemini'
+  llmModel: string
+  promptTemplate: string
+  promptExamples: string
+  variationSeed: number
+}
+
+export interface DirectorProgress {
+  isPlanning: boolean
+  isGeneratingPrompts: boolean
+  currentSceneIndex: number
+  totalScenes: number
+  error: string | null
+}
+
+export interface CharacterRef {
+  id: string
+  name: string
+  role: string
+  chapters: number[]
+  imagePath: string
+  label: string
+}
+
 export interface StoryBlock {
   id: string
   index: number
@@ -33,6 +68,15 @@ export interface Scene {
   mediaType: 'video' | 'photo'
   mediaPath: string | null
   blockIds: string[]
+  // Director fields
+  prompt: string
+  promptRevision: number
+  generationStatus: GenerationStatus
+  platform: MediaPlatform
+  filenameHint: string
+  narrativeContext: string
+  sceneType: string
+  llmMetadata: Record<string, unknown> | null
 }
 
 export interface VideoSegment {

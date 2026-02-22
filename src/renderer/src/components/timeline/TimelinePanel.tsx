@@ -9,8 +9,7 @@ import { TimelineTrack } from './TimelineTrack'
 const TRACK_COLORS = {
   text: '#9c4937',
   video: '#175d62',
-  audio: '#0e3058',
-  scene: '#22C55E'
+  audio: '#0e3058'
 }
 
 const DEFAULT_ZOOM = 20
@@ -20,7 +19,7 @@ const MAX_ZOOM = 200
 export function TimelinePanel(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const { storyBlocks, audioBlocks, scenes, videoSegments: capCutVideos } = useProjectStore()
+  const { storyBlocks, audioBlocks, videoSegments: capCutVideos } = useProjectStore()
   const {
     timelineOpen,
     timelineZoom,
@@ -33,18 +32,16 @@ export function TimelinePanel(): React.JSX.Element {
   const hasData =
     storyBlocks.length > 0 ||
     audioBlocks.length > 0 ||
-    scenes.length > 0 ||
     capCutVideos.length > 0
 
   const totalDurationMs = useMemo(() => {
     return Math.max(
       storyBlocks.length > 0 ? Math.max(...storyBlocks.map((b) => b.endMs)) : 0,
       audioBlocks.length > 0 ? Math.max(...audioBlocks.map((b) => b.endMs)) : 0,
-      scenes.length > 0 ? Math.max(...scenes.map((s) => s.endMs)) : 0,
       capCutVideos.length > 0 ? Math.max(...capCutVideos.map((v) => v.endMs)) : 0,
       1000
     )
-  }, [storyBlocks, audioBlocks, scenes, capCutVideos])
+  }, [storyBlocks, audioBlocks, capCutVideos])
 
   const totalWidthPx = (totalDurationMs / 1000) * timelineZoom
 
@@ -57,17 +54,6 @@ export function TimelinePanel(): React.JSX.Element {
         label: b.text
       })),
     [storyBlocks]
-  )
-
-  const sceneSegments = useMemo(
-    () =>
-      scenes.map((s) => ({
-        id: s.id,
-        startMs: s.startMs,
-        durationMs: s.durationMs,
-        label: s.description || s.mediaKeyword
-      })),
-    [scenes]
   )
 
   const capCutVideoSegments = useMemo(
@@ -95,7 +81,6 @@ export function TimelinePanel(): React.JSX.Element {
   const trackCount =
     (textSegments.length > 0 ? 1 : 0) +
     (capCutVideoSegments.length > 0 ? 1 : 0) +
-    (sceneSegments.length > 0 ? 1 : 0) +
     (audioSegments.length > 0 ? 1 : 0)
 
   const handleZoomIn = useCallback((): void => {
@@ -265,18 +250,6 @@ export function TimelinePanel(): React.JSX.Element {
                     type="video"
                     segments={capCutVideoSegments}
                     color={TRACK_COLORS.video}
-                    totalWidthPx={totalWidthPx}
-                    pixelsPerSecond={timelineZoom}
-                    selectedSegmentId={selectedSegmentId}
-                    onSelectSegment={setSelectedSegment}
-                  />
-                )}
-                {sceneSegments.length > 0 && (
-                  <TimelineTrack
-                    label="Cenas"
-                    type="video"
-                    segments={sceneSegments}
-                    color={TRACK_COLORS.scene}
                     totalWidthPx={totalWidthPx}
                     pixelsPerSecond={timelineZoom}
                     selectedSegmentId={selectedSegmentId}

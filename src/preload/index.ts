@@ -149,7 +149,27 @@ const api = {
     const handler = (_event: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('tts:progress', handler)
     return () => ipcRenderer.removeListener('tts:progress', handler)
-  }
+  },
+
+  // Director
+  directorCheckLlm: (provider: string): Promise<unknown> =>
+    ipcRenderer.invoke('director:check-llm-available', provider),
+  directorInstallCli: (provider: string): Promise<unknown> =>
+    ipcRenderer.invoke('director:install-cli', provider),
+  directorAnalyzeNarrative: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('director:analyze-narrative', params),
+  directorGeneratePrompts: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('director:generate-prompts', params),
+  directorDecideMediaTypes: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('director:decide-media-types', params),
+  directorExportPrompts: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('director:export-prompts', params),
+  directorMatchMediaFiles: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('director:match-media-files', params),
+  directorSelectMediaFiles: (): Promise<string[]> =>
+    ipcRenderer.invoke('director:select-media-files'),
+  directorImportCharacters: (): Promise<{ files: string[]; directory?: string; error?: string }> =>
+    ipcRenderer.invoke('director:import-characters')
 }
 
 if (process.contextIsolated) {

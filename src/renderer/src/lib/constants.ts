@@ -16,7 +16,7 @@ export const STAGE_DESCRIPTIONS: Record<number, string> = {
   1: 'Transformar o roteiro em blocos de legenda',
   2: 'Configurar ou detectar audio do projeto',
   3: 'Sincronizar legendas com o audio',
-  4: 'Definir cenas e direcionamento visual',
+  4: 'Planejar cenas, gerar prompts e importar midias',
   5: 'Gerar ou selecionar midias para cada cena',
   6: 'Inserir tudo no projeto CapCut'
 }
