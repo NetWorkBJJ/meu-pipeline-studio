@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback } from 'react'
+import { useRef, useMemo, useCallback, useEffect } from 'react'
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -126,7 +126,7 @@ export function TimelinePanel(): React.JSX.Element {
   }, [totalDurationMs, setTimelineZoom])
 
   const handleWheel = useCallback(
-    (e: React.WheelEvent): void => {
+    (e: WheelEvent): void => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault()
         if (e.deltaY < 0) {
@@ -138,6 +138,13 @@ export function TimelinePanel(): React.JSX.Element {
     },
     [timelineZoom, setTimelineZoom]
   )
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [handleWheel])
 
   const handleBackgroundClick = useCallback((): void => {
     setSelectedSegment(null)
@@ -231,7 +238,6 @@ export function TimelinePanel(): React.JSX.Element {
           <div
             ref={scrollRef}
             className="overflow-x-auto overflow-y-hidden"
-            onWheel={handleWheel}
             onClick={handleBackgroundClick}
           >
             {hasData ? (
