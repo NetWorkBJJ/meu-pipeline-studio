@@ -38,7 +38,8 @@ export function autoGroupScenes(blocks: StoryBlock[], blocksPerScene: number = 3
       filenameHint: `scene_${String(index).padStart(3, '0')}`,
       narrativeContext: '',
       sceneType: '',
-      llmMetadata: null
+      llmMetadata: null,
+      chapter: 1
     })
   }
 

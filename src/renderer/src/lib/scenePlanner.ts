@@ -33,6 +33,64 @@ export interface GapReport {
   }>
 }
 
+// Chapter detection
+
+export interface ChapterBoundary {
+  chapter: number
+  startMs: number
+}
+
+const WORD_TO_NUM: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  um: 1, dois: 2, tres: 3, quatro: 4, cinco: 5,
+  seis: 6, sete: 7, oito: 8, nove: 9, dez: 10
+}
+
+const CHAPTER_PATTERNS = [
+  /\bchapter\s+(\d+)\b/i,
+  /\bchapter\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/i,
+  /\bcap[ií]tulo\s+(\d+)\b/i,
+  /\bcap[ií]tulo\s+(um|dois|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez)\b/i
+]
+
+export function detectChapters(blocks: StoryBlock[]): ChapterBoundary[] {
+  const sorted = [...blocks].sort((a, b) => a.startMs - b.startMs)
+  const boundaries: ChapterBoundary[] = []
+
+  for (const block of sorted) {
+    for (const pattern of CHAPTER_PATTERNS) {
+      const match = block.text.match(pattern)
+      if (match) {
+        const raw = match[1].toLowerCase()
+        const chapter = WORD_TO_NUM[raw] ?? parseInt(raw, 10)
+        if (!isNaN(chapter) && !boundaries.some((b) => b.chapter === chapter)) {
+          boundaries.push({ chapter, startMs: block.startMs })
+        }
+        break
+      }
+    }
+  }
+
+  return boundaries.sort((a, b) => a.startMs - b.startMs)
+}
+
+function assignChaptersToScenes(scenes: Scene[], blocks: StoryBlock[]): void {
+  const chapters = detectChapters(blocks)
+  for (const scene of scenes) {
+    if (chapters.length === 0) {
+      scene.chapter = 1
+    } else {
+      let ch = chapters[0].chapter
+      for (const boundary of chapters) {
+        if (scene.startMs >= boundary.startMs) ch = boundary.chapter
+        else break
+      }
+      scene.chapter = ch
+    }
+  }
+}
+
 function seededRandom(seed: number): () => number {
   let t = seed + 0x6d2b79f5
   return () => {
@@ -234,11 +292,15 @@ export function planScenes(blocks: StoryBlock[], config: DirectorConfig): PlanRe
       filenameHint: `scene_${String(i + 1).padStart(3, '0')}`,
       narrativeContext: '',
       sceneType: '',
-      llmMetadata: null
+      llmMetadata: null,
+      chapter: 1
     })
 
     currentMs = sceneEnd
   }
+
+  // Detect and assign chapters from script text
+  assignChaptersToScenes(scenes, sorted)
 
   // Statistics
   const durations = scenes.map((s) => s.durationMs)

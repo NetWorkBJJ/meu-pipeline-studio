@@ -77,6 +77,7 @@ export interface Scene {
   narrativeContext: string
   sceneType: string
   llmMetadata: Record<string, unknown> | null
+  chapter: number
 }
 
 export interface VideoSegment {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Sparkles,
@@ -10,11 +10,20 @@ import {
   ImageIcon,
   Loader2,
   MapPin,
-  Users
+  Users,
+  BookOpen,
+  ShieldCheck,
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { buildLlmPayload, parseTakeOutput, formatTake } from '@/lib/promptTemplate'
+import type { ParsedTake } from '@/lib/promptTemplate'
+import { getCharactersForChapter } from '@/lib/characterParser'
+import { validatePromptQuality } from '@/lib/promptValidator'
+import type { QualityReport } from '@/lib/promptValidator'
 import { PromptEditor } from './PromptEditor'
 
 interface PromptStudioProps {
@@ -31,11 +40,31 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
   const { addToast } = useUIStore()
 
   const [copiedAll, setCopiedAll] = useState(false)
+  const [copiedVideos, setCopiedVideos] = useState(false)
+  const [copiedPhotos, setCopiedPhotos] = useState(false)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
-  const [chapterNumber, setChapterNumber] = useState(1)
   const [startingTakeNumber, setStartingTakeNumber] = useState(1)
+  const [qualityReport, setQualityReport] = useState<QualityReport | null>(null)
+  const [showQualityDetails, setShowQualityDetails] = useState(false)
 
   const promptsGenerated = scenes.filter((s) => s.prompt.trim()).length
+
+  const { videoCount, photoCount } = useMemo(() => {
+    let vc = 0
+    let pc = 0
+    for (const s of scenes) {
+      if (!s.prompt.trim()) continue
+      if (s.mediaType === 'video') vc++
+      else pc++
+    }
+    return { videoCount: vc, photoCount: pc }
+  }, [scenes])
+
+  // Detected chapters from scenes
+  const detectedChapters = useMemo(() => {
+    const chapters = [...new Set(scenes.map((s) => s.chapter))].sort((a, b) => a - b)
+    return chapters.length > 0 ? chapters : [1]
+  }, [scenes])
 
   const handleGenerateAll = async (): Promise<void> => {
     if (scenes.length === 0) return
@@ -45,12 +74,13 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       provider: config.llmProvider,
       model: config.llmModel,
       sequenceMode: config.sequenceMode,
-      chapterNumber,
+      detectedChapters,
       startingTakeNumber
     })
     console.log('Scenes:', scenes.length, scenes.map((s) => ({
       id: s.id,
       index: s.index,
+      chapter: s.chapter,
       mediaType: s.mediaType,
       durationMs: s.durationMs,
       blockIds: s.blockIds
@@ -58,7 +88,6 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
     console.log('StoryBlocks:', storyBlocks.length)
     console.log('CharacterRefs:', characterRefs.map((c) => ({
       name: c.name,
-      label: c.label,
       role: c.role,
       chapters: c.chapters
     })))
@@ -117,12 +146,11 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         }
       }
 
-      // Build payload with Master Prompt V12
+      // Build payload with Master Prompt (chapters auto-detected from scenes)
       const { systemPrompt, userMessage } = buildLlmPayload(
         storyBlocks,
         scenes,
         characterRefs,
-        chapterNumber,
         startingTakeNumber
       )
 
@@ -200,9 +228,21 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
           bulkUpdateScenes(promptUpdates)
         }
 
+        // Run quality validation
+        const parsedForValidation: ParsedTake[] = result.takes.map((t) => ({
+          takeNumber: t.take_number,
+          description: t.description,
+          negativePrompt: t.negative_prompt,
+          characterAnchor: t.character_anchor,
+          environmentLock: t.environment_lock
+        }))
+        const report = validatePromptQuality(parsedForValidation, scenes, characterRefs, startingTakeNumber)
+        setQualityReport(report)
+        console.log('[Director] Quality report:', report)
+
         addToast({
-          type: 'success',
-          message: `${result.takes.length} takes gerados para ${scenes.length} cenas.`
+          type: report.passed ? 'success' : 'warning',
+          message: `${result.takes.length} takes gerados. Qualidade: ${report.score}/100.`
         })
       } else if (result.raw_response) {
         // Try to parse on the frontend as fallback
@@ -232,9 +272,13 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
             bulkUpdateScenes(promptUpdates)
           }
 
+          // Run quality validation on fallback parse
+          const fallbackReport = validatePromptQuality(parsed, scenes, characterRefs, startingTakeNumber)
+          setQualityReport(fallbackReport)
+
           addToast({
-            type: 'success',
-            message: `${parsed.length} takes parseados (fallback frontend).`
+            type: fallbackReport.passed ? 'success' : 'warning',
+            message: `${parsed.length} takes parseados. Qualidade: ${fallbackReport.score}/100.`
           })
         } else {
           addToast({ type: 'error', message: result.error || 'Falha ao parsear resposta do LLM.' })
@@ -261,21 +305,30 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       const sceneBlocks = storyBlocks.filter((b) => scene.blockIds.includes(b.id))
       const sceneIdx = scenes.findIndex((s) => s.id === sceneId)
       const takeNum = startingTakeNumber + (sceneIdx >= 0 ? sceneIdx : 0)
-      console.log('[Director] Regenerar take', takeNum, 'para cena', scene.index, '| blocos:', sceneBlocks.length)
+      console.log('[Director] Regenerar take', takeNum, 'para cena', scene.index, '| capitulo:', scene.chapter, '| blocos:', sceneBlocks.length)
       const { systemPrompt } = buildLlmPayload(
         storyBlocks,
         scenes,
         characterRefs,
-        chapterNumber,
         startingTakeNumber
       )
 
-      const singleUserMessage = `Regenere apenas o TAKE ${takeNum}:
-Texto da legenda: "${sceneBlocks.map((b) => b.text).join(' ')}"
-Duracao: ${(scene.durationMs / 1000).toFixed(1)}s
-Tipo: ${scene.mediaType}
+      // Get ALL characters available for this scene's chapter (no regex filtering)
+      const chapterChars = getCharactersForChapter(characterRefs, scene.chapter)
 
-Gere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
+      let singleUserMessage = `Regenere apenas o TAKE ${takeNum}:
+Texto da legenda: "${sceneBlocks.map((b) => b.text).join(' ')}"
+Tipo: ${scene.mediaType}`
+
+      if (chapterChars.length > 0) {
+        singleUserMessage += `\nElenco deste capitulo:`
+        for (const char of chapterChars) {
+          singleUserMessage += `\n- ${char.name} [${char.role || 'Cast'}]`
+        }
+        singleUserMessage += `\nAnalise o texto e determine quais personagens DE FATO aparecem nesta cena. Use o nome COMPLETO e EXATO.`
+      }
+
+      singleUserMessage += `\n\nGere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
 
       const result = (await window.api.directorGeneratePrompts({
         provider: config.llmProvider,
@@ -353,10 +406,33 @@ Gere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
   }
 
   const handleCopyAll = async (): Promise<void> => {
-    const text = scenes.map((s) => s.prompt || '(sem prompt)').join('\n\n')
+    const text = scenes
+      .filter((s) => s.prompt.trim())
+      .map((s) => s.prompt)
+      .join('\n\n')
     await navigator.clipboard.writeText(text)
     setCopiedAll(true)
     setTimeout(() => setCopiedAll(false), 1500)
+  }
+
+  const handleCopyVideos = async (): Promise<void> => {
+    const text = scenes
+      .filter((s) => s.mediaType === 'video' && s.prompt.trim())
+      .map((s) => s.prompt)
+      .join('\n\n')
+    await navigator.clipboard.writeText(text)
+    setCopiedVideos(true)
+    setTimeout(() => setCopiedVideos(false), 1500)
+  }
+
+  const handleCopyPhotos = async (): Promise<void> => {
+    const text = scenes
+      .filter((s) => s.mediaType === 'photo' && s.prompt.trim())
+      .map((s) => s.prompt)
+      .join('\n\n')
+    await navigator.clipboard.writeText(text)
+    setCopiedPhotos(true)
+    setTimeout(() => setCopiedPhotos(false), 1500)
   }
 
   // Extract TAKE metadata from prompt text
@@ -375,71 +451,161 @@ Gere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-text-muted">Capitulo:</span>
-            <input
-              type="number"
-              min={1}
-              value={chapterNumber}
-              onChange={(e) => setChapterNumber(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-12 rounded border border-border bg-bg px-1.5 py-0.5 text-xs tabular-nums text-text text-center focus:border-primary focus:outline-none"
-            />
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <BookOpen className="h-3 w-3 text-text-muted" />
+              <span className="text-[10px] text-text-muted">
+                {detectedChapters.length === 1
+                  ? `Cap. ${detectedChapters[0]}`
+                  : `Cap. ${detectedChapters.join(', ')}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-text-muted">Take inicial:</span>
+              <input
+                type="number"
+                min={1}
+                value={startingTakeNumber}
+                onChange={(e) => setStartingTakeNumber(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-14 rounded border border-border bg-bg px-1.5 py-0.5 text-xs tabular-nums text-text text-center focus:border-primary focus:outline-none"
+              />
+            </div>
+            <span className="text-xs text-text">
+              {promptsGenerated}/{scenes.length} takes gerados
+            </span>
+            {progress.isGeneratingPrompts && (
+              <div className="flex items-center gap-1.5 text-xs text-primary">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Gerando...
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-text-muted">Take inicial:</span>
-            <input
-              type="number"
-              min={1}
-              value={startingTakeNumber}
-              onChange={(e) => setStartingTakeNumber(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-14 rounded border border-border bg-bg px-1.5 py-0.5 text-xs tabular-nums text-text text-center focus:border-primary focus:outline-none"
-            />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExport}
+              disabled={promptsGenerated === 0}
+              className="flex items-center gap-1 rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:text-text disabled:opacity-40"
+            >
+              <Download className="h-3 w-3" />
+              Exportar
+            </button>
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleGenerateAll}
+              disabled={progress.isGeneratingPrompts || scenes.length === 0}
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Gerar takes
+            </motion.button>
           </div>
-          <span className="text-xs text-text">
-            {promptsGenerated}/{scenes.length} takes gerados
-          </span>
-          {progress.isGeneratingPrompts && (
-            <div className="flex items-center gap-1.5 text-xs text-primary">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Gerando...
+        </div>
+
+        {/* Copy buttons row */}
+        {promptsGenerated > 0 && (
+          <div className="flex items-center gap-2 border-t border-border/50 pt-2">
+            <span className="text-[10px] text-text-muted mr-1">Copiar:</span>
+            <button
+              onClick={handleCopyAll}
+              className="flex items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-[11px] text-text-muted transition-colors hover:text-text"
+            >
+              {copiedAll ? (
+                <Check className="h-3 w-3 text-green-400" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+              Todos ({promptsGenerated})
+            </button>
+            {videoCount > 0 && (
+              <button
+                onClick={handleCopyVideos}
+                className="flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/5 px-2 py-1 text-[11px] text-teal-400 transition-colors hover:bg-teal-500/10"
+              >
+                {copiedVideos ? (
+                  <Check className="h-3 w-3 text-green-400" />
+                ) : (
+                  <Film className="h-3 w-3" />
+                )}
+                Videos ({videoCount})
+              </button>
+            )}
+            {photoCount > 0 && (
+              <button
+                onClick={handleCopyPhotos}
+                className="flex items-center gap-1 rounded-md border border-violet-500/30 bg-violet-500/5 px-2 py-1 text-[11px] text-violet-400 transition-colors hover:bg-violet-500/10"
+              >
+                {copiedPhotos ? (
+                  <Check className="h-3 w-3 text-green-400" />
+                ) : (
+                  <ImageIcon className="h-3 w-3" />
+                )}
+                Fotos ({photoCount})
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Quality report banner */}
+      {qualityReport && (
+        <div
+          className={`rounded-lg border p-3 ${
+            qualityReport.passed
+              ? 'border-green-500/30 bg-green-500/5'
+              : 'border-amber-500/30 bg-amber-500/5'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {qualityReport.passed ? (
+                <ShieldCheck className="h-4 w-4 text-green-400" />
+              ) : (
+                <ShieldAlert className="h-4 w-4 text-amber-400" />
+              )}
+              <span
+                className={`text-xs font-medium ${
+                  qualityReport.passed ? 'text-green-400' : 'text-amber-400'
+                }`}
+              >
+                {qualityReport.score}/100
+                {qualityReport.passed ? ' -- Aprovado' : ' -- Requer atencao'}
+              </span>
+              <span className="text-[10px] text-text-muted">
+                {qualityReport.rules.filter((r) => r.passed).length}/{qualityReport.rules.length} regras OK
+              </span>
+            </div>
+            <button
+              onClick={() => setShowQualityDetails((v) => !v)}
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text"
+            >
+              {showQualityDetails ? (
+                <ChevronUp className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+              {showQualityDetails ? 'Ocultar' : 'Detalhes'}
+            </button>
+          </div>
+          {showQualityDetails && (
+            <div className="mt-2 space-y-1 border-t border-border/30 pt-2">
+              {qualityReport.rules.map((rule) => (
+                <div key={rule.id} className="flex items-start gap-2 text-[10px]">
+                  <span className={rule.passed ? 'text-green-400' : 'text-amber-400'}>
+                    {rule.passed ? 'OK' : 'FALHA'}
+                  </span>
+                  <span className="text-text-muted">{rule.name}</span>
+                  <span className="text-text-muted/60 ml-auto text-right max-w-[50%] truncate">
+                    {rule.details}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleCopyAll}
-            disabled={promptsGenerated === 0}
-            className="flex items-center gap-1 rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:text-text disabled:opacity-40"
-          >
-            {copiedAll ? (
-              <Check className="h-3 w-3 text-green-400" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
-            Copiar todos
-          </button>
-          <button
-            onClick={handleExport}
-            disabled={promptsGenerated === 0}
-            className="flex items-center gap-1 rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:text-text disabled:opacity-40"
-          >
-            <Download className="h-3 w-3" />
-            Exportar
-          </button>
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleGenerateAll}
-            disabled={progress.isGeneratingPrompts || scenes.length === 0}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Gerar takes
-          </motion.button>
-        </div>
-      </div>
+      )}
 
       {/* Scene/take list */}
       <div className="overflow-auto max-h-[calc(100vh-380px)] space-y-3">
@@ -477,6 +643,9 @@ Gere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
                     )}
                     {isVideo ? 'Video' : 'Foto'}
                   </span>
+                  <span className="rounded bg-surface px-1 py-0.5 text-[9px] text-text-muted border border-border/50">
+                    Cap. {scene.chapter}
+                  </span>
                   <span className="text-[10px] text-text-muted">
                     {(scene.durationMs / 1000).toFixed(1)}s
                   </span>
@@ -491,7 +660,7 @@ Gere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
               {/* TAKE metadata badges */}
               {takeInfo && (
                 <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                  {takeInfo.characterAnchor && takeInfo.characterAnchor !== '-' && (
+                  {takeInfo.characterAnchor && takeInfo.characterAnchor !== '-' && takeInfo.characterAnchor !== '\u2014' && (
                     <span className="flex items-center gap-1 rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-400">
                       <Users className="h-2.5 w-2.5" />
                       {takeInfo.characterAnchor}

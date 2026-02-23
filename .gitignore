@@ -44,6 +44,9 @@ npm-debug.log*
 .agents/
 .cursor/
 
+# Test output
+test-results/
+
 # Cache
 .eslintcache
 

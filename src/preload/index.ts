@@ -59,6 +59,11 @@ const api = {
   loopAudio: (params: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke('capcut:loop-audio', params),
 
+  saveDirectorState: (draftPath: string, data: string): Promise<{ saved: boolean; error?: string }> =>
+    ipcRenderer.invoke('project:save-director', draftPath, data),
+  loadDirectorState: (draftPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('project:load-director', draftPath),
+
   openCapCut: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('project:open-capcut'),
 

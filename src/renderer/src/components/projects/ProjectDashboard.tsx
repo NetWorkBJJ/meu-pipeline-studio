@@ -127,7 +127,23 @@ export function ProjectDashboard(): React.JSX.Element {
     [addToast]
   )
 
-  const handleOpenProject = (project: ProjectInfo): void => {
+  const tryLoadDirectorState = useCallback(
+    async (draftPath: string): Promise<void> => {
+      try {
+        const raw = await window.api.loadDirectorState(draftPath)
+        if (!raw) return
+        const snapshot = JSON.parse(raw)
+        if (!snapshot.scenes || snapshot.scenes.length === 0) return
+        useProjectStore.getState().loadDirectorState(snapshot)
+        addToast({ type: 'info', message: `${snapshot.scenes.length} cenas restauradas.` })
+      } catch {
+        // Corrupt snapshot, ignore silently
+      }
+    },
+    [addToast]
+  )
+
+  const handleOpenProject = async (project: ProjectInfo): Promise<void> => {
     setCapCutDraftPath(project.draftPath)
 
     const recent: WorkspaceRecentProject = {
@@ -142,11 +158,12 @@ export function ProjectDashboard(): React.JSX.Element {
       10
     )
     saveRecentProjects(updated)
+    await tryLoadDirectorState(project.draftPath)
     setCurrentView('pipeline')
     triggerFullLoad(project.draftPath)
   }
 
-  const handleSelectRecent = (path: string): void => {
+  const handleSelectRecent = async (path: string): Promise<void> => {
     const project = projects.find((p) => p.draftPath === path)
     const name = project?.name || path.split('/').pop() || 'Projeto'
     setCapCutDraftPath(path)
@@ -155,6 +172,7 @@ export function ProjectDashboard(): React.JSX.Element {
     const recent: WorkspaceRecentProject = { name, path, lastOpened: Date.now() }
     const updated = [recent, ...recentProjects.filter((r) => r.path !== path)].slice(0, 10)
     saveRecentProjects(updated)
+    await tryLoadDirectorState(path)
     setCurrentView('pipeline')
     triggerFullLoad(path)
   }
@@ -170,6 +188,7 @@ export function ProjectDashboard(): React.JSX.Element {
       const recent: WorkspaceRecentProject = { name, path, lastOpened: Date.now() }
       const updated = [recent, ...recentProjects.filter((r) => r.path !== path)].slice(0, 10)
       saveRecentProjects(updated)
+      await tryLoadDirectorState(path)
       setCurrentView('pipeline')
       triggerFullLoad(path)
     }

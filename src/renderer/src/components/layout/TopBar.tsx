@@ -5,6 +5,7 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
+import { saveDirectorNow } from '@/hooks/useDirectorPersistence'
 
 function extractProjectFolder(path: string | null): string {
   if (!path) return 'Sem projeto'
@@ -20,6 +21,7 @@ export function TopBar(): React.JSX.Element {
   const { activeWorkspace } = useWorkspaceStore()
 
   const handleGoHome = (): void => {
+    saveDirectorNow()
     resetProject()
     reset()
     setCurrentView('projectDashboard')

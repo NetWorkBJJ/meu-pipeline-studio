@@ -40,6 +40,9 @@ interface ElectronAppAPI {
   loopVideo: (params: Record<string, unknown>) => Promise<unknown>
   loopAudio: (params: Record<string, unknown>) => Promise<unknown>
 
+  saveDirectorState: (draftPath: string, data: string) => Promise<{ saved: boolean; error?: string }>
+  loadDirectorState: (draftPath: string) => Promise<string | null>
+
   openCapCut: () => Promise<{ success: boolean; error?: string }>
 
   selectFiles: (filters: FileFilter[]) => Promise<string[]>

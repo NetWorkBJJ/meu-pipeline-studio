@@ -92,6 +92,15 @@ interface RawAudioBlock {
   track_index: number
 }
 
+export interface DirectorStateSnapshot {
+  version: number
+  rawScript?: string
+  scenes?: Scene[]
+  storyBlocks?: StoryBlock[]
+  directorConfig?: Partial<DirectorConfig>
+  characterRefs?: CharacterRef[]
+}
+
 interface ProjectState {
   capCutDraftPath: string | null
   rawScript: string
@@ -138,6 +147,7 @@ interface ProjectState {
   bulkUpdateScenes: (updates: Array<{ id: string; updates: Partial<Scene> }>) => void
   setDirectorProgress: (progress: Partial<DirectorProgress>) => void
   setCharacterRefs: (refs: CharacterRef[]) => void
+  loadDirectorState: (snapshot: DirectorStateSnapshot) => void
 }
 
 const initialState = {
@@ -413,6 +423,20 @@ export const useProjectStore = create<ProjectState>()(
       },
       setCharacterRefs: (refs) => {
         set({ characterRefs: refs })
+      },
+      loadDirectorState: (snapshot) => {
+        set((state) => ({
+          rawScript: snapshot.rawScript ?? state.rawScript,
+          scenes: snapshot.scenes ?? state.scenes,
+          storyBlocks: snapshot.storyBlocks ?? state.storyBlocks,
+          directorConfig: snapshot.directorConfig
+            ? { ...state.directorConfig, ...snapshot.directorConfig }
+            : state.directorConfig,
+          characterRefs: snapshot.characterRefs ?? state.characterRefs
+        }))
+        if (snapshot.scenes && snapshot.scenes.length > 0) {
+          useStageStore.getState().setFreeNavigation(true)
+        }
       },
       resetProject: () => {
         set((state) => ({

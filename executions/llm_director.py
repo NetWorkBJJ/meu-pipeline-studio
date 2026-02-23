@@ -6,6 +6,8 @@ import json
 import re
 import logging
 import sys
+import tempfile
+import os
 
 log = logging.getLogger("bridge")
 
@@ -47,30 +49,58 @@ def _call_llm(provider: str, prompt: str, model: str = None, timeout: int = 120)
         else:
             cmd.extend(["-m", model])
 
-    # Escape % for Windows .cmd wrappers (cmd.exe expands %VAR%)
-    safe_prompt = prompt
-    if sys.platform == "win32" and cli_path.lower().endswith(".cmd"):
-        safe_prompt = prompt.replace("%", "%%")
+    # Windows cmd.exe has ~8191 char command line limit for .cmd wrappers.
+    # For large prompts, write to temp file and pipe via stdin instead.
+    max_arg_len = 6000
+    use_stdin = len(prompt) > max_arg_len
 
-    # Prompt delivery: always as CLI argument, never via stdin
-    # - claude: claude --print "prompt" (positional)
-    # - codex:  codex exec "prompt" (positional)
-    # - gemini: gemini --prompt "prompt" (flag value)
-    if provider == "gemini":
-        cmd.extend(["--prompt", safe_prompt])
+    if use_stdin:
+        log.info("Prompt too large for CLI arg (%d chars > %d), using stdin pipe",
+                 len(prompt), max_arg_len)
+
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.txt', prefix='llm_prompt_')
+        try:
+            with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                f.write(prompt)
+
+            log.info("Calling LLM CLI (stdin): %s | cmd: %s | prompt: %d chars",
+                     provider, cmd, len(prompt))
+
+            with open(tmp_path, 'r', encoding='utf-8') as stdin_file:
+                result = subprocess.run(
+                    cmd,
+                    stdin=stdin_file,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    encoding="utf-8",
+                )
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
     else:
-        cmd.append(safe_prompt)
+        # Small prompt: pass as CLI argument
+        safe_prompt = prompt
+        if sys.platform == "win32" and cli_path.lower().endswith(".cmd"):
+            safe_prompt = prompt.replace("%", "%%")
 
-    log.info("Calling LLM CLI: %s | cmd[0:3]: %s | prompt length: %d chars",
-             provider, cmd[:3], len(prompt))
+        if provider == "gemini":
+            cmd.extend(["--prompt", safe_prompt])
+        else:
+            cmd.append(safe_prompt)
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        encoding="utf-8",
-    )
+        log.info("Calling LLM CLI (arg): %s | cmd[0:3]: %s | prompt: %d chars",
+                 provider, cmd[:3], len(prompt))
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+        )
 
     log.info("LLM CLI returncode: %d | stdout: %d chars | stderr: %d chars",
              result.returncode, len(result.stdout or ""), len(result.stderr or ""))
@@ -237,7 +267,7 @@ def generate_prompts(params):
     log.info("[generate_prompts] full_prompt length: %d chars", len(full_prompt))
 
     try:
-        response = _call_llm(provider, full_prompt, model, timeout=300)
+        response = _call_llm(provider, full_prompt, model, timeout=600)
         takes = parse_takes(response)
 
         log.info("[generate_prompts] parse_takes returned %d takes", len(takes))

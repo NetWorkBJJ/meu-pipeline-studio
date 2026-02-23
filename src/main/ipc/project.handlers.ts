@@ -110,6 +110,28 @@ export function registerProjectHandlers(): void {
     }
   )
 
+  ipcMain.handle('project:save-director', async (_event, draftPath: string, data: string) => {
+    const projectFolder = join(draftPath, '..')
+    const savePath = join(projectFolder, '.mps-director.json')
+    try {
+      await writeFile(savePath, data, 'utf-8')
+      return { saved: true }
+    } catch (err) {
+      return { saved: false, error: err instanceof Error ? err.message : 'Write failed' }
+    }
+  })
+
+  ipcMain.handle('project:load-director', async (_event, draftPath: string) => {
+    const projectFolder = join(draftPath, '..')
+    const savePath = join(projectFolder, '.mps-director.json')
+    try {
+      const data = await readFile(savePath, 'utf-8')
+      return data
+    } catch {
+      return null
+    }
+  })
+
   ipcMain.handle('project:open-capcut', async () => {
     const home = homedir()
     const directPath = join(home, 'AppData/Local/CapCut/CapCut.exe')

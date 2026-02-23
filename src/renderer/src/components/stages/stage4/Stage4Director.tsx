@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Film, CheckCircle2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -32,6 +32,16 @@ export function Stage4Director(): React.JSX.Element {
 
   const hasExistingVideos = projectLoaded && videoSegments.length > 0
   const stageAlreadyComplete = completedStages.has(4)
+
+  // Auto-detect restored scenes and jump to PromptStudio (step 2)
+  useEffect(() => {
+    const hasPrompts = scenes.some((s) => s.prompt.trim())
+    if (hasPrompts && currentStep === 0) {
+      setCompletedSteps(new Set([0, 1]))
+      setCurrentStep(2)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleCompleteStep = useCallback((step: DirectorStep) => {
     setCompletedSteps((prev) => {
