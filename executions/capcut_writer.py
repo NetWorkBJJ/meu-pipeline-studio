@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from draft_io import save_draft
 from template_loader import load_template
 
 
@@ -299,8 +300,7 @@ def write_text_segments(draft_path: str, blocks: list) -> dict:
     # Recalculate project duration
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {"added_count": len(added_segments), "segments": added_segments}
 
@@ -360,8 +360,7 @@ def clear_text_segments(draft_path: str) -> dict:
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "removed_segments": removed_segments,
@@ -425,8 +424,7 @@ def clear_video_segments(draft_path: str) -> dict:
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "removed_segments": removed_segments,
@@ -473,8 +471,7 @@ def update_subtitle_timings(draft_path: str, blocks: list) -> dict:
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {"updated_count": updated_count}
 
@@ -516,8 +513,7 @@ def update_subtitle_texts(draft_path: str, updates: list) -> dict:
                 txt["content"] = new_text
             updated_count += 1
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {"updated_count": updated_count}
 
@@ -699,8 +695,7 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {"added_count": len(added_segments), "segments": added_segments}
 
@@ -983,8 +978,7 @@ def insert_media_batch(draft_path: str, media_files: list,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "inserted": video_count + image_count,
@@ -1264,8 +1258,7 @@ def insert_audio_batch(draft_path: str, audio_files: list,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {"inserted": inserted, "total_duration_us": current_time_us}
 
@@ -1490,11 +1483,10 @@ def create_project(project_name: str) -> dict:
     project_dir_str = str(project_dir).replace("\\", "/")
     root_path_str = str(CAPCUT_PROJECTS_PATH).replace("\\", "/")
 
-    # Create draft_content.json
+    # Create draft_content.json (+ template-2.tmp, .bak mirrors)
     draft = _create_empty_draft(project_name)
     draft_path = project_dir / "draft_content.json"
-    with open(draft_path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(draft_path), sync_meta=False)
 
     now_us = _get_timestamp_us()
     now_sec = int(datetime.now().timestamp())

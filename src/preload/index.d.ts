@@ -77,7 +77,9 @@ interface ElectronAppAPI {
   validateProject: (projectPath: string) => Promise<unknown>
   diagnoseRootMeta: (projectName: string) => Promise<unknown>
   checkCapCutRunning: () => Promise<unknown>
+  closeCapCut: () => Promise<unknown>
   getProjectHealth: (projectPath: string) => Promise<unknown>
+  debugSyncState: (params: Record<string, unknown>) => Promise<unknown>
 
   watchDraft: (draftPath: string) => Promise<unknown>
   unwatchDraft: () => Promise<unknown>

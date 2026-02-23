@@ -1,8 +1,8 @@
 import type { StoryBlock, Scene, CharacterRef } from '@/types/project'
 import { msToDisplay } from '@/lib/time'
 
-// Master Prompt V16 - Cinematic Director with Cast Direction
-export const MASTER_PROMPT = `# MASTER PROMPT V16 - SISTEMA OFICIAL DE PRODUCAO CINEMATICA
+// Master Prompt V17 - Cinematic Director with Cast Direction + Quality Guards
+export const MASTER_PROMPT = `# MASTER PROMPT V17 - SISTEMA OFICIAL DE PRODUCAO CINEMATICA
 
 ## IDENTIDADE DO AGENTE
 
@@ -41,26 +41,35 @@ Regra:
 
 ## CHARACTER LOCK SYSTEM
 
-* Personagem nunca muda aparencia dentro do mesmo capitulo
-* O Character Anchor deve usar o nome COMPLETO e EXATO conforme fornecido na lista de elenco
-* NUNCA abrevie, corte ou modifique o nome do personagem
-* COPIE o nome EXATAMENTE como esta na lista de elenco, caractere por caractere
-* O nome e usado para match automatico com a imagem do personagem -- qualquer diferenca quebra o match
-* Character Anchor contem APENAS nomes (sem [Lead], sem role, sem chapter)
-* Porem, USE a informacao de role fornecida no elenco para DECIDIR quem aparece em cada cena
-* NUNCA invente nomes que nao estao na lista de elenco fornecida
+* O Character Anchor e uma COPIA EXATA do identificador fornecido na lista de elenco
+* O identificador inclui nome, role e chapter (quando aplicavel) -- copie TUDO
+* NUNCA modifique o identificador de nenhuma forma: nao abrevie, nao expanda, nao remova partes
+* O texto que voce escrever no Character Anchor sera usado para match automatico com o arquivo de imagem do personagem
+* Se o texto nao for 100% identico ao identificador fornecido, o match FALHA e a imagem nao sera encontrada
+* Trate o identificador como IMUTAVEL -- copie caractere por caractere, incluindo espacos, hifens e virgulas internas
+* NUNCA invente identificadores que nao estao na lista de elenco fornecida
 * Se o roteiro menciona alguem que nao esta na lista, use \u2014 (nao invente)
+* Personagens listados para um capitulo especifico so devem ser usados em cenas daquele capitulo
+* Personagens sem capitulo especifico podem aparecer em qualquer capitulo (conforme narrativa)
+* Personagem nunca muda aparencia dentro do mesmo capitulo
+* Quando multiplos personagens aparecem, separe com | (pipe), NAO com virgula
 
-Formato OBRIGATORIO:
-Character Anchor: Renzo Bellocchi, Celeste Vicenzi.
+Formato OBRIGATORIO (separar multiplos com |):
+Character Anchor: Renzo Bellocchi - Mafia Boss, chapter 1 | Celeste Vicenzi - Supporting.
 Se nenhum personagem aparece: Character Anchor: \u2014
 
-ERRADO: Character Anchor: Renzo (incompleto, falta sobrenome)
-ERRADO: Character Anchor: Celeste V. (abreviado)
-ERRADO: Character Anchor: Giovanni Bianchi (inventado, nao esta na lista)
-ERRADO: Character Anchor: Renzo Bellocchi [Mafia Boss] (nao incluir role)
-CERTO: Character Anchor: Renzo Bellocchi.
-CERTO: Character Anchor: Celeste Vicenzi, Renzo Bellocchi.
+ERRADO: Character Anchor: Renzo Bellocchi. (incompleto, faltou role e chapter)
+ERRADO: Character Anchor: Renzo. (abreviado)
+ERRADO: Character Anchor: Giovanni Bianchi - Unknown. (inventado, nao esta na lista)
+ERRADO: Character Anchor: Renzo Bellocchi - Mafia Boss, chapter 1, Celeste Vicenzi - Supporting. (separou com virgula, use |)
+CERTO: Character Anchor: Renzo Bellocchi - Mafia Boss, chapter 1.
+CERTO: Character Anchor: Renzo Bellocchi - Mafia Boss, chapter 1 | Celeste Vicenzi - Supporting.
+
+LIMITE DE PERSONAGENS POR TAKE:
+* NUNCA inclua mais de 3 personagens em um unico Character Anchor
+* Se a cena tem 4+ personagens, priorize os 3 mais relevantes narrativamente
+* Para cenas de grupo/multidao, use \u2014 ao inves de listar todos
+* Maximo: Name1 | Name2 | Name3 (tres, nunca quatro ou mais)
 
 ---
 
@@ -115,6 +124,12 @@ CERTO: Environment Lock: Underground parking garage, night, harsh fluorescent ov
 Validacao interna obrigatoria antes de cada take:
 "O ambiente e a iluminacao ainda sao consistentes com o capitulo?"
 
+COERENCIA OBRIGATORIA:
+O conteudo visual descrito no TAKE deve ser fisicamente possivel dentro do Environment Lock.
+Se a descricao menciona um comodo ou espaco diferente, o Environment Lock DEVE mudar.
+ERRADO: Descricao menciona "living room" mas Environment Lock diz "bedroom"
+CERTO: Se o personagem saiu do quarto para a sala, mude o Environment Lock para o novo comodo.
+
 ---
 
 ## ESTRUTURA OFICIAL DE TAKE
@@ -137,6 +152,13 @@ Regras da descricao:
 * NUNCA inclua duracao (Duration) no prompt
 * NUNCA inclua tags como [FOTO] ou [VIDEO] na descricao
 * Sem paragrafos longos, sem poesia, sem metaforas
+
+PALAVRAS PROIBIDAS na descricao (estados internos, nao visiveis pela camera):
+processing, realizing, thinking, remembering, feeling, heart racing, heart warmed,
+weight of, loaded words, means everything, admitting, fear of, deeper meaning,
+crossed line, surprising himself, chose him, internal conflict, wondering
+Descreva APENAS manifestacoes FISICAS visiveis pela camera: jaw tightening, hands gripping, breath visible,
+posture shifting, eyes widening, shoulders dropping, fists clenching, lip trembling.
 
 ERRADO: Duration: 6.1s. Wide shot of a high-end office at dusk as Renzo studies a computer calendar, tense and still.
 ERRADO: [FOTO] Static close-up of the monitor schedule and Renzo's hand resting near the keyboard, mood heavy.
@@ -174,8 +196,15 @@ nudez, sensualidade explicita, violencia, sangue, arma, crime explicito, droga, 
 
 Sempre neutro, cinematografico e seguro.
 
-Regra especial: no PRIMEIRO TAKE de cada nova locacao (quando o Environment Lock muda), adicionar ao Negative Prompt:
+Regra de Negative Prompt estendido:
+No PRIMEIRO TAKE de cada nova localizacao, usar Negative Prompt estendido:
 Negative Prompt: text, watermark, typography, ui elements, violence, weapon, gore, sexual content.
+
+Uma "nova localizacao" inclui:
+- Mudanca de lugar principal (escritorio \u2192 apartamento)
+- Mudanca de sub-localizacao (quarto \u2192 sala, rua \u2192 interior do carro, entrada \u2192 corredor)
+- Qualquer mudanca no campo "local" do Environment Lock vs o TAKE anterior
+Verifique ANTES de cada TAKE: o Environment Lock mudou em relacao ao anterior? Se SIM \u2192 Negative Prompt estendido.
 
 Nos demais takes da mesma locacao, usar o padrao:
 Negative Prompt: text, watermark, typography, ui elements.
@@ -231,7 +260,8 @@ Checklist interno:
 - Cada descricao comeca com tecnica de camera
 - Descricoes com no maximo 30 palavras
 - Ambiente consistente (local + periodo do dia + tipo de luz)
-- Character Anchor usa nome COMPLETO e EXATO (sem abreviar, sem role, sem chapter)
+- Character Anchor e copia IDENTICA do identificador fornecido na lista de elenco (copiar TUDO incluindo role e chapter)
+- Multiplos personagens separados por | (pipe), NUNCA por virgula
 - NENHUM personagem aparece em TODAS as cenas (verificar contagem)
 - Cenas com dialogo/interacao tem os participantes corretos
 - Cenas descritivas/transicao usam \u2014 (travessao)
@@ -242,7 +272,11 @@ Checklist interno:
 - Character Anchor presente em todos os takes
 - Environment Lock presente em todos os takes
 - Tom hyper-realista e cinematografico (nunca fantasia/CGI)
-- Conteudo conectado a narracao de cada cena`
+- Conteudo conectado a narracao de cada cena
+- Maximo 3 personagens por Character Anchor (contar pipes + 1)
+- Descricao NAO contem palavras proibidas (processing, realizing, feeling, heart racing, etc.)
+- Se Environment Lock mudou vs TAKE anterior \u2192 Negative Prompt estendido
+- Descricao e Environment Lock sao coerentes (mesmo comodo/espaco)`
 
 export interface ParsedTake {
   takeNumber: number
@@ -315,6 +349,16 @@ function getCharsForChapter(characters: CharacterRef[], chapter: number): Charac
   return characters.filter((c) => c.chapters.length === 0 || c.chapters.includes(chapter))
 }
 
+function deduplicateByLabel(characters: CharacterRef[]): CharacterRef[] {
+  const seen = new Set<string>()
+  return characters.filter((c) => {
+    const lower = c.label.toLowerCase()
+    if (seen.has(lower)) return false
+    seen.add(lower)
+    return true
+  })
+}
+
 function getRoleHint(role: string): string {
   const lower = role.toLowerCase()
   if (lower.includes('lead') || lower.includes('protagonist'))
@@ -345,7 +389,7 @@ export function buildLlmPayload(
   const lastTakeNumber = startingTakeNumber + totalTakes - 1
 
   // Detect unique chapters in scenes
-  const uniqueChapters = [...new Set(scenes.map((s) => s.chapter))].sort((a, b) => a - b)
+  const uniqueChapters = [...new Set(scenes.map((s) => s.chapter ?? 1))].sort((a, b) => a - b)
 
   let userMessage = `MINUTAGEM: ${msToDisplay(firstMs)} - ${msToDisplay(lastMs)} (${minutes} min ${seconds} seg)
 TOTAL DE TAKES: ${totalTakes} (exato, gere EXATAMENTE este numero)
@@ -354,31 +398,53 @@ TAKE FINAL: ${lastTakeNumber}
 `
 
   // Cast list with roles (critical for character direction)
+  // Collect all chapter chars for dynamic examples later
+  let allChapterChars: CharacterRef[] = []
+
   if (characters.length > 0) {
     if (uniqueChapters.length <= 1) {
       const ch = uniqueChapters[0] ?? 1
       const chapterChars = getCharsForChapter(characters, ch)
+      allChapterChars = chapterChars
       if (chapterChars.length > 0) {
-        userMessage += `\nELENCO DO CAPITULO ${ch} (use o nome COMPLETO e EXATO no Character Anchor):\n`
-        for (const char of chapterChars) {
+        userMessage += `\nELENCO DO CAPITULO ${ch} -- COPIE o identificador EXATO no Character Anchor:\n`
+        for (const char of deduplicateByLabel(chapterChars)) {
           const hint = getRoleHint(char.role)
-          userMessage += `- ${char.name} [${char.role || 'Cast'}]${hint}\n`
+          userMessage += `- IDENTIFICADOR EXATO: "${char.label}"${hint}\n`
         }
       }
     } else {
-      userMessage += `\nELENCO POR CAPITULO (use o nome COMPLETO e EXATO no Character Anchor):\n`
+      userMessage += `\nELENCO POR CAPITULO -- COPIE o identificador EXATO no Character Anchor:\n`
       for (const ch of uniqueChapters) {
-        const chapterChars = getCharsForChapter(characters, ch)
+        const chapterChars = deduplicateByLabel(getCharsForChapter(characters, ch))
         if (chapterChars.length > 0) {
+          allChapterChars.push(...chapterChars)
           userMessage += `Capitulo ${ch}:\n`
           for (const char of chapterChars) {
             const hint = getRoleHint(char.role)
-            userMessage += `  - ${char.name} [${char.role || 'Cast'}]${hint}\n`
+            userMessage += `  - IDENTIFICADOR EXATO: "${char.label}"${hint}\n`
           }
         }
       }
+      // Chapter rules
+      userMessage += `\nREGRA DE CAPITULOS:\n`
+      userMessage += `- Os personagens listados acima sao os UNICOS disponiveis para cada capitulo\n`
+      userMessage += `- Se um personagem esta listado SEM capitulo especifico, use-o em qualquer capitulo onde aparece na historia\n`
+      userMessage += `- Se um personagem esta listado com capitulo especifico, use-o APENAS naquele capitulo\n`
+      userMessage += `- NUNCA use um personagem em um capitulo onde ele NAO esta listado\n`
     }
-    userMessage += `REGRA CRITICA: Use APENAS os nomes listados acima no Character Anchor. COPIE cada nome EXATAMENTE como escrito. Nomes diferentes ou inventados impedem o match com a imagem do personagem. Se o texto nao referencia ninguem da lista, use Character Anchor: \u2014\n`
+
+    // Dynamic examples with real cast labels
+    const uniqueChapterChars = deduplicateByLabel(allChapterChars)
+    userMessage += `\nREGRA CRITICA: O Character Anchor e um IDENTIFICADOR EXATO do personagem. Copie-o da lista acima caractere por caractere, sem nenhuma modificacao. Qualquer diferenca quebra o match com a imagem.\n`
+    userMessage += `Separe multiplos personagens com | (pipe), NAO com virgula.\n`
+    if (uniqueChapterChars.length > 0) {
+      userMessage += `Para ESTE elenco, o texto EXATO que deve aparecer no Character Anchor:\n`
+      for (const char of uniqueChapterChars) {
+        userMessage += `  "${char.label}" -- copie EXATAMENTE este texto\n`
+      }
+    }
+    userMessage += `Se o texto nao referencia ninguem da lista, use Character Anchor: \u2014\n`
   }
 
   // Full script as narrative context (critical for LLM to understand the story)
@@ -409,7 +475,7 @@ Voce e o diretor deste filme. ANTES de gerar os takes:
     const sceneBlocks = sorted.filter((b) => scene.blockIds.includes(b.id))
     const blockTexts = sceneBlocks.map((b) => b.text)
 
-    userMessage += `\n[TAKE ${takeNum}] Cena ${scene.index} (Capitulo ${scene.chapter}):\n`
+    userMessage += `\n[TAKE ${takeNum}] Cena ${scene.index} (Capitulo ${scene.chapter ?? 1}):\n`
 
     // Block texts only - cast is already provided globally with roles
     for (const text of blockTexts) {
@@ -420,7 +486,7 @@ Voce e o diretor deste filme. ANTES de gerar os takes:
   userMessage += `\n---\nGere EXATAMENTE ${totalTakes} TAKES, numerados de ${startingTakeNumber} a ${lastTakeNumber}.
 Cada TAKE deve corresponder EXATAMENTE a cena indicada acima.
 O conteudo visual de cada TAKE deve refletir diretamente o texto sincronizado da sua cena.
-Lembre: sem Duration, sem [FOTO]. Character Anchor usa APENAS nomes da lista de elenco, copiados EXATAMENTE. Nunca invente nomes.
+Lembre: sem Duration, sem [FOTO]. Character Anchor usa APENAS identificadores da lista de elenco, copiados EXATAMENTE. Separe multiplos com |. Nunca invente identificadores.
 IMPORTANTE: Analise o roteiro completo e distribua os personagens conforme a narrativa -- NAO repita o mesmo personagem em todas as cenas.`
 
   return {

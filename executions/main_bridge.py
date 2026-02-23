@@ -127,16 +127,81 @@ def write_video_segments(params):
     return _write_video_segments(params["draft_path"], params["scenes"])
 
 
+def _verify_sync(draft_path, sync_params):
+    """Verify sync_project results persisted on disk. Returns mismatch count."""
+    with open(draft_path, "r", encoding="utf-8") as f:
+        verify = json.load(f)
+
+    audio_segs = []
+    text_segs = []
+    for t in verify.get("tracks", []):
+        if t.get("type") == "audio":
+            audio_segs.extend(t.get("segments", []))
+        elif t.get("type") == "text":
+            text_segs.extend(t.get("segments", []))
+
+    audio_count = sum(1 for t in verify.get("tracks", []) if t.get("type") == "audio")
+    audio_segs.sort(key=lambda s: s.get("target_timerange", {}).get("start", 0))
+    text_segs.sort(key=lambda s: s.get("target_timerange", {}).get("start", 0))
+
+    mismatches = 0
+    total = min(len(audio_segs), len(text_segs))
+    for i in range(total):
+        a = audio_segs[i].get("target_timerange", {})
+        t = text_segs[i].get("target_timerange", {})
+        if a.get("start") != t.get("start") or a.get("duration") != t.get("duration"):
+            mismatches += 1
+
+    log.info(
+        "sync_project verify: audio_tracks=%d, audio_segs=%d, text_segs=%d, mismatches=%d/%d",
+        audio_count, len(audio_segs), len(text_segs), mismatches, total,
+    )
+    return mismatches, audio_count
+
+
 def sync_project(params):
     """Synchronize audio, video, and text segments in timeline."""
     from sync_engine import sync_project as _sync_project
-    return _sync_project(
-        draft_path=params["draft_path"],
+    from metadata_sync import sync_metadata as _sync_metadata
+
+    draft_path = params["draft_path"]
+    sync_kwargs = dict(
+        draft_path=draft_path,
         audio_track_index=params.get("audio_track_index", 0),
         mode=params.get("mode", "audio"),
         sync_subtitles=params.get("sync_subtitles", True),
         apply_animations=params.get("apply_animations", False),
     )
+
+    result = _sync_project(**sync_kwargs)
+
+    # Sync metadata after modifying the draft
+    draft_dir = os.path.dirname(draft_path)
+    _sync_metadata(draft_dir)
+
+    # Verify: check BOTH audio track count AND text timing alignment
+    time.sleep(0.5)
+    mismatches, audio_count = _verify_sync(draft_path, sync_kwargs)
+
+    if mismatches > 0 or audio_count > 1:
+        log.warning(
+            "sync_project verification FAILED (mismatches=%d, audio_tracks=%d). Retrying...",
+            mismatches, audio_count,
+        )
+        time.sleep(1.0)
+        result = _sync_project(**sync_kwargs)
+        _sync_metadata(draft_dir)
+
+        # Second verification
+        time.sleep(1.0)
+        mismatches2, audio_count2 = _verify_sync(draft_path, sync_kwargs)
+        if mismatches2 > 0 or audio_count2 > 1:
+            log.error(
+                "sync_project STILL FAILED after retry (mismatches=%d, audio_tracks=%d)",
+                mismatches2, audio_count2,
+            )
+
+    return result
 
 
 def apply_animations(params):
@@ -215,27 +280,63 @@ def insert_srt_batch(params):
 def flatten_audio(params):
     """Consolidate all audio tracks into a single sequential track."""
     from sync_engine import flatten_audio_tracks as _flatten
-    return _flatten(params["draft_path"])
+    from metadata_sync import sync_metadata as _sync_metadata
+
+    draft_path = params["draft_path"]
+    result = _flatten(draft_path)
+
+    # Sync metadata immediately after modifying the draft
+    draft_dir = os.path.dirname(draft_path)
+    _sync_metadata(draft_dir)
+
+    # Verify the write persisted (detect if CapCut overwrote during shutdown)
+    import json as _json
+    time.sleep(0.5)
+    with open(draft_path, "r", encoding="utf-8") as f:
+        verify = _json.load(f)
+    audio_count = sum(1 for t in verify.get("tracks", []) if t.get("type") == "audio")
+    if audio_count > 1:
+        log.warning("Flatten was overwritten! Re-running flatten_audio (%d audio tracks found)", audio_count)
+        result = _flatten(draft_path)
+        _sync_metadata(draft_dir)
+
+    return result
 
 
 def loop_video(params):
     """Repeat video segments to fill audio duration."""
     from sync_engine import loop_video as _loop
-    return _loop(
-        draft_path=params["draft_path"],
+    from metadata_sync import sync_metadata as _sync_metadata
+
+    draft_path = params["draft_path"]
+    result = _loop(
+        draft_path=draft_path,
         audio_track_index=params.get("audio_track_index", 0),
         order=params.get("order", "random"),
     )
+
+    draft_dir = os.path.dirname(draft_path)
+    _sync_metadata(draft_dir)
+
+    return result
 
 
 def loop_audio(params):
     """Repeat audio segments to fill target duration."""
     from sync_engine import loop_audio as _loop
-    return _loop(
-        draft_path=params["draft_path"],
+    from metadata_sync import sync_metadata as _sync_metadata
+
+    draft_path = params["draft_path"]
+    result = _loop(
+        draft_path=draft_path,
         track_index=params["track_index"],
         target_duration_us=params["target_duration_us"],
     )
+
+    draft_dir = os.path.dirname(draft_path)
+    _sync_metadata(draft_dir)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +361,25 @@ def check_capcut_running(params):
     return _check()
 
 
+def close_capcut(params):
+    """Close CapCut Desktop gracefully, then force if needed."""
+    from debug_tools import close_capcut as _close
+    return _close()
+
+
 def get_project_health(params):
     """Get comprehensive project health report."""
     from debug_tools import get_project_health as _health
     return _health(params["project_path"])
+
+
+def debug_sync_state(params):
+    """Read the actual draft from disk and diagnose sync state."""
+    from debug_tools import debug_sync_state as _debug
+    return _debug(
+        params["draft_path"],
+        params.get("expected_segments"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +486,9 @@ METHODS = {
     "validate_project": validate_project,
     "diagnose_root_meta": diagnose_root_meta,
     "check_capcut_running": check_capcut_running,
+    "close_capcut": close_capcut,
     "get_project_health": get_project_health,
+    "debug_sync_state": debug_sync_state,
     # TTS methods
     "tts_generate": tts_generate,
     "tts_preview_voice": tts_preview_voice,

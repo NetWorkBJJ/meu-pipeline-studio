@@ -7,6 +7,7 @@ check if CapCut is running, and get overall project health reports.
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -265,11 +266,15 @@ def diagnose_root_meta(project_name: str) -> dict:
     return result
 
 
-def check_capcut_running() -> dict:
-    """Check if CapCut is currently running.
+CAPCUT_PROCESSES = ["CapCut.exe", "CapCutHelper.exe", "CreativeGPT.exe"]
 
-    Important: CapCut must be closed when creating/modifying projects,
-    otherwise it will overwrite root_meta_info.json with its cached version.
+
+def check_capcut_running() -> dict:
+    """Check if any CapCut-related process is currently running.
+
+    Checks CapCut.exe, CapCutHelper.exe, and CreativeGPT.exe because
+    background processes can modify project files even when the main app
+    is closed.
     """
     result = {
         "running": False,
@@ -277,32 +282,91 @@ def check_capcut_running() -> dict:
         "warning": "",
     }
 
-    try:
-        output = subprocess.check_output(
-            ["tasklist", "/FI", "IMAGENAME eq CapCut.exe", "/FO", "CSV", "/NH"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
-        for line in output.strip().split("\n"):
-            line = line.strip()
-            if line and "CapCut.exe" in line:
-                result["running"] = True
-                parts = line.replace('"', '').split(",")
-                if len(parts) >= 2:
-                    result["processes"].append({
-                        "name": parts[0],
-                        "pid": parts[1],
-                    })
-    except Exception:
-        pass
+    for proc_name in CAPCUT_PROCESSES:
+        try:
+            output = subprocess.check_output(
+                ["tasklist", "/FI", f"IMAGENAME eq {proc_name}", "/FO", "CSV", "/NH"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            for line in output.strip().split("\n"):
+                line = line.strip()
+                if line and proc_name in line:
+                    result["running"] = True
+                    parts = line.replace('"', '').split(",")
+                    if len(parts) >= 2:
+                        result["processes"].append({
+                            "name": parts[0],
+                            "pid": parts[1],
+                        })
+        except Exception:
+            pass
 
     if result["running"]:
+        names = [p["name"] for p in result["processes"]]
         result["warning"] = (
-            "CapCut is running. Creating or modifying projects while CapCut is open "
-            "may cause root_meta_info.json to be overwritten, losing new entries."
+            f"CapCut processes running: {', '.join(names)}. "
+            "Background processes can modify project files."
         )
 
     return result
+
+
+def close_capcut() -> dict:
+    """Close ALL CapCut processes. Tries graceful shutdown first, then force kill.
+
+    Kills CapCut.exe, CapCutHelper.exe, and CreativeGPT.exe to prevent
+    background processes from overwriting project files.
+
+    Returns:
+        dict with keys: closed (bool), was_running (bool), method (str), killed (list)
+    """
+    status = check_capcut_running()
+    if not status["running"]:
+        return {"closed": False, "was_running": False, "method": "none", "killed": []}
+
+    killed = []
+
+    # Try graceful close for all processes
+    for proc_name in CAPCUT_PROCESSES:
+        try:
+            subprocess.run(
+                ["taskkill", "/IM", proc_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    # Wait up to 5 seconds for all processes to exit
+    for _ in range(10):
+        time.sleep(0.5)
+        check = check_capcut_running()
+        if not check["running"]:
+            killed = [p["name"] for p in status["processes"]]
+            return {"closed": True, "was_running": True, "method": "graceful", "killed": killed}
+
+    # Force kill all remaining processes
+    for proc_name in CAPCUT_PROCESSES:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/IM", proc_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    # Final check
+    time.sleep(1)
+    check = check_capcut_running()
+    killed = [p["name"] for p in status["processes"]]
+    if not check["running"]:
+        return {"closed": True, "was_running": True, "method": "force", "killed": killed}
+
+    return {"closed": False, "was_running": True, "method": "failed", "killed": []}
 
 
 def get_project_health(project_path: str) -> dict:
@@ -341,4 +405,261 @@ def get_project_health(project_path: str) -> dict:
         "registered_in_root_meta": len(root_meta.get("matches", [])) > 0,
         "validation": validation,
         "root_meta_info": root_meta,
+    }
+
+
+def debug_sync_state(draft_path: str, expected_segments: list = None) -> dict:
+    """Read the actual draft from disk and diagnose sync state.
+
+    Compares the real draft_content.json on disk with the expected state
+    from the app preview to identify why sync doesn't persist.
+
+    Args:
+        draft_path: Path to draft_content.json
+        expected_segments: Optional list of expected audio segments from preview
+            Each: { start_ms, end_ms, duration_ms }
+
+    Returns detailed diagnostics including track state, gaps, metadata, and issues.
+    """
+    path = Path(draft_path)
+    draft_dir = path.parent
+    issues = []
+    warnings = []
+
+    # --- 1. Read draft from disk ---
+    if not path.exists():
+        return {"error": f"Draft not found: {draft_path}", "issues": ["DRAFT_NOT_FOUND"]}
+
+    file_stat = path.stat()
+    file_modified_ts = file_stat.st_mtime
+    file_size_bytes = file_stat.st_size
+
+    with open(path, "r", encoding="utf-8") as f:
+        draft = json.load(f)
+
+    # --- 2. Analyze audio tracks ---
+    tracks = draft.get("tracks", [])
+    audio_tracks = []
+    all_audio_segs = []
+
+    for idx, track in enumerate(tracks):
+        if track.get("type") != "audio":
+            continue
+
+        segs = track.get("segments", [])
+        if not segs:
+            audio_tracks.append({
+                "track_index": idx,
+                "segment_count": 0,
+                "first_start_us": 0,
+                "last_end_us": 0,
+                "has_gaps": False,
+                "gap_count": 0,
+                "total_gap_us": 0,
+                "out_of_order": False,
+            })
+            continue
+
+        # Sort segments by start time for analysis
+        sorted_segs = sorted(
+            segs,
+            key=lambda s: s.get("target_timerange", {}).get("start", 0)
+        )
+
+        first_start = sorted_segs[0].get("target_timerange", {}).get("start", 0)
+        last_seg = sorted_segs[-1].get("target_timerange", {})
+        last_end = last_seg.get("start", 0) + last_seg.get("duration", 0)
+
+        # Check for gaps and ordering
+        gap_count = 0
+        total_gap_us = 0
+        out_of_order = False
+        gaps_detail = []
+
+        for i in range(1, len(sorted_segs)):
+            prev_tr = sorted_segs[i - 1].get("target_timerange", {})
+            curr_tr = sorted_segs[i].get("target_timerange", {})
+            prev_end = prev_tr.get("start", 0) + prev_tr.get("duration", 0)
+            curr_start = curr_tr.get("start", 0)
+
+            gap = curr_start - prev_end
+            if gap > 1000:  # > 1ms tolerance (in microseconds)
+                gap_count += 1
+                total_gap_us += gap
+                if len(gaps_detail) < 5:  # Report first 5 gaps
+                    gaps_detail.append({
+                        "between_segments": [i - 1, i],
+                        "gap_us": gap,
+                        "gap_ms": round(gap / 1000, 1),
+                        "at_position_ms": round(prev_end / 1000, 1),
+                    })
+
+            if curr_start < prev_end - 1000:  # Overlap detected
+                out_of_order = True
+
+        track_info = {
+            "track_index": idx,
+            "segment_count": len(segs),
+            "first_start_us": first_start,
+            "last_end_us": last_end,
+            "has_gaps": gap_count > 0,
+            "gap_count": gap_count,
+            "total_gap_us": total_gap_us,
+            "total_gap_ms": round(total_gap_us / 1000, 1),
+            "out_of_order": out_of_order,
+        }
+        if gaps_detail:
+            track_info["gaps_detail"] = gaps_detail
+        audio_tracks.append(track_info)
+        all_audio_segs.extend(segs)
+
+    # --- 3. Analyze text tracks ---
+    text_tracks = []
+    for idx, track in enumerate(tracks):
+        if track.get("type") != "text":
+            continue
+        segs = track.get("segments", [])
+        text_tracks.append({
+            "track_index": idx,
+            "segment_count": len(segs),
+        })
+
+    # --- 4. Read metadata ---
+    metadata = {}
+    draft_meta_path = draft_dir / "draft_meta_info.json"
+    if draft_meta_path.exists():
+        with open(draft_meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        metadata["tm_draft_modified"] = meta.get("tm_draft_modified", 0)
+        metadata["cloud_draft_sync"] = meta.get("cloud_draft_sync", "NOT_SET")
+        metadata["materials_size"] = meta.get("draft_timeline_materials_size_", 0)
+        metadata["tm_duration"] = meta.get("tm_duration", 0)
+
+        # Check if metadata is recent (within last 5 minutes)
+        now_us = int(time.time() * 1_000_000)
+        meta_age_seconds = (now_us - metadata["tm_draft_modified"]) / 1_000_000
+        metadata["age_seconds"] = round(meta_age_seconds, 1)
+        metadata["is_recent"] = meta_age_seconds < 300  # 5 min
+
+    # --- 5. Check issues ---
+    total_audio_segs = sum(t["segment_count"] for t in audio_tracks)
+
+    if len(audio_tracks) > 1:
+        issues.append(
+            f"MULTIPLE_AUDIO_TRACKS: Found {len(audio_tracks)} audio tracks "
+            f"(expected 1 after flatten). Flatten may not have run or was reverted."
+        )
+
+    if len(audio_tracks) == 0:
+        issues.append("NO_AUDIO_TRACKS: No audio tracks found in draft.")
+
+    for at in audio_tracks:
+        if at["has_gaps"]:
+            issues.append(
+                f"AUDIO_GAPS: Track {at['track_index']} has {at['gap_count']} gap(s) "
+                f"totaling {at['total_gap_ms']}ms. Audio should be sequential without gaps."
+            )
+        if at["out_of_order"]:
+            issues.append(
+                f"AUDIO_OVERLAP: Track {at['track_index']} has overlapping segments."
+            )
+
+    if metadata.get("cloud_draft_sync") is not False:
+        issues.append(
+            f"CLOUD_SYNC_ENABLED: cloud_draft_sync={metadata.get('cloud_draft_sync')} "
+            f"(should be False). CapCut may overwrite local changes with cloud version."
+        )
+
+    if metadata.get("age_seconds", 9999) > 300:
+        issues.append(
+            f"STALE_METADATA: tm_draft_modified is {metadata.get('age_seconds', '?')}s old. "
+            f"Metadata should be updated after every draft write."
+        )
+
+    # --- 6. Compare with expected (preview) segments ---
+    comparison = None
+    if expected_segments and len(audio_tracks) > 0:
+        actual_count = total_audio_segs
+        expected_count = len(expected_segments)
+        comparison = {
+            "expected_count": expected_count,
+            "actual_count": actual_count,
+            "match": actual_count == expected_count,
+            "actual_tracks": len(audio_tracks),
+        }
+
+        if actual_count != expected_count:
+            issues.append(
+                f"SEGMENT_COUNT_MISMATCH: Preview shows {expected_count} segments "
+                f"but disk has {actual_count}."
+            )
+
+        # Compare first few segment positions
+        if audio_tracks and expected_segments:
+            actual_sorted = sorted(
+                all_audio_segs,
+                key=lambda s: s.get("target_timerange", {}).get("start", 0)
+            )
+            mismatches = []
+            for i in range(min(5, len(expected_segments), len(actual_sorted))):
+                exp = expected_segments[i]
+                act_tr = actual_sorted[i].get("target_timerange", {})
+                act_start_ms = act_tr.get("start", 0) / 1000
+                act_end_ms = (act_tr.get("start", 0) + act_tr.get("duration", 0)) / 1000
+                exp_start = exp.get("start_ms", 0)
+                exp_end = exp.get("end_ms", 0)
+
+                if abs(act_start_ms - exp_start) > 10 or abs(act_end_ms - exp_end) > 10:
+                    mismatches.append({
+                        "index": i,
+                        "expected_start_ms": exp_start,
+                        "actual_start_ms": round(act_start_ms, 1),
+                        "expected_end_ms": exp_end,
+                        "actual_end_ms": round(act_end_ms, 1),
+                    })
+
+            if mismatches:
+                comparison["position_mismatches"] = mismatches
+                issues.append(
+                    f"POSITION_MISMATCH: {len(mismatches)} of first 5 segments have "
+                    f"different positions on disk vs preview."
+                )
+
+    # --- 7. Check CapCut running ---
+    capcut_running = False
+    try:
+        output = subprocess.check_output(
+            ["tasklist", "/FI", "IMAGENAME eq CapCut.exe", "/FO", "CSV", "/NH"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        if "CapCut.exe" in output:
+            capcut_running = True
+            warnings.append(
+                "CapCut Desktop is running. It may revert changes to the draft "
+                "if metadata is not synced immediately after writing."
+            )
+    except Exception:
+        pass
+
+    return {
+        "draft_path": str(path),
+        "file_modified_time": file_modified_ts,
+        "file_modified_ago_seconds": round(time.time() - file_modified_ts, 1),
+        "file_size_bytes": file_size_bytes,
+        "draft_duration_us": draft.get("duration", 0),
+        "draft_duration_ms": round(draft.get("duration", 0) / 1000, 1),
+        "total_tracks": len(tracks),
+        "audio_tracks": audio_tracks,
+        "audio_track_count": len(audio_tracks),
+        "total_audio_segments": total_audio_segs,
+        "text_tracks": text_tracks,
+        "text_track_count": len(text_tracks),
+        "total_text_segments": sum(t["segment_count"] for t in text_tracks),
+        "metadata": metadata,
+        "capcut_running": capcut_running,
+        "comparison": comparison,
+        "issues": issues,
+        "warnings": warnings,
+        "is_healthy": len(issues) == 0,
     }

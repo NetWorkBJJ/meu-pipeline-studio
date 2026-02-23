@@ -31,11 +31,11 @@ function isEmptyAnchor(anchor: string): boolean {
   return DASH_CHARS.includes(trimmed) || trimmed === ''
 }
 
-function extractCharacterNames(anchor: string): string[] {
+function extractCharacterLabels(anchor: string): string[] {
   if (isEmptyAnchor(anchor)) return []
   return anchor
     .replace(/\.$/, '')
-    .split(/\s*,\s*/)
+    .split(/\s*\|\s*/)
     .map((n) => n.trim())
     .filter(Boolean)
 }
@@ -150,14 +150,14 @@ function rulesNegativePrompt(takes: ParsedTake[]): QualityRule {
 }
 
 function rulesCharacterNamesValid(takes: ParsedTake[], characters: CharacterRef[]): QualityRule {
-  const knownNames = new Set(characters.map((c) => c.name.toLowerCase()))
+  const knownLabels = new Set(characters.map((c) => c.label.toLowerCase()))
   const invalid: Array<{ take: number; name: string }> = []
 
   for (const take of takes) {
-    const names = extractCharacterNames(take.characterAnchor)
-    for (const name of names) {
-      if (!knownNames.has(name.toLowerCase())) {
-        invalid.push({ take: take.takeNumber, name })
+    const labels = extractCharacterLabels(take.characterAnchor)
+    for (const label of labels) {
+      if (!knownLabels.has(label.toLowerCase())) {
+        invalid.push({ take: take.takeNumber, name: label })
       }
     }
   }
@@ -198,9 +198,9 @@ function rulesCharacterNotAllSame(takes: ParsedTake[], characters: CharacterRef[
   // Check if the same character appears in ALL takes that have characters
   const charFrequency: Record<string, number> = {}
   for (const take of takesWithChars) {
-    const names = extractCharacterNames(take.characterAnchor)
-    for (const name of names) {
-      charFrequency[name.toLowerCase()] = (charFrequency[name.toLowerCase()] || 0) + 1
+    const labels = extractCharacterLabels(take.characterAnchor)
+    for (const label of labels) {
+      charFrequency[label.toLowerCase()] = (charFrequency[label.toLowerCase()] || 0) + 1
     }
   }
 
@@ -245,7 +245,7 @@ function rulesCharacterVariety(takes: ParsedTake[], characters: CharacterRef[]):
 
   // Count unique character combinations
   const combos = new Set(takesWithChars.map((t) =>
-    extractCharacterNames(t.characterAnchor).sort().join('|').toLowerCase()
+    extractCharacterLabels(t.characterAnchor).sort().join('||').toLowerCase()
   ))
 
   const emptyCount = takes.length - takesWithChars.length
@@ -259,9 +259,9 @@ function rulesCharacterVariety(takes: ParsedTake[], characters: CharacterRef[]):
 
   let leadDominance = 0
   if (leadChars.length > 0) {
-    const leadNames = new Set(leadChars.map((c) => c.name.toLowerCase()))
+    const leadLabels = new Set(leadChars.map((c) => c.label.toLowerCase()))
     const leadAppearances = takesWithChars.filter((t) =>
-      extractCharacterNames(t.characterAnchor).some((n) => leadNames.has(n.toLowerCase()))
+      extractCharacterLabels(t.characterAnchor).some((l) => leadLabels.has(l.toLowerCase()))
     ).length
     leadDominance = leadAppearances / takesWithChars.length
   }
@@ -352,7 +352,7 @@ function rulesNoAbbreviation(takes: ParsedTake[], characters: CharacterRef[]): Q
   if (characters.length === 0) {
     return {
       id: 'no-abbreviation',
-      name: 'Nomes completos (sem abreviar)',
+      name: 'Identificadores completos (sem abreviar)',
       weight: 8,
       passed: true,
       details: 'Sem personagens para verificar'
@@ -363,23 +363,23 @@ function rulesNoAbbreviation(takes: ParsedTake[], characters: CharacterRef[]): Q
 
   for (const take of takes) {
     if (isEmptyAnchor(take.characterAnchor)) continue
-    const names = extractCharacterNames(take.characterAnchor)
+    const labels = extractCharacterLabels(take.characterAnchor)
 
-    for (const name of names) {
-      // Check if name is a partial match (abbreviation) of any character
+    for (const label of labels) {
+      // Check if label is an exact match of any character's label
       const isExactMatch = characters.some(
-        (c) => c.name.toLowerCase() === name.toLowerCase()
+        (c) => c.label.toLowerCase() === label.toLowerCase()
       )
       if (!isExactMatch) {
-        // Check if it's an abbreviation of a known character
+        // Check if it's an abbreviation/partial of a known character label
         const partialMatch = characters.find((c) =>
-          c.name.toLowerCase().startsWith(name.toLowerCase()) && name.length < c.name.length
+          c.label.toLowerCase().startsWith(label.toLowerCase()) && label.length < c.label.length
         )
         if (partialMatch) {
           abbreviations.push({
             take: take.takeNumber,
-            found: name,
-            expected: partialMatch.name
+            found: label,
+            expected: partialMatch.label
           })
         }
       }
@@ -388,12 +388,166 @@ function rulesNoAbbreviation(takes: ParsedTake[], characters: CharacterRef[]): Q
 
   return {
     id: 'no-abbreviation',
-    name: 'Nomes completos (sem abreviar)',
+    name: 'Identificadores completos (sem abreviar)',
     weight: 8,
     passed: abbreviations.length === 0,
     details: abbreviations.length === 0
-      ? 'Todos os nomes estao completos'
+      ? 'Todos os identificadores estao completos'
       : `Abreviacoes: ${abbreviations.slice(0, 3).map((a) => `"${a.found}" → "${a.expected}" (Take ${a.take})`).join(', ')}`
+  }
+}
+
+// --- V17 Quality Guard Rules ---
+
+function rulesMaxCharsPerAnchor(takes: ParsedTake[]): QualityRule {
+  const MAX_CHARS = 3
+  const failing: Array<{ take: number; count: number }> = []
+  for (const take of takes) {
+    const labels = extractCharacterLabels(take.characterAnchor)
+    if (labels.length > MAX_CHARS) {
+      failing.push({ take: take.takeNumber, count: labels.length })
+    }
+  }
+  return {
+    id: 'max-characters-per-anchor',
+    name: 'Maximo 3 personagens por Character Anchor',
+    weight: 12,
+    passed: failing.length === 0,
+    details: failing.length === 0
+      ? 'Todos os takes respeitam o limite de 3 personagens'
+      : `${failing.length} take(s) com excesso: ${failing.map((f) => `Take ${f.take} (${f.count})`).join(', ')}`
+  }
+}
+
+function rulesExtendedNegativeOnTransition(takes: ParsedTake[]): QualityRule {
+  const EXTENDED_KEYWORDS = ['violence', 'weapon', 'gore', 'sexual']
+  const missing: number[] = []
+
+  for (let i = 0; i < takes.length; i++) {
+    const isFirstTake = i === 0
+    const envChanged =
+      i > 0 &&
+      takes[i].environmentLock.trim().toLowerCase() !==
+        takes[i - 1].environmentLock.trim().toLowerCase()
+
+    if (isFirstTake || envChanged) {
+      const hasExtended = EXTENDED_KEYWORDS.some((kw) =>
+        takes[i].negativePrompt.toLowerCase().includes(kw)
+      )
+      if (!hasExtended) {
+        missing.push(takes[i].takeNumber)
+      }
+    }
+  }
+
+  return {
+    id: 'extended-negative-on-transition',
+    name: 'Negative Prompt estendido em transicoes',
+    weight: 8,
+    passed: missing.length === 0,
+    details: missing.length === 0
+      ? 'Todas as transicoes de localizacao tem Negative Prompt estendido'
+      : `${missing.length} transicao(oes) sem estendido: Takes ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`
+  }
+}
+
+const INTERNAL_EMOTION_BLOCKLIST = [
+  'processing',
+  'realizing',
+  'thinking',
+  'remembering',
+  'feeling',
+  'heart racing',
+  'heart warmed',
+  'weight of',
+  'loaded words',
+  'means everything',
+  'admitting fear',
+  'deeper meaning',
+  'crossed line',
+  'surprising himself',
+  'surprising herself',
+  'chose him',
+  'chose her',
+  'internal conflict',
+  'wondering',
+  'she chose',
+  'he chose',
+  'it means'
+]
+
+function rulesNoInternalEmotions(takes: ParsedTake[]): QualityRule {
+  const failing: Array<{ take: number; word: string }> = []
+  for (const take of takes) {
+    const lower = take.description.toLowerCase()
+    for (const phrase of INTERNAL_EMOTION_BLOCKLIST) {
+      if (lower.includes(phrase)) {
+        failing.push({ take: take.takeNumber, word: phrase })
+        break
+      }
+    }
+  }
+  return {
+    id: 'no-internal-emotions',
+    name: 'Sem emocoes internas na descricao',
+    weight: 7,
+    passed: failing.length <= Math.ceil(takes.length * 0.05),
+    details: failing.length === 0
+      ? 'Nenhuma emocao interna detectada nas descricoes'
+      : `${failing.length} take(s) com emocoes internas: ${failing.slice(0, 3).map((f) => `Take ${f.take} ("${f.word}")`).join(', ')}`
+  }
+}
+
+const ROOM_KEYWORDS = [
+  'bedroom',
+  'living room',
+  'kitchen',
+  'bathroom',
+  'hallway',
+  'corridor',
+  'entrance',
+  'lobby',
+  'garage',
+  'rooftop',
+  'balcony',
+  'garden',
+  'courtyard',
+  'parking',
+  'elevator',
+  'staircase',
+  'office',
+  'restaurant',
+  'bar',
+  'cafe'
+]
+
+function rulesDescriptionMatchesEnvironment(takes: ParsedTake[]): QualityRule {
+  const mismatches: Array<{ take: number; descRoom: string; envRoom: string }> = []
+
+  for (const take of takes) {
+    const descLower = take.description.toLowerCase()
+    const envLower = take.environmentLock.toLowerCase()
+
+    for (const room of ROOM_KEYWORDS) {
+      if (descLower.includes(room) && !envLower.includes(room)) {
+        mismatches.push({
+          take: take.takeNumber,
+          descRoom: room,
+          envRoom: envLower.split(',')[0] || 'unknown'
+        })
+        break
+      }
+    }
+  }
+
+  return {
+    id: 'description-matches-environment',
+    name: 'Descricao coerente com Environment Lock',
+    weight: 5,
+    passed: mismatches.length === 0,
+    details: mismatches.length === 0
+      ? 'Todas as descricoes sao coerentes com o Environment Lock'
+      : `${mismatches.length} incoerencia(s): ${mismatches.slice(0, 3).map((m) => `Take ${m.take} ("${m.descRoom}" na descricao, "${m.envRoom}" no env)`).join(', ')}`
   }
 }
 
@@ -415,7 +569,11 @@ export function validatePromptQuality(
     rulesCharacterVariety(takes, characters),
     rulesEnvironmentLock(takes),
     rulesEnvironmentConsistency(takes, scenes),
-    rulesNoAbbreviation(takes, characters)
+    rulesNoAbbreviation(takes, characters),
+    rulesMaxCharsPerAnchor(takes),
+    rulesExtendedNegativeOnTransition(takes),
+    rulesNoInternalEmotions(takes),
+    rulesDescriptionMatchesEnvironment(takes)
   ]
 
   const totalWeight = rules.reduce((sum, r) => sum + r.weight, 0)

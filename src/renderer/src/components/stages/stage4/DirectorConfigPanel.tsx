@@ -54,30 +54,6 @@ const SEQUENCE_MODES: Array<{
   }
 ]
 
-const LLM_PROVIDERS = [
-  {
-    value: 'claude',
-    label: 'Claude Code',
-    npmPkg: '@anthropic-ai/claude-code',
-    installUrl: 'https://docs.anthropic.com/en/docs/claude-code/overview',
-    loginCmd: 'claude login'
-  },
-  {
-    value: 'codex',
-    label: 'OpenAI Codex',
-    npmPkg: '@openai/codex',
-    installUrl: 'https://github.com/openai/codex',
-    loginCmd: 'codex'
-  },
-  {
-    value: 'gemini',
-    label: 'Gemini CLI',
-    npmPkg: '@google/gemini-cli',
-    installUrl: 'https://github.com/google-gemini/gemini-cli',
-    loginCmd: 'gemini'
-  }
-] as const
-
 export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): React.JSX.Element {
   const config = useProjectStore((s) => s.directorConfig)
   const characterRefs = useProjectStore((s) => s.characterRefs)
@@ -92,14 +68,14 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
   const checkLlm = async (): Promise<void> => {
     setCheckingLlm(true)
     try {
-      const result = (await window.api.directorCheckLlm(config.llmProvider)) as {
+      const result = (await window.api.directorCheckLlm('claude')) as {
         available: boolean
       }
       setLlmAvailable(result.available)
       if (!result.available) {
         addToast({
           type: 'warning',
-          message: `CLI '${config.llmProvider}' nao encontrado no PATH.`
+          message: 'Claude Code CLI nao encontrado no PATH.'
         })
       }
     } catch {
@@ -110,8 +86,12 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
   }
 
   useEffect(() => {
+    // Ensure config is always claude + opus-4-6
+    if (config.llmProvider !== 'claude' || !config.llmModel) {
+      setDirectorConfig({ llmProvider: 'claude', llmModel: 'claude-opus-4-6' })
+    }
     checkLlm()
-  }, [config.llmProvider])
+  }, [])
 
   const handleImportCharacters = async (): Promise<void> => {
     try {
@@ -275,23 +255,14 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
         </div>
       </div>
 
-      {/* LLM Provider */}
+      {/* LLM -- Fixed to Claude Opus 4.6 */}
       <div>
-        <h4 className="text-xs font-medium text-text mb-2">Provedor LLM</h4>
+        <h4 className="text-xs font-medium text-text mb-2">Motor de IA</h4>
         <div className="flex items-center gap-2">
-          <select
-            value={config.llmProvider}
-            onChange={(e) =>
-              setDirectorConfig({ llmProvider: e.target.value as typeof config.llmProvider })
-            }
-            className="rounded-md border border-border bg-bg px-2.5 py-1.5 text-xs text-text transition-colors focus:border-primary focus:outline-none"
-          >
-            {LLM_PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5">
+            <Brain className="h-3.5 w-3.5 text-primary" />
+            <span className="text-xs font-medium text-primary">Claude Opus 4.6</span>
+          </div>
           <button
             onClick={checkLlm}
             disabled={checkingLlm}
@@ -317,11 +288,10 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
           )}
         </div>
 
-        {/* Action buttons based on CLI state */}
         {llmAvailable === false && (
           <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-[10px] text-text-muted mb-2">
-              CLI nao encontrado. Instale para usar a IA na geracao de prompts.
+              Claude Code CLI nao encontrado. Instale para gerar prompts com IA.
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -329,10 +299,10 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
                 onClick={async () => {
                   setInstalling(true)
                   try {
-                    await window.api.directorInstallCli(config.llmProvider)
+                    await window.api.directorInstallCli('claude')
                     addToast({
                       type: 'success',
-                      message: `${LLM_PROVIDERS.find((p) => p.value === config.llmProvider)?.label} instalado com sucesso!`
+                      message: 'Claude Code CLI instalado com sucesso!'
                     })
                     await checkLlm()
                   } catch (err: unknown) {
@@ -353,10 +323,12 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
                 {installing ? 'Instalando...' : 'Instalar automaticamente'}
               </button>
               <button
-                onClick={() => {
-                  const provider = LLM_PROVIDERS.find((p) => p.value === config.llmProvider)
-                  if (provider) window.open(provider.installUrl, '_blank')
-                }}
+                onClick={() =>
+                  window.open(
+                    'https://docs.anthropic.com/en/docs/claude-code/overview',
+                    '_blank'
+                  )
+                }
                 className="flex items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-[10px] font-medium text-text-muted transition-colors hover:text-text"
               >
                 <ExternalLink className="h-3 w-3" />
@@ -365,10 +337,7 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
             </div>
             <p className="mt-2 text-[9px] text-text-muted/60">
               Requer Node.js/npm instalado. Executa:{' '}
-              <code className="text-primary/70">
-                npm install -g{' '}
-                {LLM_PROVIDERS.find((p) => p.value === config.llmProvider)?.npmPkg}
-              </code>
+              <code className="text-primary/70">npm install -g @anthropic-ai/claude-code</code>
             </p>
           </div>
         )}
@@ -380,13 +349,11 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 rounded bg-bg px-2.5 py-1.5 text-[11px] text-primary font-mono">
-                {LLM_PROVIDERS.find((p) => p.value === config.llmProvider)?.loginCmd}
+                claude login
               </code>
               <button
                 onClick={() => {
-                  const cmd =
-                    LLM_PROVIDERS.find((p) => p.value === config.llmProvider)?.loginCmd || ''
-                  navigator.clipboard.writeText(cmd)
+                  navigator.clipboard.writeText('claude login')
                   addToast({ type: 'success', message: 'Comando copiado!' })
                 }}
                 className="flex items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-[10px] font-medium text-text-muted transition-colors hover:text-text"

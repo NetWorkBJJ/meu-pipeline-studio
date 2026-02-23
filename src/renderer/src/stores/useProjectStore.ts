@@ -180,7 +180,7 @@ const initialState = {
     imageMinDurationMs: 3000,
     imageMaxDurationMs: 5000,
     llmProvider: 'claude',
-    llmModel: '',
+    llmModel: 'claude-opus-4-6',
     promptTemplate: '',
     promptExamples: '',
     variationSeed: Math.floor(Math.random() * 100000)
@@ -425,14 +425,24 @@ export const useProjectStore = create<ProjectState>()(
         set({ characterRefs: refs })
       },
       loadDirectorState: (snapshot) => {
+        // Migrate scenes: ensure chapter is always a number (old snapshots may lack it)
+        const migratedScenes = snapshot.scenes?.map((s) => ({
+          ...s,
+          chapter: typeof s.chapter === 'number' ? s.chapter : 1
+        }))
+
         set((state) => ({
           rawScript: snapshot.rawScript ?? state.rawScript,
-          scenes: snapshot.scenes ?? state.scenes,
+          scenes: migratedScenes ?? state.scenes,
           storyBlocks: snapshot.storyBlocks ?? state.storyBlocks,
           directorConfig: snapshot.directorConfig
             ? { ...state.directorConfig, ...snapshot.directorConfig }
             : state.directorConfig,
-          characterRefs: snapshot.characterRefs ?? state.characterRefs
+          // Preserve current characterRefs if snapshot has empty array
+          characterRefs:
+            snapshot.characterRefs && snapshot.characterRefs.length > 0
+              ? snapshot.characterRefs
+              : state.characterRefs
         }))
         if (snapshot.scenes && snapshot.scenes.length > 0) {
           useStageStore.getState().setFreeNavigation(true)
@@ -461,8 +471,10 @@ export const useProjectStore = create<ProjectState>()(
         const state = persisted as Record<string, unknown>
         if (version === 0) {
           const dc = state.directorConfig as Record<string, unknown> | undefined
-          if (dc && dc.llmProvider === 'chatgpt') {
-            dc.llmProvider = 'codex'
+          if (dc) {
+            // Force provider to claude (previously allowed codex/gemini/chatgpt)
+            dc.llmProvider = 'claude'
+            if (!dc.llmModel) dc.llmModel = 'claude-opus-4-6'
           }
         }
         return state as unknown as ProjectState

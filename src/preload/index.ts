@@ -116,8 +116,11 @@ const api = {
   diagnoseRootMeta: (projectName: string): Promise<unknown> =>
     ipcRenderer.invoke('capcut:diagnose-root-meta', projectName),
   checkCapCutRunning: (): Promise<unknown> => ipcRenderer.invoke('capcut:check-capcut-running'),
+  closeCapCut: (): Promise<unknown> => ipcRenderer.invoke('capcut:close-capcut'),
   getProjectHealth: (projectPath: string): Promise<unknown> =>
     ipcRenderer.invoke('capcut:get-project-health', projectPath),
+  debugSyncState: (params: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke('capcut:debug-sync-state', params),
 
   watchDraft: (draftPath: string): Promise<unknown> =>
     ipcRenderer.invoke('project:watch-draft', draftPath),

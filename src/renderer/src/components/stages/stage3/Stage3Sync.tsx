@@ -7,7 +7,8 @@ import {
   CheckCircle2,
   Loader2,
   ArrowRight,
-  Circle
+  Circle,
+  XCircle
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
@@ -42,6 +43,9 @@ export function Stage3Sync(): React.JSX.Element {
   const [unlinkedCount, setUnlinkedCount] = useState(0)
   const [gapsRemoved, setGapsRemoved] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [capCutWarning, setCapCutWarning] = useState(false)
+  const [closingCapCut, setClosingCapCut] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
 
   const hasExistingSync =
     projectLoaded &&
@@ -92,13 +96,57 @@ export function Stage3Sync(): React.JSX.Element {
     setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, status } : s)))
   }
 
+  const handleSyncClick = async (): Promise<void> => {
+    // Gate: check if CapCut is running before allowing sync
+    if (isCapCutAudio && capCutDraftPath) {
+      try {
+        const status = (await window.api.checkCapCutRunning()) as { running: boolean }
+        if (status.running) {
+          setCapCutWarning(true)
+          return
+        }
+        // CapCut is closed - wait briefly for any lingering shutdown saves
+        await new Promise((r) => setTimeout(r, 2000))
+      } catch {
+        // If check fails, proceed anyway
+      }
+    }
+    handleSync()
+  }
+
+  const handleCloseCapCutAndSync = async (): Promise<void> => {
+    setClosingCapCut(true)
+    try {
+      const result = (await window.api.closeCapCut()) as { closed: boolean }
+      if (!result.closed) {
+        addToast({
+          type: 'warning',
+          message: 'Feche o CapCut manualmente e clique "Sincronizar" novamente.'
+        })
+        setClosingCapCut(false)
+        setCapCutWarning(false)
+        return
+      }
+      // Wait 5 seconds for CapCut to fully flush its shutdown save to disk
+      // CapCut saves its in-memory state during shutdown, which can overwrite our files
+      await new Promise((r) => setTimeout(r, 5000))
+      setCapCutWarning(false)
+      setClosingCapCut(false)
+      handleSync()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao fechar CapCut'
+      addToast({ type: 'error', message })
+      setClosingCapCut(false)
+    }
+  }
+
   const handleSync = async (): Promise<void> => {
     // Build processing steps based on scenario
     const newSteps: ProcessingStep[] = []
     if (isCapCutAudio && capCutDraftPath) {
       newSteps.push(
-        { id: 'consolidate', label: 'Consolidando audio em 1 track', status: 'pending' },
-        { id: 'gaps', label: 'Removendo gaps entre segmentos', status: 'pending' }
+        { id: 'consolidate', label: 'Sincronizando audio + legendas no draft', status: 'pending' },
+        { id: 'gaps', label: 'Recarregando dados do draft', status: 'pending' }
       )
     }
     newSteps.push(
@@ -112,28 +160,33 @@ export function Stage3Sync(): React.JSX.Element {
     try {
       let freshAudioBlocks = audioBlocks
 
-      // Step 1+2: Consolidate audio in CapCut draft
+      // Step 1+2: Full atomic sync - flatten audio + align text timings + write to disk
       if (isCapCutAudio && capCutDraftPath) {
         updateStep('consolidate', 'running')
-        const flattenResult = (await window.api.flattenAudio(capCutDraftPath)) as {
+        const syncResult = (await window.api.syncProject({
+          draftPath: capCutDraftPath,
+          mode: 'audio',
+          syncSubtitles: true,
+          applyAnimations: false
+        })) as {
           success: boolean
-          stats: { totalSegments: number; originalTracks: number; removedTracks: number }
+          stats: { gapsRemoved: number; mediaModified: number; subtitlesModified: number }
         }
         updateStep('consolidate', 'done')
 
         await new Promise((r) => setTimeout(r, 400))
 
         updateStep('gaps', 'running')
-        // Reload fresh audio blocks after consolidation
+        // Reload fresh audio blocks after sync (now flattened on disk)
         await reloadAudioBlocks(capCutDraftPath)
         freshAudioBlocks = useProjectStore.getState().audioBlocks
-        setGapsRemoved(flattenResult.stats?.removedTracks ?? 0)
+        setGapsRemoved(syncResult.stats?.gapsRemoved ?? 0)
         updateStep('gaps', 'done')
 
         await new Promise((r) => setTimeout(r, 400))
       }
 
-      // Step 3: Align text to audio
+      // Step 3: Align text to audio (in-memory for preview display)
       updateStep('align', 'running')
       await new Promise((r) => setTimeout(r, 300))
 
@@ -172,52 +225,116 @@ export function Stage3Sync(): React.JSX.Element {
   }
 
   const handleConfirm = async (): Promise<void> => {
-    // Write timings back to CapCut if blocks have material IDs
-    const blocksWithIds = storyBlocks.filter((b) => b.textMaterialId)
-    if (blocksWithIds.length > 0 && capCutDraftPath) {
+    if (capCutDraftPath) {
       try {
-        const timingBlocks = blocksWithIds.map((b) => ({
-          material_id: b.textMaterialId,
-          start_ms: b.startMs,
-          end_ms: b.endMs
-        }))
-        await window.api.updateSubtitleTimings(capCutDraftPath, timingBlocks)
-        await window.api.syncMetadata(capCutDraftPath)
+        // Atomic write: flatten audio + sync subtitle timings + sync video in one operation
+        await window.api.syncProject({
+          draftPath: capCutDraftPath,
+          mode: 'audio',
+          syncSubtitles: true,
+          applyAnimations: false
+        })
       } catch {
         addToast({
           type: 'warning',
-          message: 'Timings salvos localmente (erro ao gravar no CapCut).'
+          message: 'Erro ao gravar sincronizacao no CapCut.'
         })
+      }
+
+      try {
+        await window.api.syncMetadata(capCutDraftPath)
+      } catch {
+        // metadata sync failure is non-fatal
       }
     }
 
+    setConfirmed(true)
     completeStage(3)
-    addToast({ type: 'success', message: 'Etapa concluida. Avance para Direcao.' })
+    addToast({ type: 'success', message: 'Etapa concluida. Abra o CapCut para ver as alteracoes.' })
+  }
+
+  const handleOpenCapCut = async (): Promise<void> => {
+    try {
+      await window.api.openCapCut()
+    } catch {
+      addToast({ type: 'error', message: 'Erro ao abrir CapCut.' })
+    }
   }
 
   const handleRefresh = (): void => {
     setPhase('summary')
     setSteps([])
     setGapsRemoved(0)
+    setCapCutWarning(false)
+    setConfirmed(false)
   }
 
   // --- Render ---
   return (
     <AnimatePresence mode="wait">
       {phase === 'summary' && (
-        <SummaryView
-          key="summary"
-          analysis={analysis}
-          hasAudio={hasAudio}
-          hasText={hasText}
-          hasExistingSync={hasExistingSync}
-          stageAlreadyComplete={stageAlreadyComplete}
-          storyBlockCount={storyBlocks.length}
-          audioBlockCount={audioBlocks.length}
-          loading={loading}
-          onSync={handleSync}
-          onAccept={handleAcceptExisting}
-        />
+        <motion.div
+          key="summary-wrapper"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.15 }}
+          className="flex flex-col gap-4"
+        >
+          {/* CapCut open warning banner */}
+          {capCutWarning && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="flex flex-col gap-3 rounded-lg border border-error/30 bg-error/5 p-4"
+            >
+              <div className="flex items-start gap-3">
+                <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-error" />
+                <div>
+                  <p className="text-sm font-medium text-error">CapCut Desktop esta aberto</p>
+                  <p className="mt-1 text-xs text-text-muted">
+                    O CapCut precisa estar fechado durante a sincronizacao. Enquanto estiver aberto,
+                    ele mantem o projeto em memoria e ignora alteracoes externas no arquivo.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setCapCutWarning(false)}
+                  disabled={closingCapCut}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-muted transition-all hover:bg-surface-hover hover:text-text"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleCloseCapCutAndSync}
+                  disabled={closingCapCut}
+                  className="flex items-center gap-1.5 rounded-lg bg-error px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-error/80 active:scale-[0.98] disabled:opacity-50"
+                >
+                  {closingCapCut ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <XCircle className="h-3 w-3" />
+                  )}
+                  {closingCapCut ? 'Fechando CapCut...' : 'Fechar CapCut e Sincronizar'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          <SummaryView
+            analysis={analysis}
+            hasAudio={hasAudio}
+            hasText={hasText}
+            hasExistingSync={hasExistingSync}
+            stageAlreadyComplete={stageAlreadyComplete}
+            storyBlockCount={storyBlocks.length}
+            audioBlockCount={audioBlocks.length}
+            loading={loading}
+            onSync={handleSyncClick}
+            onAccept={handleAcceptExisting}
+          />
+        </motion.div>
       )}
       {phase === 'processing' && <ProcessingView key="processing" steps={steps} />}
       {phase === 'result' && (
@@ -235,6 +352,8 @@ export function Stage3Sync(): React.JSX.Element {
             gapsRemoved={gapsRemoved}
             onConfirm={handleConfirm}
             onBack={handleRefresh}
+            confirmed={confirmed}
+            onOpenCapCut={handleOpenCapCut}
           />
         </motion.div>
       )}
@@ -340,13 +459,7 @@ function SummaryView({
   const InfoIcon = info.type === 'warning' ? AlertTriangle : info.type === 'success' ? CheckCircle2 : Music
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.15 }}
-      className="flex flex-col gap-4"
-    >
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2">
@@ -431,7 +544,7 @@ function SummaryView({
           {hasExistingSync && !stageAlreadyComplete ? 'Re-sincronizar' : 'Sincronizar'}
         </button>
       </div>
-    </motion.div>
+    </div>
   )
 }
 

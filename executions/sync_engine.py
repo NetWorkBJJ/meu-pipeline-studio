@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from capcut_writer import create_backup, _recalculate_duration
+from draft_io import save_draft
 from template_loader import load_template
 
 
@@ -336,8 +337,7 @@ def sync_project(draft_path: str, audio_track_index: int = 0,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path), sync_meta=False)
 
     return {"success": True, "stats": stats}
 
@@ -403,8 +403,7 @@ def apply_animations_to_images(draft_path: str) -> dict:
 
     applied = _apply_animations(draft, video_segs)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {"applied": applied}
 
@@ -476,8 +475,7 @@ def flatten_audio_tracks(draft_path: str) -> dict:
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path), sync_meta=False)
 
     return {
         "success": True,
@@ -579,8 +577,7 @@ def loop_video(draft_path: str, audio_track_index: int = 0,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "success": True,
@@ -642,8 +639,7 @@ def loop_audio(draft_path: str, track_index: int,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "success": True,
@@ -883,8 +879,7 @@ def insert_srt(draft_path: str, srt_file_paths: list,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "success": True,
@@ -1010,8 +1005,7 @@ def insert_srt_batch(draft_path: str, srt_files: list,
 
     _recalculate_duration(draft)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False, indent=2)
+    save_draft(draft, str(path))
 
     return {
         "success": True,

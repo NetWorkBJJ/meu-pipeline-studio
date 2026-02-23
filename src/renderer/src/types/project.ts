@@ -9,7 +9,7 @@ export interface DirectorConfig {
   videoMaxDurationMs: number
   imageMinDurationMs: number
   imageMaxDurationMs: number
-  llmProvider: 'claude' | 'codex' | 'gemini'
+  llmProvider: 'claude'
   llmModel: string
   promptTemplate: string
   promptExamples: string

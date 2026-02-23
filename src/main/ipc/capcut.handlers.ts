@@ -175,7 +175,21 @@ export function registerCapCutHandlers(): void {
     return callPython('check_capcut_running', {})
   })
 
+  ipcMain.handle('capcut:close-capcut', async () => {
+    return callPython('close_capcut', {})
+  })
+
   ipcMain.handle('capcut:get-project-health', async (_event, projectPath: string) => {
     return callPython('get_project_health', { project_path: projectPath })
   })
+
+  ipcMain.handle(
+    'capcut:debug-sync-state',
+    async (_event, params: Record<string, unknown>) => {
+      return callPython('debug_sync_state', {
+        draft_path: params.draftPath,
+        expected_segments: params.expectedSegments
+      })
+    }
+  )
 }

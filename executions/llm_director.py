@@ -26,7 +26,7 @@ def _find_cli(provider: str) -> str | None:
     return shutil.which(cmd_name)
 
 
-def _call_llm(provider: str, prompt: str, model: str = None, timeout: int = 120) -> str:
+def _call_llm(provider: str, prompt: str, model: str = None, timeout: int = 600) -> str:
     """Call an LLM CLI tool in non-interactive mode and return the text response."""
     if provider not in CLI_COMMANDS:
         raise ValueError(f"Unknown LLM provider: {provider}")
@@ -42,12 +42,13 @@ def _call_llm(provider: str, prompt: str, model: str = None, timeout: int = 120)
     cmd = list(CLI_COMMANDS[provider])
     cmd[0] = cli_path  # Use full resolved path (e.g. C:\...\npm\codex.cmd)
 
-    # Model flag differs per CLI
-    if model:
+    # Model flag -- default to claude-opus-4-6 for claude provider
+    effective_model = model or ("claude-opus-4-6" if provider == "claude" else None)
+    if effective_model:
         if provider == "claude":
-            cmd.extend(["--model", model])
+            cmd.extend(["--model", effective_model])
         else:
-            cmd.extend(["-m", model])
+            cmd.extend(["-m", effective_model])
 
     # Windows cmd.exe has ~8191 char command line limit for .cmd wrappers.
     # For large prompts, write to temp file and pipe via stdin instead.

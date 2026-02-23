@@ -26,6 +26,14 @@ import { validatePromptQuality } from '@/lib/promptValidator'
 import type { QualityReport } from '@/lib/promptValidator'
 import { PromptEditor } from './PromptEditor'
 
+interface TakeRecord {
+  take_number: number
+  description: string
+  negative_prompt: string
+  character_anchor: string
+  environment_lock: string
+}
+
 interface PromptStudioProps {
   onConfirm: () => void
 }
@@ -60,9 +68,15 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
     return { videoCount: vc, photoCount: pc }
   }, [scenes])
 
-  // Detected chapters from scenes
+  // Detected chapters from scenes (filter out undefined from old snapshots)
   const detectedChapters = useMemo(() => {
-    const chapters = [...new Set(scenes.map((s) => s.chapter))].sort((a, b) => a - b)
+    const chapters = [
+      ...new Set(
+        scenes
+          .map((s) => s.chapter)
+          .filter((c): c is number => typeof c === 'number')
+      )
+    ].sort((a, b) => a - b)
     return chapters.length > 0 ? chapters : [1]
   }, [scenes])
 
@@ -157,6 +171,13 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       console.group('[Director] Payload construido')
       console.log('System prompt length:', systemPrompt.length, 'chars')
       console.log('User message length:', userMessage.length, 'chars')
+      console.log(
+        'Characters in payload:',
+        characterRefs.length,
+        characterRefs.length > 0
+          ? characterRefs.map((c) => c.name)
+          : '(VAZIO - LLM nao recebera nomes)'
+      )
       console.log('User message (primeiros 2000 chars):\n', userMessage.slice(0, 2000))
       console.groupEnd()
 
@@ -196,13 +217,16 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       }
       console.groupEnd()
 
-      if (result.success && result.takes.length > 0) {
+      // Helper to apply takes to scenes and run validation
+      const applyTakesAndValidate = (
+        takes: TakeRecord[]
+      ): QualityReport => {
         // Assign takes to scenes by expected take number, fallback to index
         const promptUpdates = scenes
           .map((scene, idx) => {
             const expectedTakeNum = startingTakeNumber + idx
             const take =
-              result.takes.find((t) => t.take_number === expectedTakeNum) || result.takes[idx]
+              takes.find((t) => t.take_number === expectedTakeNum) || takes[idx]
             if (!take) return null
             return {
               id: scene.id,
@@ -229,7 +253,7 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         }
 
         // Run quality validation
-        const parsedForValidation: ParsedTake[] = result.takes.map((t) => ({
+        const parsedForValidation: ParsedTake[] = takes.map((t) => ({
           takeNumber: t.take_number,
           description: t.description,
           negativePrompt: t.negative_prompt,
@@ -239,6 +263,11 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         const report = validatePromptQuality(parsedForValidation, scenes, characterRefs, startingTakeNumber)
         setQualityReport(report)
         console.log('[Director] Quality report:', report)
+        return report
+      }
+
+      if (result.success && result.takes.length > 0) {
+        const report = applyTakesAndValidate(result.takes)
 
         addToast({
           type: report.passed ? 'success' : 'warning',
@@ -250,31 +279,14 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         const parsed = parseTakeOutput(result.raw_response)
         console.log('[Director] Fallback frontend parseou:', parsed.length, 'takes')
         if (parsed.length > 0) {
-          const promptUpdates = scenes
-            .map((scene, idx) => {
-              const expectedTakeNum = startingTakeNumber + idx
-              const take =
-                parsed.find((t) => t.takeNumber === expectedTakeNum) || parsed[idx]
-              if (!take) return null
-              return {
-                id: scene.id,
-                updates: {
-                  prompt: formatTake(take),
-                  generationStatus: 'generated' as const,
-                  promptRevision: scene.promptRevision + 1,
-                  narrativeContext: take.environmentLock
-                }
-              }
-            })
-            .filter(Boolean) as Array<{ id: string; updates: Partial<(typeof scenes)[0]> }>
-
-          if (promptUpdates.length > 0) {
-            bulkUpdateScenes(promptUpdates)
-          }
-
-          // Run quality validation on fallback parse
-          const fallbackReport = validatePromptQuality(parsed, scenes, characterRefs, startingTakeNumber)
-          setQualityReport(fallbackReport)
+          const asTakeRecords: TakeRecord[] = parsed.map((t) => ({
+            take_number: t.takeNumber,
+            description: t.description,
+            negative_prompt: t.negativePrompt,
+            character_anchor: t.characterAnchor,
+            environment_lock: t.environmentLock
+          }))
+          const fallbackReport = applyTakesAndValidate(asTakeRecords)
 
           addToast({
             type: fallbackReport.passed ? 'success' : 'warning',
@@ -314,18 +326,18 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       )
 
       // Get ALL characters available for this scene's chapter (no regex filtering)
-      const chapterChars = getCharactersForChapter(characterRefs, scene.chapter)
+      const chapterChars = getCharactersForChapter(characterRefs, scene.chapter ?? 1)
 
       let singleUserMessage = `Regenere apenas o TAKE ${takeNum}:
 Texto da legenda: "${sceneBlocks.map((b) => b.text).join(' ')}"
 Tipo: ${scene.mediaType}`
 
       if (chapterChars.length > 0) {
-        singleUserMessage += `\nElenco deste capitulo:`
+        singleUserMessage += `\nElenco deste capitulo (copie o identificador EXATAMENTE como esta aqui):`
         for (const char of chapterChars) {
-          singleUserMessage += `\n- ${char.name} [${char.role || 'Cast'}]`
+          singleUserMessage += `\n- "${char.label}"`
         }
-        singleUserMessage += `\nAnalise o texto e determine quais personagens DE FATO aparecem nesta cena. Use o nome COMPLETO e EXATO.`
+        singleUserMessage += `\nNo Character Anchor, copie o identificador IDENTICO ao listado acima. Separe multiplos com |`
       }
 
       singleUserMessage += `\n\nGere apenas 1 TAKE no formato padrao. O numero do TAKE deve ser ${takeNum}.`
@@ -503,6 +515,17 @@ Tipo: ${scene.mediaType}`
             </motion.button>
           </div>
         </div>
+
+        {/* Character warning */}
+        {characterRefs.length === 0 && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
+            <Users className="h-4 w-4 text-amber-400 shrink-0" />
+            <span className="text-[11px] text-amber-400">
+              Nenhum personagem importado. O LLM nao tera nomes para usar no Character Anchor.
+              Importe na aba Configuracao.
+            </span>
+          </div>
+        )}
 
         {/* Copy buttons row */}
         {promptsGenerated > 0 && (
