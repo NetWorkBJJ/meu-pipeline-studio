@@ -32,7 +32,7 @@ export function Stage3Sync(): React.JSX.Element {
   const capCutDraftPath = useProjectStore((s) => s.capCutDraftPath)
   const projectLoaded = useProjectStore((s) => s.projectLoaded)
   const { setStoryBlocks, reloadAudioBlocks } = useProjectStore()
-  const { completeStage } = useStageStore()
+  const { completeStage, setCurrentStage } = useStageStore()
   const completedStages = useStageStore((s) => s.completedStages)
   const { addToast } = useUIStore()
 
@@ -222,6 +222,7 @@ export function Stage3Sync(): React.JSX.Element {
   const handleAcceptExisting = (): void => {
     completeStage(3)
     addToast({ type: 'success', message: 'Sincronizacao existente aceita.' })
+    setTimeout(() => setCurrentStage(4), 400)
   }
 
   const handleConfirm = async (): Promise<void> => {
@@ -250,7 +251,8 @@ export function Stage3Sync(): React.JSX.Element {
 
     setConfirmed(true)
     completeStage(3)
-    addToast({ type: 'success', message: 'Etapa concluida. Abra o CapCut para ver as alteracoes.' })
+    addToast({ type: 'success', message: 'Etapa concluida.' })
+    setTimeout(() => setCurrentStage(4), 400)
   }
 
   const handleOpenCapCut = async (): Promise<void> => {
@@ -460,19 +462,43 @@ function SummaryView({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium text-text">Sincronizacao</h3>
-          {hasExistingSync && !stageAlreadyComplete && (
-            <span className="rounded-full bg-success/20 px-2 py-0.5 text-xs font-medium text-success">
-              Ja sincronizado
-            </span>
-          )}
+      {/* Header with actions */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-text">Sincronizacao</h3>
+            {hasExistingSync && !stageAlreadyComplete && (
+              <span className="rounded-full bg-success/20 px-2 py-0.5 text-xs font-medium text-success">
+                Ja sincronizado
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-text-muted">
+            Alinha cada legenda ao audio correspondente na timeline.
+          </p>
         </div>
-        <p className="mt-1 text-xs text-text-muted">
-          Alinha cada legenda ao audio correspondente na timeline.
-        </p>
+        <div className="flex gap-2">
+          {hasExistingSync && !stageAlreadyComplete && (
+            <button
+              onClick={onAccept}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
+            >
+              Aceitar existente
+            </button>
+          )}
+          <button
+            onClick={onSync}
+            disabled={!canSync}
+            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {loading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ArrowRight className="h-3.5 w-3.5" />
+            )}
+            {hasExistingSync && !stageAlreadyComplete ? 'Re-sincronizar' : 'Sincronizar'}
+          </button>
+        </div>
       </div>
 
       {/* Stat boxes */}
@@ -519,30 +545,6 @@ function SummaryView({
       <div className={`flex items-start gap-3 rounded-lg border p-4 ${infoBorderColor}`}>
         <InfoIcon className={`mt-0.5 h-5 w-5 shrink-0 ${infoIconColor}`} />
         <p className="text-xs text-text-muted">{info.text}</p>
-      </div>
-
-      {/* Actions */}
-      <div className="flex justify-end gap-2">
-        {hasExistingSync && !stageAlreadyComplete && (
-          <button
-            onClick={onAccept}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
-          >
-            Aceitar existente
-          </button>
-        )}
-        <button
-          onClick={onSync}
-          disabled={!canSync}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {loading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <ArrowRight className="h-3.5 w-3.5" />
-          )}
-          {hasExistingSync && !stageAlreadyComplete ? 'Re-sincronizar' : 'Sincronizar'}
-        </button>
       </div>
     </div>
   )

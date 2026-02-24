@@ -138,10 +138,37 @@ export function SyncPreview({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <CheckCircle2 className="h-5 w-5 text-success" />
-        <h3 className="text-sm font-medium text-text">Sincronizacao concluida</h3>
+      {/* Header with actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-success" />
+          <h3 className="text-sm font-medium text-text">Sincronizacao concluida</h3>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
+          >
+            Refazer
+          </button>
+          {confirmed && onOpenCapCut ? (
+            <button
+              onClick={onOpenCapCut}
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Abrir CapCut
+            </button>
+          ) : (
+            <button
+              onClick={onConfirm}
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Confirmar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -449,32 +476,6 @@ export function SyncPreview({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex justify-end gap-2">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
-        >
-          Refazer
-        </button>
-        {confirmed && onOpenCapCut ? (
-          <button
-            onClick={onOpenCapCut}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Abrir CapCut
-          </button>
-        ) : (
-          <button
-            onClick={onConfirm}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Confirmar
-          </button>
-        )}
-      </div>
     </div>
   )
 }

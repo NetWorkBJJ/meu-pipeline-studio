@@ -12,7 +12,7 @@ import type { TtsGenerateResult, TtsProgressEvent, TtsChunkResult } from '@/type
 
 export function GoogleTTSPanel(): React.JSX.Element {
   const { storyBlocks, ttsDefaults, setAudioBlocks } = useProjectStore()
-  const { completeStage } = useStageStore()
+  const { completeStage, setCurrentStage } = useStageStore()
   const { addToast } = useUIStore()
 
   const [voice, setVoice] = useState(ttsDefaults.voice)
@@ -115,7 +115,8 @@ export function GoogleTTSPanel(): React.JSX.Element {
 
     setAudioBlocks(audioBlocks)
     completeStage(2)
-    addToast({ type: 'success', message: 'Etapa 2 concluida. Avance para Sincronizacao.' })
+    addToast({ type: 'success', message: 'Etapa 2 concluida.' })
+    setTimeout(() => setCurrentStage(3), 400)
   }
 
   const hasText = editableText.trim().length > 0
