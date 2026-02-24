@@ -35,7 +35,7 @@ export const useStageStore = create<StageState>((set, get) => ({
   invalidateFrom: (stage): void =>
     set((state) => {
       const next = new Set(state.completedStages)
-      for (let i = stage; i <= 6; i++) {
+      for (let i = stage; i <= 4; i++) {
         next.delete(i)
       }
       return { completedStages: next }

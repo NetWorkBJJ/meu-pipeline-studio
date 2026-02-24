@@ -54,7 +54,7 @@ function PipelineMiniStepper({
   const completedStages = status?.completedStages || []
   return (
     <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5, 6].map((stage) => {
+      {[1, 2, 3, 4].map((stage) => {
         const completed = completedStages.includes(stage)
         return (
           <div

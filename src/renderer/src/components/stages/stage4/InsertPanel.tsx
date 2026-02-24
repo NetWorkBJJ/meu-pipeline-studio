@@ -20,7 +20,7 @@ interface AnalysisTrackInfo {
   name: string
 }
 
-export function Stage6Insert(): React.JSX.Element {
+export function InsertPanel(): React.JSX.Element {
   const [status, setStatus] = useState<InsertStatus>('idle')
   const [logs, setLogs] = useState<InsertLog[]>([])
   const [existingTracks, setExistingTracks] = useState<AnalysisTrackInfo[]>([])
@@ -33,7 +33,6 @@ export function Stage6Insert(): React.JSX.Element {
   const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
 
-  // Use store track data if available, otherwise use analyzed tracks
   const textCount = existingTracks.length > 0
     ? existingTracks.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segments, 0)
     : trackOverview.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segmentCount, 0)
@@ -46,6 +45,7 @@ export function Stage6Insert(): React.JSX.Element {
     if (capCutDraftPath && trackOverview.length === 0) {
       analyzeExisting()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capCutDraftPath, trackOverview.length])
 
   const analyzeExisting = async (): Promise<void> => {
@@ -82,12 +82,10 @@ export function Stage6Insert(): React.JSX.Element {
     setLogs([])
 
     try {
-      // Step 1: Backup
       addLog('Criando backup...', 'running')
       await window.api.createBackup(capCutDraftPath)
       addLog('Criando backup...', 'done', 'Backup salvo')
 
-      // Step 2: Clear existing content if needed
       if (hasExistingContent) {
         if (textCount > 0) {
           addLog('Limpando legendas anteriores...', 'running')
@@ -113,7 +111,6 @@ export function Stage6Insert(): React.JSX.Element {
         }
       }
 
-      // Step 3: Write text segments
       addLog('Escrevendo legendas...', 'running')
       const textBlocks = storyBlocks.map((b) => ({
         text: b.text,
@@ -126,7 +123,6 @@ export function Stage6Insert(): React.JSX.Element {
       }
       addLog('Escrevendo legendas...', 'done', `${textResult.added_count} legendas`)
 
-      // Store CapCut IDs on each storyBlock for future re-sync
       if (textResult.segments) {
         for (let i = 0; i < textResult.segments.length && i < storyBlocks.length; i++) {
           const seg = textResult.segments[i]
@@ -137,7 +133,6 @@ export function Stage6Insert(): React.JSX.Element {
         }
       }
 
-      // Step 4: Write video segments
       const scenesWithMedia = scenes.filter((s) => s.mediaPath)
       if (scenesWithMedia.length > 0) {
         addLog('Escrevendo midias...', 'running')
@@ -154,20 +149,17 @@ export function Stage6Insert(): React.JSX.Element {
         addLog('Escrevendo midias...', 'done', `${videoResult.added_count} midias`)
       }
 
-      // Step 5: Sync metadata
       addLog('Sincronizando metadata...', 'running')
       await window.api.syncMetadata(capCutDraftPath)
       addLog('Sincronizando metadata...', 'done')
 
       setStatus('done')
-      completeStage(6)
+      completeStage(4)
       addToast({ type: 'success', message: 'Insercao concluida! Abra o projeto no CapCut.' })
 
-      // Re-load full project to refresh all store data
       try {
         await useProjectStore.getState().loadFullProject(capCutDraftPath)
       } catch {
-        // Fallback to analyze
         await analyzeExisting()
       }
     } catch (err) {
@@ -181,42 +173,36 @@ export function Stage6Insert(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-sm font-medium text-text">Insercao no CapCut</h3>
+        <h3 className="text-base font-semibold text-text">Insercao no CapCut</h3>
         <p className="text-xs text-text-muted mt-1">
-          Escreve todas as legendas e midias no projeto CapCut e sincroniza os metadados. Um backup
-          e criado automaticamente antes de cada insercao.
+          Escreve legendas e midias no projeto CapCut. Backup automatico antes de cada insercao.
         </p>
       </div>
 
       <div className="flex gap-4">
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
-          <p className="text-xs text-text-muted">
-            Legendas
-          </p>
+          <p className="text-[11px] font-medium text-text-muted">Legendas</p>
           <p className="text-[28px] font-bold tabular-nums text-text mt-1.5">{storyBlocks.length}</p>
         </div>
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
-          <p className="text-xs text-text-muted">Midias</p>
+          <p className="text-[11px] font-medium text-text-muted">Midias</p>
           <p className="text-[28px] font-bold tabular-nums text-text mt-1.5">
             {scenes.filter((s) => s.mediaPath).length}
           </p>
         </div>
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
-          <p className="text-xs text-text-muted">
-            Projeto
-          </p>
+          <p className="text-[11px] font-medium text-text-muted">Projeto</p>
           <p className="mt-1.5 truncate font-mono text-xs text-text-muted">
             {capCutDraftPath || 'Nao selecionado'}
           </p>
         </div>
       </div>
 
-      {/* Existing content warning */}
       {hasExistingContent && status !== 'inserting' && status !== 'done' && (
         <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3">
           <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
           <div className="text-xs text-warning">
-            <p className="font-medium">Conteudo existente detectado na timeline:</p>
+            <p className="font-semibold">Conteudo existente detectado na timeline:</p>
             <p className="mt-1">
               {textCount > 0 && `${textCount} legendas`}
               {textCount > 0 && videoCount > 0 && ' + '}
@@ -239,15 +225,18 @@ export function Stage6Insert(): React.JSX.Element {
       {logs.length > 0 && (
         <div className="rounded-lg border border-border bg-bg-input p-3 space-y-2 font-mono">
           {logs.map((log, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs">
+            <div
+              key={i}
+              className={`flex items-center gap-2 text-xs ${log.status === 'pending' ? 'opacity-40' : ''}`}
+            >
               {log.status === 'done' ? (
-                <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
               ) : log.status === 'running' ? (
-                <Loader2 className="h-3 w-3 shrink-0 text-primary animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 shrink-0 text-primary animate-spin" />
               ) : log.status === 'error' ? (
-                <AlertTriangle className="h-3 w-3 shrink-0 text-error" />
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-error" />
               ) : (
-                <span className="h-3 w-3 shrink-0 rounded-full bg-border" />
+                <span className="h-3.5 w-3.5 shrink-0 rounded-full bg-border" />
               )}
               <span className="text-text">{log.step}</span>
               {log.detail && <span className="text-text-muted">{log.detail}</span>}
@@ -256,7 +245,7 @@ export function Stage6Insert(): React.JSX.Element {
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center justify-end gap-3">
         {status === 'done' && (
           <>
             <span className="flex items-center gap-1.5 self-center text-xs text-success">
@@ -297,6 +286,22 @@ export function Stage6Insert(): React.JSX.Element {
           )}
         </button>
       </div>
+
+      {status === 'done' && (
+        <>
+          <div className="border-t border-border" />
+          <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 p-4">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-success" />
+            <div>
+              <p className="text-sm font-semibold text-success">Pipeline concluido!</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                {storyBlocks.length} legendas + {scenes.filter((s) => s.mediaPath).length} midias
+                inseridas no CapCut. Abra o projeto para verificar.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

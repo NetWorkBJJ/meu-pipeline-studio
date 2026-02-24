@@ -13,8 +13,6 @@ import { Stage1Script } from '../stages/stage1/Stage1Script'
 import { Stage2Audio } from '../stages/stage2/Stage2Audio'
 import { Stage3Sync } from '../stages/stage3/Stage3Sync'
 import { Stage4Director } from '../stages/stage4/Stage4Director'
-import { Stage5Media } from '../stages/stage5/Stage5Media'
-import { Stage6Insert } from '../stages/stage6/Stage6Insert'
 
 function StageContent(): React.JSX.Element {
   const { currentStage } = useStageStore()
@@ -28,10 +26,6 @@ function StageContent(): React.JSX.Element {
       return <Stage3Sync />
     case 4:
       return <Stage4Director />
-    case 5:
-      return <Stage5Media />
-    case 6:
-      return <Stage6Insert />
     default:
       return <Stage1Script />
   }

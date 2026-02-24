@@ -204,6 +204,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           workspacePath: entry.path,
           projectPath
         })) as PipelineStatus | null
+
+        // Migrate old 6-stage data to 4-stage pipeline
+        if (status && status.completedStages.some((s) => s > 4)) {
+          const migrated = new Set(status.completedStages.filter((s) => s <= 4))
+          if (status.completedStages.includes(5) || status.completedStages.includes(6)) {
+            migrated.add(4)
+          }
+          status.completedStages = [...migrated].sort()
+          if (status.lastStage > 4) status.lastStage = 4
+        }
         return status
       },
 

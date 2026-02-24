@@ -22,16 +22,24 @@ Documento de governanca: `Agents.md` (raiz do projeto).
 - **Lucide React** - icones SVG
 - **Python 3.10+** - manipulacao do draft_content.json do CapCut (child_process, JSON-line protocol)
 
-## Pipeline (6 Stages)
+## Pipeline (4 Stages)
 
 | Stage | O Que Faz | Lib/Modulo | Componente |
 |-------|-----------|------------|------------|
 | 1. Script | Roteiro -> blocos de legenda | `scriptSplitter.ts` | Stage1Script |
 | 2. Audio | Detecta blocos de audio do CapCut | Python `capcut_reader.py` | Stage2Audio |
 | 3. Sync | Sincroniza texto + audio | `syncEngine.ts` | Stage3Sync |
-| 4. Director | Agrupa cenas, keywords, tipos | `sceneGrouper.ts` | Stage4Director |
-| 5. Media | Seleciona midia por cena | File picker | Stage5Media |
-| 6. Insert | Insere no CapCut (texto+video+metadata) | Python `capcut_writer.py` | Stage6Insert |
+| 4. Director | Config, planejamento, prompts, import, insercao | `sceneGrouper.ts` + `capcut_writer.py` | Stage4Director |
+
+### Stage 4 Sub-steps
+
+| Step | Nome | O Que Faz |
+|------|------|-----------|
+| 0 | Configuracao | Configura chapters, scene grouping |
+| 1 | Planejamento | Planeja cenas com LLM |
+| 2 | Prompts | Gera prompts para cada cena |
+| 3 | Importacao | Importa e associa midias as cenas |
+| 4 | Insercao | Insere texto+video no CapCut (backup, clear, write, sync) |
 
 ## Estrutura do Projeto
 
@@ -74,9 +82,7 @@ src/renderer/src/
     stages/stage1/             - ScriptInput, BlocksPreview, Stage1Script
     stages/stage2/             - DraftSelector, AudioBlocksList, Stage2Audio
     stages/stage3/             - SyncPreview, Stage3Sync
-    stages/stage4/             - SceneList, Stage4Director
-    stages/stage5/             - Stage5Media
-    stages/stage6/             - Stage6Insert
+    stages/stage4/             - DirectorStepper, DirectorConfigPanel, ScenePlannerPanel, PromptStudio, MediaImporter, InsertPanel, Stage4Director
 
 executions/
   main_bridge.py               - Entry point do processo Python

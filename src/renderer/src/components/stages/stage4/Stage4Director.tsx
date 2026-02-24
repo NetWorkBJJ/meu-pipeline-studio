@@ -11,6 +11,7 @@ import { DirectorConfigPanel } from './DirectorConfigPanel'
 import { ScenePlannerPanel } from './ScenePlannerPanel'
 import { PromptStudio } from './PromptStudio'
 import { MediaImporter } from './MediaImporter'
+import { InsertPanel } from './InsertPanel'
 
 const STEP_ANIMATION = {
   initial: { opacity: 0, x: 20 },
@@ -33,10 +34,14 @@ export function Stage4Director(): React.JSX.Element {
   const hasExistingVideos = projectLoaded && videoSegments.length > 0
   const stageAlreadyComplete = completedStages.has(4)
 
-  // Auto-detect restored scenes and jump to PromptStudio (step 2)
+  // Auto-detect restored state and jump to the appropriate step
   useEffect(() => {
+    const hasMedia = scenes.some((s) => s.mediaPath)
     const hasPrompts = scenes.some((s) => s.prompt.trim())
-    if (hasPrompts && currentStep === 0) {
+    if (hasMedia && currentStep === 0) {
+      setCompletedSteps(new Set([0, 1, 2, 3]))
+      setCurrentStep(4)
+    } else if (hasPrompts && currentStep === 0) {
       setCompletedSteps(new Set([0, 1]))
       setCurrentStep(2)
     }
@@ -49,7 +54,7 @@ export function Stage4Director(): React.JSX.Element {
       next.add(step)
       return next
     })
-    if (step < 3) {
+    if (step < 4) {
       setCurrentStep((step + 1) as DirectorStep)
     }
   }, [])
@@ -151,7 +156,12 @@ export function Stage4Director(): React.JSX.Element {
         )}
         {currentStep === 3 && (
           <motion.div key="import" {...STEP_ANIMATION}>
-            <MediaImporter />
+            <MediaImporter onConfirm={() => handleCompleteStep(3)} />
+          </motion.div>
+        )}
+        {currentStep === 4 && (
+          <motion.div key="insert" {...STEP_ANIMATION}>
+            <InsertPanel />
           </motion.div>
         )}
       </AnimatePresence>

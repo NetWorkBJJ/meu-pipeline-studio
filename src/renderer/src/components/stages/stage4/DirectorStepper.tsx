@@ -1,4 +1,4 @@
-export type DirectorStep = 0 | 1 | 2 | 3
+export type DirectorStep = 0 | 1 | 2 | 3 | 4
 
 interface DirectorStepperProps {
   currentStep: DirectorStep
@@ -6,7 +6,7 @@ interface DirectorStepperProps {
   onStepClick: (step: DirectorStep) => void
 }
 
-const STEPS = ['Configuracao', 'Planejamento', 'Prompts', 'Importacao']
+const STEPS = ['Configuracao', 'Planejamento', 'Prompts', 'Importacao', 'Insercao']
 
 export function DirectorStepper({
   currentStep,

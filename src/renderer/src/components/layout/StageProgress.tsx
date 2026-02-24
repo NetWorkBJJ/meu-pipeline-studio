@@ -4,7 +4,7 @@ import { Check } from 'lucide-react'
 import { useStageStore } from '@/stores/useStageStore'
 import { STAGE_LABELS, STAGE_DESCRIPTIONS } from '@/lib/constants'
 
-const stages = [1, 2, 3, 4, 5, 6] as const
+const stages = [1, 2, 3, 4] as const
 
 export function StageProgress(): React.JSX.Element {
   const { currentStage, completedStages, setCurrentStage, canNavigateTo } = useStageStore()
@@ -20,7 +20,7 @@ export function StageProgress(): React.JSX.Element {
           <Fragment key={stage}>
             {i > 0 && (
               <div
-                className={`h-px flex-1 max-w-12 transition-colors duration-300 ${
+                className={`h-0.5 rounded-sm flex-1 max-w-20 transition-colors duration-300 ${
                   completedStages.has(stages[i - 1]) ? 'bg-primary' : 'bg-border'
                 }`}
               />
