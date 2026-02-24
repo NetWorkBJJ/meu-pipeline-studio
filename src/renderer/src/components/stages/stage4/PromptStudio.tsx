@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   Sparkles,
@@ -15,15 +15,18 @@ import {
   ShieldCheck,
   ShieldAlert,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Clock,
+  Square
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { buildLlmPayload, parseTakeOutput, formatTake } from '@/lib/promptTemplate'
+import { buildLlmPayload, parseTakeOutput, formatTake, computeChunks } from '@/lib/promptTemplate'
 import type { ParsedTake } from '@/lib/promptTemplate'
 import { getCharactersForChapter } from '@/lib/characterParser'
 import { validatePromptQuality } from '@/lib/promptValidator'
 import type { QualityReport } from '@/lib/promptValidator'
+import type { BatchResult } from '@/types/project'
 import { PromptEditor } from './PromptEditor'
 
 interface TakeRecord {
@@ -36,6 +39,21 @@ interface TakeRecord {
 
 interface PromptStudioProps {
   onConfirm: () => void
+}
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+
+function updateBatchResult(
+  results: BatchResult[],
+  idx: number,
+  updates: Partial<BatchResult>
+): BatchResult[] {
+  return results.map((r, i) => (i === idx ? { ...r, ...updates } : r))
 }
 
 export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Element {
@@ -54,6 +72,8 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
   const [startingTakeNumber, setStartingTakeNumber] = useState(1)
   const [qualityReport, setQualityReport] = useState<QualityReport | null>(null)
   const [showQualityDetails, setShowQualityDetails] = useState(false)
+  const [chunkSize, setChunkSize] = useState(60)
+  const abortRef = useRef<AbortController | null>(null)
 
   const promptsGenerated = scenes.filter((s) => s.prompt.trim()).length
 
@@ -68,7 +88,6 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
     return { videoCount: vc, photoCount: pc }
   }, [scenes])
 
-  // Detected chapters from scenes (filter out undefined from old snapshots)
   const detectedChapters = useMemo(() => {
     const chapters = [
       ...new Set(
@@ -80,42 +99,52 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
     return chapters.length > 0 ? chapters : [1]
   }, [scenes])
 
+  // Elapsed time from generation start
+  const elapsed = useMemo(() => {
+    if (!progress.startedAt || !progress.isGeneratingPrompts) return 0
+    return Date.now() - progress.startedAt
+  }, [progress.startedAt, progress.isGeneratingPrompts, progress.completedTakes])
+
+  const handleCancel = (): void => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      addToast({ type: 'info', message: 'Geracao sera cancelada apos o lote atual.' })
+    }
+  }
+
   const handleGenerateAll = async (): Promise<void> => {
     if (scenes.length === 0) return
 
-    console.group('[Director] Gerar takes - inicio')
-    console.log('Config:', {
-      provider: config.llmProvider,
-      model: config.llmModel,
-      sequenceMode: config.sequenceMode,
-      detectedChapters,
-      startingTakeNumber
-    })
-    console.log('Scenes:', scenes.length, scenes.map((s) => ({
-      id: s.id,
-      index: s.index,
-      chapter: s.chapter,
-      mediaType: s.mediaType,
-      durationMs: s.durationMs,
-      blockIds: s.blockIds
-    })))
-    console.log('StoryBlocks:', storyBlocks.length)
-    console.log('CharacterRefs:', characterRefs.map((c) => ({
-      name: c.name,
-      role: c.role,
-      chapters: c.chapters
-    })))
-    console.groupEnd()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    const chunks = computeChunks(scenes.length, chunkSize)
+
+    const initialBatchResults: BatchResult[] = chunks.map((chunk, i) => ({
+      batchIndex: i,
+      startTake: startingTakeNumber + chunk.startIndex,
+      endTake: startingTakeNumber + chunk.endIndex - 1,
+      sceneCount: chunk.endIndex - chunk.startIndex,
+      takesGenerated: 0,
+      status: 'pending' as const
+    }))
 
     setDirectorProgress({
       isGeneratingPrompts: true,
       currentSceneIndex: 0,
       totalScenes: scenes.length,
-      error: null
+      error: null,
+      currentBatch: 0,
+      totalBatches: chunks.length,
+      batchStartTake: startingTakeNumber,
+      batchEndTake: startingTakeNumber + (chunks[0]?.endIndex ?? 0) - (chunks[0]?.startIndex ?? 0) - 1,
+      completedTakes: 0,
+      batchResults: initialBatchResults,
+      startedAt: Date.now()
     })
 
     try {
-      // First, analyze narrative if in ai-decided mode
+      // Narrative analysis (once, before batch loop)
       if (config.sequenceMode === 'ai-decided') {
         const fullScript = storyBlocks.map((b) => b.text).join(' ')
         const analysis = (await window.api.directorAnalyzeNarrative({
@@ -160,100 +189,138 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         }
       }
 
-      // Build payload with Master Prompt (chapters auto-detected from scenes)
-      const { systemPrompt, userMessage } = buildLlmPayload(
-        storyBlocks,
-        scenes,
-        characterRefs,
-        startingTakeNumber
-      )
+      let allGeneratedTakes: TakeRecord[] = []
+      let currentBatchResults = [...initialBatchResults]
 
-      console.group('[Director] Payload construido')
-      console.log('System prompt length:', systemPrompt.length, 'chars')
-      console.log('User message length:', userMessage.length, 'chars')
-      console.log(
-        'Characters in payload:',
-        characterRefs.length,
-        characterRefs.length > 0
-          ? characterRefs.map((c) => c.name)
-          : '(VAZIO - LLM nao recebera nomes)'
-      )
-      console.log('User message (primeiros 2000 chars):\n', userMessage.slice(0, 2000))
-      console.groupEnd()
-
-      // Batch generate all TAKES at once
-      const result = (await window.api.directorGeneratePrompts({
-        provider: config.llmProvider,
-        model: config.llmModel || undefined,
-        system_prompt: systemPrompt,
-        user_message: userMessage
-      })) as {
-        takes: Array<{
-          take_number: number
-          description: string
-          negative_prompt: string
-          character_anchor: string
-          environment_lock: string
-        }>
-        success: boolean
-        error?: string
-        raw_response?: string
-      }
-
-      console.group('[Director] Resultado do LLM')
-      console.log('Success:', result.success)
-      console.log('Takes recebidos:', result.takes?.length ?? 0)
-      console.log('Error:', result.error || '(nenhum)')
-      if (result.takes?.length > 0) {
-        console.log('Takes:', result.takes.map((t) => ({
-          take_number: t.take_number,
-          desc: t.description?.slice(0, 80) + '...',
-          character_anchor: t.character_anchor,
-          environment_lock: t.environment_lock
-        })))
-      }
-      if (result.raw_response) {
-        console.log('Raw response (primeiros 1000 chars):\n', result.raw_response.slice(0, 1000))
-      }
-      console.groupEnd()
-
-      // Helper to apply takes to scenes and run validation
-      const applyTakesAndValidate = (
-        takes: TakeRecord[]
-      ): QualityReport => {
-        // Assign takes to scenes by expected take number, fallback to index
-        const promptUpdates = scenes
-          .map((scene, idx) => {
-            const expectedTakeNum = startingTakeNumber + idx
-            const take =
-              takes.find((t) => t.take_number === expectedTakeNum) || takes[idx]
-            if (!take) return null
-            return {
-              id: scene.id,
-              updates: {
-                prompt: formatTake({
-                  takeNumber: take.take_number,
-                  description: take.description,
-                  negativePrompt: take.negative_prompt,
-                  characterAnchor: take.character_anchor,
-                  environmentLock: take.environment_lock
-                }),
-                generationStatus: 'generated' as const,
-                promptRevision: scene.promptRevision + 1,
-                narrativeContext: take.environment_lock
-              }
-            }
-          })
-          .filter(Boolean) as Array<{ id: string; updates: Partial<(typeof scenes)[0]> }>
-
-        console.log('[Director] Matching takes->scenes:', promptUpdates.length, 'de', scenes.length, 'cenas mapeadas')
-
-        if (promptUpdates.length > 0) {
-          bulkUpdateScenes(promptUpdates)
+      for (let batchIdx = 0; batchIdx < chunks.length; batchIdx++) {
+        if (controller.signal.aborted) {
+          // Mark remaining as cancelled
+          for (let j = batchIdx; j < chunks.length; j++) {
+            currentBatchResults = updateBatchResult(currentBatchResults, j, { status: 'cancelled' })
+          }
+          setDirectorProgress({ batchResults: currentBatchResults })
+          break
         }
 
-        // Run quality validation
-        const parsedForValidation: ParsedTake[] = takes.map((t) => ({
+        const chunk = chunks[batchIdx]
+        const chunkStartTake = startingTakeNumber + chunk.startIndex
+        const chunkEndTake = startingTakeNumber + chunk.endIndex - 1
+
+        // Mark batch as in_progress
+        currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, { status: 'in_progress' })
+        setDirectorProgress({
+          currentBatch: batchIdx,
+          batchStartTake: chunkStartTake,
+          batchEndTake: chunkEndTake,
+          currentSceneIndex: chunk.startIndex,
+          batchResults: currentBatchResults
+        })
+
+        const batchStart = Date.now()
+
+        try {
+          const { systemPrompt, userMessage } = buildLlmPayload(
+            storyBlocks,
+            scenes,
+            characterRefs,
+            startingTakeNumber,
+            chunk,
+            { batchNumber: batchIdx + 1, totalBatches: chunks.length }
+          )
+
+          console.log(`[Director] Lote ${batchIdx + 1}/${chunks.length}: takes ${chunkStartTake}-${chunkEndTake} | payload ${userMessage.length} chars`)
+
+          const result = (await window.api.directorGeneratePrompts({
+            provider: config.llmProvider,
+            model: config.llmModel || undefined,
+            system_prompt: systemPrompt,
+            user_message: userMessage
+          })) as {
+            takes: TakeRecord[]
+            success: boolean
+            error?: string
+            raw_response?: string
+          }
+
+          let batchTakes: TakeRecord[] = []
+
+          if (result.success && result.takes?.length > 0) {
+            batchTakes = result.takes
+          } else if (result.raw_response) {
+            const parsed = parseTakeOutput(result.raw_response)
+            batchTakes = parsed.map((t) => ({
+              take_number: t.takeNumber,
+              description: t.description,
+              negative_prompt: t.negativePrompt,
+              character_anchor: t.characterAnchor,
+              environment_lock: t.environmentLock
+            }))
+          }
+
+          if (batchTakes.length > 0) {
+            allGeneratedTakes.push(...batchTakes)
+
+            // Apply this batch's takes to scenes immediately
+            const chunkScenes = scenes.slice(chunk.startIndex, chunk.endIndex)
+            const promptUpdates = chunkScenes
+              .map((scene, idx) => {
+                const expectedTakeNum = chunkStartTake + idx
+                const take =
+                  batchTakes.find((t) => t.take_number === expectedTakeNum) || batchTakes[idx]
+                if (!take) return null
+                return {
+                  id: scene.id,
+                  updates: {
+                    prompt: formatTake({
+                      takeNumber: take.take_number,
+                      description: take.description,
+                      negativePrompt: take.negative_prompt,
+                      characterAnchor: take.character_anchor,
+                      environmentLock: take.environment_lock
+                    }),
+                    generationStatus: 'generated' as const,
+                    promptRevision: scene.promptRevision + 1,
+                    narrativeContext: take.environment_lock
+                  }
+                }
+              })
+              .filter(Boolean) as Array<{ id: string; updates: Partial<(typeof scenes)[0]> }>
+
+            if (promptUpdates.length > 0) {
+              bulkUpdateScenes(promptUpdates)
+            }
+
+            currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
+              status: 'success',
+              takesGenerated: batchTakes.length,
+              durationMs: Date.now() - batchStart
+            })
+          } else {
+            currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
+              status: 'error',
+              error: result.error || 'Nenhum take parseado',
+              durationMs: Date.now() - batchStart
+            })
+          }
+        } catch (batchErr) {
+          const message = batchErr instanceof Error ? batchErr.message : 'Erro no lote'
+          currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
+            status: 'error',
+            error: message,
+            durationMs: Date.now() - batchStart
+          })
+          console.error(`[Director] Lote ${batchIdx + 1} falhou:`, batchErr)
+        }
+
+        setDirectorProgress({
+          completedTakes: allGeneratedTakes.length,
+          batchResults: currentBatchResults
+        })
+      }
+
+      // Quality validation on all accumulated takes
+      if (allGeneratedTakes.length > 0) {
+        const parsedForValidation: ParsedTake[] = allGeneratedTakes.map((t) => ({
           takeNumber: t.take_number,
           description: t.description,
           negativePrompt: t.negative_prompt,
@@ -262,41 +329,21 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         }))
         const report = validatePromptQuality(parsedForValidation, scenes, characterRefs, startingTakeNumber)
         setQualityReport(report)
-        console.log('[Director] Quality report:', report)
-        return report
-      }
 
-      if (result.success && result.takes.length > 0) {
-        const report = applyTakesAndValidate(result.takes)
+        const failedBatches = currentBatchResults.filter((r) => r.status === 'error').length
+        const cancelledBatches = currentBatchResults.filter((r) => r.status === 'cancelled').length
+        let msg = `${allGeneratedTakes.length}/${scenes.length} takes gerados`
+        if (chunks.length > 1) msg += ` (${chunks.length} lotes)`
+        msg += `. Qualidade: ${report.score}/100.`
+        if (failedBatches > 0) msg += ` ${failedBatches} lote(s) com erro.`
+        if (cancelledBatches > 0) msg += ` ${cancelledBatches} lote(s) cancelado(s).`
 
         addToast({
-          type: report.passed ? 'success' : 'warning',
-          message: `${result.takes.length} takes gerados. Qualidade: ${report.score}/100.`
+          type: failedBatches > 0 || cancelledBatches > 0 ? 'warning' : report.passed ? 'success' : 'warning',
+          message: msg
         })
-      } else if (result.raw_response) {
-        // Try to parse on the frontend as fallback
-        console.log('[Director] Backend parse falhou, tentando fallback frontend...')
-        const parsed = parseTakeOutput(result.raw_response)
-        console.log('[Director] Fallback frontend parseou:', parsed.length, 'takes')
-        if (parsed.length > 0) {
-          const asTakeRecords: TakeRecord[] = parsed.map((t) => ({
-            take_number: t.takeNumber,
-            description: t.description,
-            negative_prompt: t.negativePrompt,
-            character_anchor: t.characterAnchor,
-            environment_lock: t.environmentLock
-          }))
-          const fallbackReport = applyTakesAndValidate(asTakeRecords)
-
-          addToast({
-            type: fallbackReport.passed ? 'success' : 'warning',
-            message: `${parsed.length} takes parseados. Qualidade: ${fallbackReport.score}/100.`
-          })
-        } else {
-          addToast({ type: 'error', message: result.error || 'Falha ao parsear resposta do LLM.' })
-        }
       } else {
-        addToast({ type: 'error', message: result.error || 'Erro ao gerar prompts.' })
+        addToast({ type: 'error', message: 'Nenhum take gerado.' })
       }
     } catch (err) {
       console.error('[Director] ERRO na geracao:', err)
@@ -304,6 +351,7 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       setDirectorProgress({ error: message })
       addToast({ type: 'error', message })
     } finally {
+      abortRef.current = null
       setDirectorProgress({ isGeneratingPrompts: false })
     }
   }
@@ -317,7 +365,6 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       const sceneBlocks = storyBlocks.filter((b) => scene.blockIds.includes(b.id))
       const sceneIdx = scenes.findIndex((s) => s.id === sceneId)
       const takeNum = startingTakeNumber + (sceneIdx >= 0 ? sceneIdx : 0)
-      console.log('[Director] Regenerar take', takeNum, 'para cena', scene.index, '| capitulo:', scene.chapter, '| blocos:', sceneBlocks.length)
       const { systemPrompt } = buildLlmPayload(
         storyBlocks,
         scenes,
@@ -325,7 +372,6 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         startingTakeNumber
       )
 
-      // Get ALL characters available for this scene's chapter (no regex filtering)
       const chapterChars = getCharactersForChapter(characterRefs, scene.chapter ?? 1)
 
       let singleUserMessage = `Regenere apenas o TAKE ${takeNum}:
@@ -348,13 +394,7 @@ Tipo: ${scene.mediaType}`
         system_prompt: systemPrompt,
         user_message: singleUserMessage
       })) as {
-        takes: Array<{
-          take_number: number
-          description: string
-          negative_prompt: string
-          character_anchor: string
-          environment_lock: string
-        }>
+        takes: TakeRecord[]
         success: boolean
         raw_response?: string
       }
@@ -447,7 +487,6 @@ Tipo: ${scene.mediaType}`
     setTimeout(() => setCopiedPhotos(false), 1500)
   }
 
-  // Extract TAKE metadata from prompt text
   const extractTakeInfo = (
     prompt: string
   ): { characterAnchor: string; environmentLock: string } | null => {
@@ -459,6 +498,35 @@ Tipo: ${scene.mediaType}`
       environmentLock: envMatch?.[1]?.trim() || ''
     }
   }
+
+  // Compute batch status for scene badges during generation
+  const getSceneBatchStatus = (sceneIdx: number): 'generated' | 'generating' | 'pending' | null => {
+    if (!progress.isGeneratingPrompts) return null
+    const chunks = computeChunks(scenes.length, chunkSize)
+    for (let i = 0; i < chunks.length; i++) {
+      if (sceneIdx >= chunks[i].startIndex && sceneIdx < chunks[i].endIndex) {
+        const br = progress.batchResults[i]
+        if (!br) return 'pending'
+        if (br.status === 'success') return 'generated'
+        if (br.status === 'in_progress') return 'generating'
+        return 'pending'
+      }
+    }
+    return 'pending'
+  }
+
+  const totalChunks = Math.ceil(scenes.length / chunkSize)
+  const progressPct = progress.totalScenes > 0
+    ? Math.round((progress.completedTakes / progress.totalScenes) * 100)
+    : 0
+
+  // Estimate remaining time
+  const completedBatchCount = progress.batchResults.filter((r) => r.status === 'success' || r.status === 'error').length
+  const avgBatchMs = completedBatchCount > 0 && progress.startedAt
+    ? (Date.now() - progress.startedAt) / completedBatchCount
+    : 0
+  const remainingBatches = progress.totalBatches - completedBatchCount
+  const estimatedRemainingMs = avgBatchMs * remainingBatches
 
   return (
     <div className="flex flex-col gap-4">
@@ -481,18 +549,26 @@ Tipo: ${scene.mediaType}`
                 min={1}
                 value={startingTakeNumber}
                 onChange={(e) => setStartingTakeNumber(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-14 rounded border border-border bg-bg px-1.5 py-0.5 text-xs tabular-nums text-text text-center focus:border-primary focus:outline-none"
+                disabled={progress.isGeneratingPrompts}
+                className="w-14 rounded border border-border bg-bg px-1.5 py-0.5 text-xs tabular-nums text-text text-center focus:border-primary focus:outline-none disabled:opacity-40"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-text-muted">Lote:</span>
+              <input
+                type="number"
+                min={10}
+                max={200}
+                step={10}
+                value={chunkSize}
+                onChange={(e) => setChunkSize(Math.max(10, Math.min(200, parseInt(e.target.value) || 60)))}
+                disabled={progress.isGeneratingPrompts}
+                className="w-14 rounded border border-border bg-bg px-1.5 py-0.5 text-xs tabular-nums text-text text-center focus:border-primary focus:outline-none disabled:opacity-40"
               />
             </div>
             <span className="text-xs text-text">
-              {promptsGenerated}/{scenes.length} takes gerados
+              {promptsGenerated}/{scenes.length} takes
             </span>
-            {progress.isGeneratingPrompts && (
-              <div className="flex items-center gap-1.5 text-xs text-primary">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Gerando...
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -503,24 +579,141 @@ Tipo: ${scene.mediaType}`
               <Download className="h-3 w-3" />
               Exportar
             </button>
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleGenerateAll}
-              disabled={progress.isGeneratingPrompts || scenes.length === 0}
-              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Gerar takes
-            </motion.button>
+            {progress.isGeneratingPrompts ? (
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleCancel}
+                className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-red-700"
+              >
+                <Square className="h-3 w-3" />
+                Cancelar ({progress.completedTakes}/{scenes.length})
+              </motion.button>
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleGenerateAll}
+                disabled={scenes.length === 0}
+                className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Gerar takes
+                {scenes.length > chunkSize && (
+                  <span className="text-white/60">({totalChunks} lotes)</span>
+                )}
+              </motion.button>
+            )}
           </div>
         </div>
 
+        {/* Batch progress panel */}
+        {progress.isGeneratingPrompts && (
+          <div className="flex flex-col gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            {/* Header row */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <span className="text-xs font-medium text-primary">
+                  Lote {progress.currentBatch + 1}/{progress.totalBatches}
+                </span>
+                <span className="text-[10px] text-text-muted">
+                  takes {progress.batchStartTake}-{progress.batchEndTake}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-text-muted">
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {formatElapsed(elapsed)}
+                </span>
+                {avgBatchMs > 0 && (
+                  <>
+                    <span>~{formatElapsed(avgBatchMs)}/lote</span>
+                    <span>Restante: ~{formatElapsed(estimatedRemainingMs)}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-2 overflow-hidden rounded-full bg-surface">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500"
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-text-muted">
+              <span>{progress.completedTakes}/{progress.totalScenes} takes gerados</span>
+              <span>{progressPct}%</span>
+            </div>
+
+            {/* Batch chips */}
+            <div className="flex flex-wrap gap-1">
+              {progress.batchResults.map((batch) => {
+                let chipClass = 'bg-surface text-text-muted border-border/50'
+                let label = `${batch.startTake}-${batch.endTake}`
+
+                if (batch.status === 'success') {
+                  chipClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  label += ` (${batch.takesGenerated})`
+                } else if (batch.status === 'error') {
+                  chipClass = 'bg-red-500/10 text-red-400 border-red-500/20'
+                  label += ' ERR'
+                } else if (batch.status === 'in_progress') {
+                  chipClass = 'bg-primary/10 text-primary border-primary/20 animate-pulse'
+                } else if (batch.status === 'cancelled') {
+                  chipClass = 'bg-surface text-text-muted/40 border-border/30 line-through'
+                }
+
+                return (
+                  <span
+                    key={batch.batchIndex}
+                    className={`rounded border px-1.5 py-0.5 text-[9px] font-mono ${chipClass}`}
+                    title={batch.error || `Lote ${batch.batchIndex + 1}: ${batch.status}`}
+                  >
+                    {label}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Completed batch summary (after generation ends) */}
+        {!progress.isGeneratingPrompts && progress.batchResults.length > 0 && progress.totalBatches > 1 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/50 bg-bg p-2">
+            <span className="text-[10px] text-text-muted">
+              {progress.completedTakes}/{progress.totalScenes} takes em {progress.totalBatches} lotes
+              {progress.startedAt && ` (${formatElapsed(Date.now() - progress.startedAt)})`}
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {progress.batchResults.map((batch) => {
+                let chipClass = 'bg-surface text-text-muted border-border/50'
+                if (batch.status === 'success') chipClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                else if (batch.status === 'error') chipClass = 'bg-red-500/10 text-red-400 border-red-500/20'
+                else if (batch.status === 'cancelled') chipClass = 'bg-surface text-text-muted/40 border-border/30'
+
+                return (
+                  <span
+                    key={batch.batchIndex}
+                    className={`rounded border px-1 py-0.5 text-[8px] font-mono ${chipClass}`}
+                    title={batch.error || `${batch.startTake}-${batch.endTake}: ${batch.status}`}
+                  >
+                    {batch.status === 'success' ? batch.takesGenerated : batch.status === 'error' ? 'ERR' : 'X'}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Character warning */}
-        {characterRefs.length === 0 && (
-          <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
-            <Users className="h-4 w-4 text-amber-400 shrink-0" />
-            <span className="text-[11px] text-amber-400">
+        {characterRefs.length === 0 && !progress.isGeneratingPrompts && (
+          <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 p-2.5">
+            <Users className="h-4 w-4 text-warning shrink-0" />
+            <span className="text-[11px] text-warning">
               Nenhum personagem importado. O LLM nao tera nomes para usar no Character Anchor.
               Importe na aba Configuracao.
             </span>
@@ -528,7 +721,7 @@ Tipo: ${scene.mediaType}`
         )}
 
         {/* Copy buttons row */}
-        {promptsGenerated > 0 && (
+        {promptsGenerated > 0 && !progress.isGeneratingPrompts && (
           <div className="flex items-center gap-2 border-t border-border/50 pt-2">
             <span className="text-[10px] text-text-muted mr-1">Copiar:</span>
             <button
@@ -536,7 +729,7 @@ Tipo: ${scene.mediaType}`
               className="flex items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-[11px] text-text-muted transition-colors hover:text-text"
             >
               {copiedAll ? (
-                <Check className="h-3 w-3 text-green-400" />
+                <Check className="h-3 w-3 text-success" />
               ) : (
                 <Copy className="h-3 w-3" />
               )}
@@ -548,7 +741,7 @@ Tipo: ${scene.mediaType}`
                 className="flex items-center gap-1 rounded-md border border-teal-500/30 bg-teal-500/5 px-2 py-1 text-[11px] text-teal-400 transition-colors hover:bg-teal-500/10"
               >
                 {copiedVideos ? (
-                  <Check className="h-3 w-3 text-green-400" />
+                  <Check className="h-3 w-3 text-success" />
                 ) : (
                   <Film className="h-3 w-3" />
                 )}
@@ -561,7 +754,7 @@ Tipo: ${scene.mediaType}`
                 className="flex items-center gap-1 rounded-md border border-violet-500/30 bg-violet-500/5 px-2 py-1 text-[11px] text-violet-400 transition-colors hover:bg-violet-500/10"
               >
                 {copiedPhotos ? (
-                  <Check className="h-3 w-3 text-green-400" />
+                  <Check className="h-3 w-3 text-success" />
                 ) : (
                   <ImageIcon className="h-3 w-3" />
                 )}
@@ -573,24 +766,24 @@ Tipo: ${scene.mediaType}`
       </div>
 
       {/* Quality report banner */}
-      {qualityReport && (
+      {qualityReport && !progress.isGeneratingPrompts && (
         <div
           className={`rounded-lg border p-3 ${
             qualityReport.passed
-              ? 'border-green-500/30 bg-green-500/5'
-              : 'border-amber-500/30 bg-amber-500/5'
+              ? 'border-success/30 bg-success/5'
+              : 'border-warning/30 bg-warning/5'
           }`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {qualityReport.passed ? (
-                <ShieldCheck className="h-4 w-4 text-green-400" />
+                <ShieldCheck className="h-4 w-4 text-success" />
               ) : (
-                <ShieldAlert className="h-4 w-4 text-amber-400" />
+                <ShieldAlert className="h-4 w-4 text-warning" />
               )}
               <span
                 className={`text-xs font-medium ${
-                  qualityReport.passed ? 'text-green-400' : 'text-amber-400'
+                  qualityReport.passed ? 'text-success' : 'text-warning'
                 }`}
               >
                 {qualityReport.score}/100
@@ -616,7 +809,7 @@ Tipo: ${scene.mediaType}`
             <div className="mt-2 space-y-1 border-t border-border/30 pt-2">
               {qualityReport.rules.map((rule) => (
                 <div key={rule.id} className="flex items-start gap-2 text-[10px]">
-                  <span className={rule.passed ? 'text-green-400' : 'text-amber-400'}>
+                  <span className={rule.passed ? 'text-success' : 'text-warning'}>
                     {rule.passed ? 'OK' : 'FALHA'}
                   </span>
                   <span className="text-text-muted">{rule.name}</span>
@@ -632,11 +825,12 @@ Tipo: ${scene.mediaType}`
 
       {/* Scene/take list */}
       <div className="overflow-auto max-h-[calc(100vh-380px)] space-y-3">
-        {scenes.map((scene) => {
+        {scenes.map((scene, sceneIdx) => {
           const sceneBlocks = storyBlocks.filter((b) => scene.blockIds.includes(b.id))
           const blockText = sceneBlocks.map((b) => b.text).join(' ')
           const isVideo = scene.mediaType === 'video'
           const takeInfo = scene.prompt ? extractTakeInfo(scene.prompt) : null
+          const batchStatus = getSceneBatchStatus(sceneIdx)
 
           return (
             <div
@@ -672,6 +866,24 @@ Tipo: ${scene.mediaType}`
                   <span className="text-[10px] text-text-muted">
                     {(scene.durationMs / 1000).toFixed(1)}s
                   </span>
+                  {/* Batch status badge */}
+                  {batchStatus === 'generated' && (
+                    <span className="flex items-center gap-0.5 rounded bg-emerald-500/10 px-1 py-0.5 text-[9px] text-emerald-400">
+                      <Check className="h-2.5 w-2.5" />
+                      Gerado
+                    </span>
+                  )}
+                  {batchStatus === 'generating' && (
+                    <span className="flex items-center gap-0.5 rounded bg-primary/10 px-1 py-0.5 text-[9px] text-primary animate-pulse">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      Gerando...
+                    </span>
+                  )}
+                  {batchStatus === 'pending' && (
+                    <span className="rounded bg-surface px-1 py-0.5 text-[9px] text-text-muted/50 border border-border/30">
+                      Pendente
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -690,7 +902,7 @@ Tipo: ${scene.mediaType}`
                     </span>
                   )}
                   {takeInfo.environmentLock && (
-                    <span className="flex items-center gap-1 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-400">
+                    <span className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
                       <MapPin className="h-2.5 w-2.5" />
                       {takeInfo.environmentLock}
                     </span>
@@ -714,7 +926,7 @@ Tipo: ${scene.mediaType}`
       </div>
 
       {/* Confirm */}
-      {promptsGenerated > 0 && (
+      {promptsGenerated > 0 && !progress.isGeneratingPrompts && (
         <div className="flex justify-end pt-2 border-t border-border">
           <motion.button
             whileHover={{ scale: 1.01 }}

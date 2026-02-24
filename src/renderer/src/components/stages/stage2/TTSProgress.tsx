@@ -45,9 +45,9 @@ export function TTSProgress({
                 className="flex items-center gap-2 rounded-md bg-surface/50 px-2.5 py-1.5 text-xs"
               >
                 {status === 'ok' ? (
-                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                  <CheckCircle className="h-3.5 w-3.5 text-success" />
                 ) : status === 'error' ? (
-                  <XCircle className="h-3.5 w-3.5 text-red-500" />
+                  <XCircle className="h-3.5 w-3.5 text-error" />
                 ) : (
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-text-muted" />
                 )}
@@ -57,7 +57,7 @@ export function TTSProgress({
                     {(part.duration_ms / 1000).toFixed(1)}s
                   </span>
                 ) : part?.error ? (
-                  <span className="ml-auto truncate text-red-400">{part.error}</span>
+                  <span className="ml-auto truncate text-error">{part.error}</span>
                 ) : null}
               </div>
             )

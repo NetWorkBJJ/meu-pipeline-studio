@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, Trash2, ExternalLink } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -190,19 +190,19 @@ export function Stage6Insert(): React.JSX.Element {
 
       <div className="flex gap-4">
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <p className="text-xs text-text-muted">
             Legendas
           </p>
-          <p className="text-2xl font-bold tabular-nums text-text mt-1.5">{storyBlocks.length}</p>
+          <p className="text-[28px] font-bold tabular-nums text-text mt-1.5">{storyBlocks.length}</p>
         </div>
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Midias</p>
-          <p className="text-2xl font-bold tabular-nums text-text mt-1.5">
+          <p className="text-xs text-text-muted">Midias</p>
+          <p className="text-[28px] font-bold tabular-nums text-text mt-1.5">
             {scenes.filter((s) => s.mediaPath).length}
           </p>
         </div>
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <p className="text-xs text-text-muted">
             Projeto
           </p>
           <p className="mt-1.5 truncate font-mono text-xs text-text-muted">
@@ -213,16 +213,16 @@ export function Stage6Insert(): React.JSX.Element {
 
       {/* Existing content warning */}
       {hasExistingContent && status !== 'inserting' && status !== 'done' && (
-        <div className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-500 mt-0.5" />
-          <div className="text-xs text-yellow-500">
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+          <div className="text-xs text-warning">
             <p className="font-medium">Conteudo existente detectado na timeline:</p>
             <p className="mt-1">
               {textCount > 0 && `${textCount} legendas`}
               {textCount > 0 && videoCount > 0 && ' + '}
               {videoCount > 0 && `${videoCount} midias`}
             </p>
-            <p className="mt-1 text-yellow-500/70">
+            <p className="mt-1 text-warning/70">
               O conteudo anterior sera removido automaticamente antes da nova insercao.
             </p>
           </div>
@@ -237,7 +237,7 @@ export function Stage6Insert(): React.JSX.Element {
       )}
 
       {logs.length > 0 && (
-        <div className="rounded-lg border border-border bg-bg p-3 space-y-2 font-mono">
+        <div className="rounded-lg border border-border bg-bg-input p-3 space-y-2 font-mono">
           {logs.map((log, i) => (
             <div key={i} className="flex items-center gap-2 text-xs">
               {log.status === 'done' ? (
@@ -258,10 +258,24 @@ export function Stage6Insert(): React.JSX.Element {
 
       <div className="flex justify-end gap-2">
         {status === 'done' && (
-          <span className="flex items-center gap-1.5 self-center text-xs text-success">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            Concluido com backup!
-          </span>
+          <>
+            <span className="flex items-center gap-1.5 self-center text-xs text-success">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Concluido com backup!
+            </span>
+            <button
+              onClick={async () => {
+                const result = await window.api.openCapCut()
+                if (!result.success) {
+                  addToast({ type: 'error', message: result.error || 'Erro ao abrir CapCut.' })
+                }
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-border"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Abrir no CapCut
+            </button>
+          </>
         )}
         <button
           onClick={handleClearAndInsert}

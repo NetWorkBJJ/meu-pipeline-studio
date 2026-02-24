@@ -131,7 +131,7 @@ export function MediaImporter(): React.JSX.Element {
             onClick={() => setShowGapsOnly(!showGapsOnly)}
             className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
               showGapsOnly
-                ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'
+                ? 'border-warning/30 bg-warning/10 text-warning'
                 : 'border-border bg-bg text-text-muted hover:text-text'
             }`}
           >

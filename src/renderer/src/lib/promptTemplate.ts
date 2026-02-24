@@ -370,11 +370,27 @@ function getRoleHint(role: string): string {
   return role.trim() ? ` -- ${role.toLowerCase()}` : ''
 }
 
+export interface ChunkRange {
+  startIndex: number
+  endIndex: number
+}
+
+export function computeChunks(totalScenes: number, chunkSize: number = 60): ChunkRange[] {
+  if (totalScenes <= chunkSize) return [{ startIndex: 0, endIndex: totalScenes }]
+  const chunks: ChunkRange[] = []
+  for (let i = 0; i < totalScenes; i += chunkSize) {
+    chunks.push({ startIndex: i, endIndex: Math.min(i + chunkSize, totalScenes) })
+  }
+  return chunks
+}
+
 export function buildLlmPayload(
   blocks: StoryBlock[],
   scenes: Scene[],
   characters: CharacterRef[],
-  startingTakeNumber: number = 1
+  startingTakeNumber: number = 1,
+  chunkRange?: ChunkRange,
+  batchInfo?: { batchNumber: number; totalBatches: number }
 ): { systemPrompt: string; userMessage: string } {
   const sorted = [...blocks].sort((a, b) => a.startMs - b.startMs)
   const firstMs = sorted.length > 0 ? sorted[0].startMs : 0
@@ -384,18 +400,24 @@ export function buildLlmPayload(
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
 
-  // Exact take count = scene count
-  const totalTakes = scenes.length
-  const lastTakeNumber = startingTakeNumber + totalTakes - 1
+  // When chunked, only count the chunk's scenes for the header
+  const chunkScenes = chunkRange ? scenes.slice(chunkRange.startIndex, chunkRange.endIndex) : scenes
+  const chunkStartTake = chunkRange ? startingTakeNumber + chunkRange.startIndex : startingTakeNumber
+  const totalTakes = chunkScenes.length
+  const lastTakeNumber = chunkStartTake + totalTakes - 1
 
-  // Detect unique chapters in scenes
+  // Detect unique chapters in scenes (use ALL scenes for cast, not just chunk)
   const uniqueChapters = [...new Set(scenes.map((s) => s.chapter ?? 1))].sort((a, b) => a - b)
 
   let userMessage = `MINUTAGEM: ${msToDisplay(firstMs)} - ${msToDisplay(lastMs)} (${minutes} min ${seconds} seg)
 TOTAL DE TAKES: ${totalTakes} (exato, gere EXATAMENTE este numero)
-TAKE INICIAL: ${startingTakeNumber}
+TAKE INICIAL: ${chunkStartTake}
 TAKE FINAL: ${lastTakeNumber}
 `
+
+  if (batchInfo) {
+    userMessage += `NOTA: Este e o lote ${batchInfo.batchNumber} de ${batchInfo.totalBatches}. Gere APENAS os takes de ${chunkStartTake} a ${lastTakeNumber}.\n`
+  }
 
   // Cast list with roles (critical for character direction)
   // Collect all chapter chars for dynamic examples later
@@ -464,12 +486,12 @@ Voce e o diretor deste filme. ANTES de gerar os takes:
 `
   }
 
-  // Per-scene structure with block text (NO redundant "available characters" per scene)
+  // Per-scene structure with block text (only chunk's scenes)
   userMessage += `\nCENAS COM TEXTO SINCRONIZADO:\n`
 
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i]
-    const takeNum = startingTakeNumber + i
+  for (let i = 0; i < chunkScenes.length; i++) {
+    const scene = chunkScenes[i]
+    const takeNum = chunkStartTake + i
 
     // Get blocks that belong to this scene
     const sceneBlocks = sorted.filter((b) => scene.blockIds.includes(b.id))
@@ -483,7 +505,7 @@ Voce e o diretor deste filme. ANTES de gerar os takes:
     }
   }
 
-  userMessage += `\n---\nGere EXATAMENTE ${totalTakes} TAKES, numerados de ${startingTakeNumber} a ${lastTakeNumber}.
+  userMessage += `\n---\nGere EXATAMENTE ${totalTakes} TAKES, numerados de ${chunkStartTake} a ${lastTakeNumber}.
 Cada TAKE deve corresponder EXATAMENTE a cena indicada acima.
 O conteudo visual de cada TAKE deve refletir diretamente o texto sincronizado da sua cena.
 Lembre: sem Duration, sem [FOTO]. Character Anchor usa APENAS identificadores da lista de elenco, copiados EXATAMENTE. Separe multiplos com |. Nunca invente identificadores.

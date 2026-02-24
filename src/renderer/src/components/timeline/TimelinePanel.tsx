@@ -246,7 +246,7 @@ export function TimelinePanel(): React.JSX.Element {
                 )}
                 {capCutVideoSegments.length > 0 && (
                   <TimelineTrack
-                    label="Video (CapCut)"
+                    label="Video"
                     type="video"
                     segments={capCutVideoSegments}
                     color={TRACK_COLORS.video}

@@ -190,7 +190,14 @@ const initialState = {
     isGeneratingPrompts: false,
     currentSceneIndex: 0,
     totalScenes: 0,
-    error: null
+    error: null,
+    currentBatch: 0,
+    totalBatches: 0,
+    batchStartTake: 0,
+    batchEndTake: 0,
+    completedTakes: 0,
+    batchResults: [],
+    startedAt: null
   } as DirectorProgress,
   characterRefs: [] as CharacterRef[]
 }
@@ -326,7 +333,10 @@ export const useProjectStore = create<ProjectState>()(
       },
       addRecentProject: (project) => {
         set((state) => {
-          const filtered = state.recentProjects.filter((p) => p.path !== project.path)
+          const norm = (p: string): string => p.replace(/\\/g, '/')
+          const filtered = state.recentProjects.filter(
+            (p) => norm(p.path) !== norm(project.path)
+          )
           return { recentProjects: [project, ...filtered].slice(0, 10) }
         })
       },

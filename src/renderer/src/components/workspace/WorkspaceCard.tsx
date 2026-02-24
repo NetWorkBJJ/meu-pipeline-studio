@@ -3,25 +3,6 @@ import { motion } from 'framer-motion'
 import { Folder, Pin, Star, MoreVertical, Pencil, Trash2, FolderOpen } from 'lucide-react'
 import type { WorkspaceRegistryEntry } from '@/types/workspace'
 
-function formatRelativeDate(dateStr: string | null): string {
-  if (!dateStr) return 'nunca'
-  const date = new Date(dateStr)
-  const now = Date.now()
-  const diff = now - date.getTime()
-  if (diff < 0) return 'agora'
-  const seconds = Math.floor(diff / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-
-  if (seconds < 60) return 'agora'
-  if (minutes < 60) return `${minutes}min`
-  if (hours < 24) return `${hours}h`
-  if (days < 7) return `${days}d`
-  if (days < 30) return `${Math.floor(days / 7)} sem`
-  return `${Math.floor(days / 30)}m`
-}
-
 interface WorkspaceCardProps {
   workspace: WorkspaceRegistryEntry
   onOpen: (id: string) => void
@@ -66,23 +47,11 @@ export function WorkspaceCard({
           : 'border-border bg-surface hover:border-primary/40 hover:bg-surface-hover hover:shadow-glow-sm'
       }`}
     >
-      {/* Badges row */}
-      <div className="mb-3 flex items-center gap-1.5">
-        {workspace.pinned && (
-          <Pin className="h-3 w-3 text-primary" />
-        )}
-        {workspace.isDefault && (
-          <span className="flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-            <Star className="h-2.5 w-2.5" />
-            Padrao
-          </span>
-        )}
-        {workspace._missing && (
-          <span className="text-[10px] text-error">pasta ausente</span>
-        )}
-        <div className="flex-1" />
+      {/* Header row: icon + menu */}
+      <div className="mb-3 flex items-center justify-between">
+        <Folder className="h-5 w-5 text-primary" />
         {/* Context menu button */}
-        <div ref={menuRef} className="relative">
+        <div ref={menuRef} className="relative shrink-0">
           <button
             type="button"
             onClick={(e) => {
@@ -91,7 +60,7 @@ export function WorkspaceCard({
             }}
             className="flex h-6 w-6 items-center justify-center rounded text-text-muted/0 transition-colors group-hover:text-text-muted hover:!bg-surface hover:!text-text"
           >
-            <MoreVertical className="h-3.5 w-3.5" />
+            <MoreVertical className="h-4 w-4" />
           </button>
           {menuOpen && (
             <div className="absolute right-0 top-7 z-20 w-44 rounded-lg border border-border bg-surface-2 py-1 shadow-popover">
@@ -169,28 +138,30 @@ export function WorkspaceCard({
         </div>
       </div>
 
-      {/* Icon */}
-      <div className="mb-3 flex h-16 items-center justify-center rounded-lg bg-background">
-        <Folder className="h-8 w-8 text-primary/40" />
-      </div>
-
       {/* Name */}
-      <h3 className="mb-0.5 truncate text-sm font-semibold text-text" title={workspace.name}>
+      <h3 className="mb-0.5 truncate text-[15px] font-semibold text-text" title={workspace.name}>
         {workspace.name}
       </h3>
 
       {/* Description */}
       {workspace.description && (
-        <p className="mb-2 line-clamp-2 text-[11px] text-text-muted/70">{workspace.description}</p>
+        <p className="mb-2 line-clamp-2 text-xs text-text-muted">{workspace.description}</p>
       )}
 
       {/* Footer */}
-      <div className="mt-auto flex items-center gap-2 pt-2 text-[10px] text-text-muted/60">
+      <div className="mt-auto flex items-center gap-3 pt-2 text-[11px] text-text-tertiary">
         <span>
           {workspace.projectCount} projeto{workspace.projectCount !== 1 ? 's' : ''}
         </span>
-        <span>|</span>
-        <span>{formatRelativeDate(workspace.lastOpenedAt)}</span>
+        {workspace.isDefault && (
+          <span className="text-[10px] font-medium text-primary">Padrao</span>
+        )}
+        {workspace.pinned && (
+          <Pin className="h-3 w-3 text-primary" />
+        )}
+        {workspace._missing && (
+          <span className="text-[10px] text-error">pasta ausente</span>
+        )}
       </div>
     </motion.div>
   )

@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Settings, Loader2, Plus, Folder } from 'lucide-react'
+import { Settings, Loader2, Plus, Folder, Trash2 } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { WorkspaceCard } from '../workspace/WorkspaceCard'
 import { WorkspaceCreateModal } from '../workspace/WorkspaceCreateModal'
+import { Modal } from '../shared/Modal'
 
 export function WorkspaceSelectorScreen(): React.JSX.Element {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   const {
     registryLoading,
@@ -60,15 +62,16 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
     }
   }
 
-  const handleDeleteWorkspace = async (id: string): Promise<void> => {
+  const handleDeleteWorkspace = (id: string): void => {
     const workspace = sortedRegistry.find((w) => w.id === id)
     if (!workspace) return
-    const confirmed = window.confirm(
-      `Excluir workspace "${workspace.name}"? Isso remove apenas o registro, nao os arquivos.`
-    )
-    if (!confirmed) return
+    setDeleteTarget({ id, name: workspace.name })
+  }
+
+  const confirmDeleteWorkspace = async (): Promise<void> => {
+    if (!deleteTarget) return
     try {
-      await deleteWorkspace(id)
+      await deleteWorkspace(deleteTarget.id)
       addToast({ type: 'success', message: 'Workspace excluido.' })
     } catch (err) {
       addToast({
@@ -76,6 +79,7 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
         message: err instanceof Error ? err.message : 'Erro ao excluir workspace'
       })
     }
+    setDeleteTarget(null)
   }
 
   const handleRename = (id: string): void => {
@@ -137,27 +141,32 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
       />
 
       {/* Header */}
-      <div className="relative z-10 flex items-center justify-between border-b border-border px-6 py-4">
-        <div>
-          <h1 className="text-lg font-bold tracking-tight text-text">MEU PIPELINE STUDIO</h1>
-          <p className="text-xs text-text-muted">
-            Studio de pre-edicao automatizada para CapCut
-          </p>
+      <div className="relative z-10 flex h-14 items-center justify-between border-b border-border px-6">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
+            <span className="text-sm font-bold text-white">P</span>
+          </div>
+          <div>
+            <h1 className="text-[15px] font-semibold text-text">Pipeline Studio</h1>
+            <p className="text-[11px] text-text-tertiary">
+              Pre-edicao automatizada para CapCut
+            </p>
+          </div>
         </div>
         <motion.button
           type="button"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setSettingsOpen(true)}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text"
+          className="flex items-center justify-center text-text-muted transition-colors hover:text-text"
           title="Configuracoes"
         >
-          <Settings className="h-4 w-4" />
+          <Settings className="h-[18px] w-[18px]" />
         </motion.button>
       </div>
 
       {/* Action bar */}
-      <div className="relative z-10 flex items-center gap-3 border-b border-border px-6 py-3">
+      <div className="relative z-10 flex h-12 items-center gap-3 px-6">
         <button
           type="button"
           onClick={() => setCreateModalOpen(true)}
@@ -169,7 +178,7 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-6 py-5">
+      <div className="relative z-10 flex-1 overflow-y-auto p-6">
         {registryLoading && sortedRegistry.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-text-muted">
             <Loader2 className="mb-2 h-5 w-5 animate-spin" />
@@ -192,7 +201,7 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-5">
             {sortedRegistry.map((workspace, i) => (
               <motion.div
                 key={workspace.id}
@@ -258,21 +267,47 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
         </div>
       )}
 
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Excluir Workspace"
+      >
+        <p className="text-xs text-text-muted">
+          Tem certeza que deseja excluir o workspace{' '}
+          <span className="font-semibold text-text">{deleteTarget?.name}</span>?
+        </p>
+        <p className="mt-2 text-xs text-text-muted/70">
+          Isso remove apenas o registro. Os arquivos do projeto nao serao apagados.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setDeleteTarget(null)}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted hover:bg-surface-hover"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={confirmDeleteWorkspace}
+            className="flex items-center gap-1.5 rounded-lg bg-error px-3 py-1.5 text-xs font-medium text-white hover:bg-error/80"
+          >
+            <Trash2 className="h-3 w-3" />
+            Excluir
+          </button>
+        </div>
+      </Modal>
+
       <WorkspaceCreateModal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreateWorkspace}
       />
 
-      {/* Version */}
-      <motion.span
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="absolute bottom-2 right-4 z-10 text-[10px] text-text-muted/30"
-      >
-        v0.1.0
-      </motion.span>
+      {/* Footer */}
+      <div className="relative z-10 flex h-8 items-center justify-end border-t border-border px-6">
+        <span className="text-[11px] text-text-tertiary">v0.1.0</span>
+      </div>
     </div>
   )
 }

@@ -12,9 +12,10 @@ import {
   Clock,
   Trash2,
   Settings,
-  CheckSquare,
   X,
-  Link
+  Link,
+  Layers,
+  SlidersHorizontal
 } from 'lucide-react'
 import { CapCutIcon } from '@/components/shared/CapCutIcon'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -27,6 +28,10 @@ import { ProjectPickerModal } from './ProjectPickerModal'
 import { ConfirmDeleteModal } from './ConfirmDeleteModal'
 import { useStageStore } from '@/stores/useStageStore'
 import type { PipelineStatus, WorkspaceRecentProject } from '@/types/workspace'
+
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/')
+}
 
 interface ProjectInfo {
   name: string
@@ -153,10 +158,10 @@ export function ProjectDashboard(): React.JSX.Element {
     }
     addRecentProject({ name: project.name, path: project.draftPath, lastOpened: Date.now() })
 
-    const updated = [recent, ...recentProjects.filter((r) => r.path !== project.draftPath)].slice(
-      0,
-      10
-    )
+    const updated = [
+      recent,
+      ...recentProjects.filter((r) => normalizePath(r.path) !== normalizePath(project.draftPath))
+    ].slice(0, 10)
     saveRecentProjects(updated)
     await tryLoadDirectorState(project.draftPath)
     setCurrentView('pipeline')
@@ -170,7 +175,10 @@ export function ProjectDashboard(): React.JSX.Element {
     addRecentProject({ name, path, lastOpened: Date.now() })
 
     const recent: WorkspaceRecentProject = { name, path, lastOpened: Date.now() }
-    const updated = [recent, ...recentProjects.filter((r) => r.path !== path)].slice(0, 10)
+    const updated = [
+      recent,
+      ...recentProjects.filter((r) => normalizePath(r.path) !== normalizePath(path))
+    ].slice(0, 10)
     saveRecentProjects(updated)
     await tryLoadDirectorState(path)
     setCurrentView('pipeline')
@@ -186,7 +194,10 @@ export function ProjectDashboard(): React.JSX.Element {
       addRecentProject({ name, path, lastOpened: Date.now() })
 
       const recent: WorkspaceRecentProject = { name, path, lastOpened: Date.now() }
-      const updated = [recent, ...recentProjects.filter((r) => r.path !== path)].slice(0, 10)
+      const updated = [
+        recent,
+        ...recentProjects.filter((r) => normalizePath(r.path) !== normalizePath(path))
+      ].slice(0, 10)
       saveRecentProjects(updated)
       await tryLoadDirectorState(path)
       setCurrentView('pipeline')
@@ -209,10 +220,12 @@ export function ProjectDashboard(): React.JSX.Element {
         path: result.draft_path,
         lastOpened: Date.now()
       }
-      const updated = [recent, ...recentProjects.filter((r) => r.path !== result.draft_path)].slice(
-        0,
-        10
-      )
+      const updated = [
+        recent,
+        ...recentProjects.filter(
+          (r) => normalizePath(r.path) !== normalizePath(result.draft_path)
+        )
+      ].slice(0, 10)
       saveRecentProjects(updated)
       setCurrentView('pipeline')
     } catch (err) {
@@ -383,7 +396,7 @@ export function ProjectDashboard(): React.JSX.Element {
   }
 
   const handleRemoveRecent = async (path: string): Promise<void> => {
-    const updated = recentProjects.filter((r) => r.path !== path)
+    const updated = recentProjects.filter((r) => normalizePath(r.path) !== normalizePath(path))
     await saveRecentProjects(updated)
   }
 
@@ -399,29 +412,25 @@ export function ProjectDashboard(): React.JSX.Element {
       />
 
       {/* Header */}
-      <div className="relative z-10 flex items-center justify-between border-b border-border px-6 py-3">
+      <div className="relative z-10 flex h-14 items-center justify-between border-b border-border px-6">
         <div className="flex items-center gap-3">
           <motion.button
             type="button"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={handleBack}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text"
             title="Voltar aos workspaces"
           >
             <ArrowLeft className="h-4 w-4" />
           </motion.button>
-          <div className="h-4 w-px bg-border" />
-          <div>
-            <h1 className="text-sm font-bold text-text">
-              {activeWorkspace?.name || 'Workspace'}
-            </h1>
-            {activeWorkspace?.description && (
-              <p className="text-[10px] text-text-muted/70">{activeWorkspace.description}</p>
-            )}
+          <div className="h-5 w-px bg-border" />
+          <div className="flex items-center gap-3">
+            <Layers className="h-5 w-5 text-primary" />
+            <span className="text-base font-semibold text-text">Pipeline Studio</span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <motion.button
             type="button"
             whileHover={{ scale: 1.05 }}
@@ -432,115 +441,124 @@ export function ProjectDashboard(): React.JSX.Element {
                 addToast({ type: 'error', message: result.error || 'Erro ao abrir CapCut.' })
               }
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-elevated text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
             title="Abrir CapCut"
           >
-            <CapCutIcon className="h-4 w-4" />
+            <CapCutIcon className="h-[18px] w-[18px]" />
           </motion.button>
           <motion.button
             type="button"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setSettingsOpen(true)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-elevated text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
             title="Configuracoes"
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-[18px] w-[18px]" />
           </motion.button>
         </div>
       </div>
 
-      {/* Action bar */}
-      <div className="relative z-10 flex items-center gap-3 border-b border-border px-6 py-2.5">
-        <button
-          type="button"
-          onClick={() => setCreateModalOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white gradient-primary shadow-glow-sm transition-shadow hover:shadow-glow"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Novo Projeto
-        </button>
-        <button
-          type="button"
-          onClick={handleOpenFolder}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-text-muted transition-all hover:bg-surface-hover hover:text-text"
-        >
-          <FolderOpen className="h-3.5 w-3.5" />
-          Abrir Pasta
-        </button>
-        {!isDefaultWorkspace && (
-          <button
-            type="button"
-            onClick={() => setPickerModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-text-muted transition-all hover:bg-surface-hover hover:text-text"
-          >
-            <Link className="h-3.5 w-3.5" />
-            Adicionar Projetos
-          </button>
-        )}
-
-        {!multiSelect ? (
-          <button
-            type="button"
-            onClick={() => setMultiSelect(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-text-muted transition-all hover:bg-surface-hover hover:text-text"
-          >
-            <CheckSquare className="h-3.5 w-3.5" />
-            Selecionar
-          </button>
-        ) : (
+      {/* Content */}
+      <div className="relative z-10 flex-1 overflow-y-auto p-8">
+        {/* Title row: title left, action button right */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-text">Meus Projetos</h1>
+            <p className="mt-1 text-sm text-text-muted">
+              {activeWorkspace?.name || 'Workspace'}
+              {projects.length > 0 && ` \u2014 ${projects.length} projeto${projects.length !== 1 ? 's' : ''}`}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted">
-              {selectedPaths.size} selecionado{selectedPaths.size !== 1 ? 's' : ''}
-            </span>
-            {selectedPaths.size > 0 && (
-              <button
-                type="button"
-                onClick={handleDeleteSelected}
-                className="flex items-center gap-1 rounded-lg border border-error/30 px-2 py-1 text-xs text-error hover:bg-error/10"
-              >
-                <Trash2 className="h-3 w-3" />
-                Excluir
-              </button>
-            )}
             <button
               type="button"
-              onClick={() => {
-                setMultiSelect(false)
-                setSelectedPaths(new Set())
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-muted hover:bg-surface-hover hover:text-text"
+              onClick={() => setCreateModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white gradient-primary shadow-glow-sm transition-shadow hover:shadow-glow"
             >
-              <X className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
+              Novo Projeto
             </button>
           </div>
-        )}
+        </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted/50" />
+        {/* Search row */}
+        <div className="mb-6 flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar projeto..."
-              className="w-48 rounded-lg border border-border bg-surface py-1.5 pl-8 pr-3 text-xs text-text placeholder:text-text-muted/50 outline-none focus:border-primary"
+              placeholder="Buscar projetos..."
+              className="h-10 w-full rounded-lg border border-border bg-surface pl-10 pr-3 text-sm text-text placeholder:text-text-tertiary outline-none transition-colors focus:border-primary"
             />
           </div>
           <button
             type="button"
+            onClick={handleOpenFolder}
+            className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Abrir Pasta
+          </button>
+          {!isDefaultWorkspace && (
+            <button
+              type="button"
+              onClick={() => setPickerModalOpen(true)}
+              className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+            >
+              <Link className="h-4 w-4" />
+              Adicionar
+            </button>
+          )}
+          {!multiSelect ? (
+            <button
+              type="button"
+              onClick={() => setMultiSelect(true)}
+              className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Filtros
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">
+                {selectedPaths.size} selecionado{selectedPaths.size !== 1 ? 's' : ''}
+              </span>
+              {selectedPaths.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  className="flex h-10 items-center gap-1 rounded-lg border border-error/30 px-3 text-xs text-error hover:bg-error/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Excluir
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMultiSelect(false)
+                  setSelectedPaths(new Set())
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-lg border border-border text-text-muted hover:bg-surface-hover hover:text-text"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
             onClick={() => loadProjects()}
             disabled={loading}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text disabled:opacity-40"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-40"
             title="Atualizar lista"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-6 py-4">
         {/* Recent projects */}
         {recentProjects.length > 0 && !searchQuery && (
           <div className="mb-6">
@@ -548,13 +566,13 @@ export function ProjectDashboard(): React.JSX.Element {
               <Clock className="h-3 w-3" />
               Recentes
             </h2>
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="flex gap-3 overflow-x-auto pb-1">
               {recentProjects.map((recent) => (
                 <motion.div
                   key={recent.path}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className="group flex min-w-[180px] max-w-[220px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface p-2.5 transition-colors hover:border-primary/40 hover:bg-surface-hover"
+                  className="group flex min-w-[180px] max-w-[220px] shrink-0 cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-surface p-3 transition-colors hover:border-primary/40 hover:bg-surface-hover"
                   onClick={() => handleSelectRecent(recent.path)}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
@@ -581,34 +599,25 @@ export function ProjectDashboard(): React.JSX.Element {
         )}
 
         {/* Projects grid */}
-        <div>
-          <h2 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-text-muted">
-            <Film className="h-3 w-3" />
-            Projetos CapCut
-            {projects.length > 0 && (
-              <span className="text-text-muted/50">({filteredProjects.length})</span>
-            )}
-          </h2>
-
-          {loading && projects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-text-muted">
-              <Loader2 className="mb-2 h-5 w-5 animate-spin" />
-              <span className="text-xs">Carregando projetos...</span>
-            </div>
-          ) : filteredProjects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-text-muted">
-              <AlertCircle className="mb-2 h-5 w-5 opacity-40" />
-              <span className="text-xs">
-                {searchQuery
-                  ? 'Nenhum projeto encontrado'
-                  : isDefaultWorkspace
-                    ? 'Nenhum projeto CapCut encontrado'
-                    : 'Nenhum projeto vinculado. Use "Adicionar Projetos" para vincular projetos CapCut.'}
-              </span>
-            </div>
-          ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-              {filteredProjects.map((project, i) => (
+        {loading && projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-text-muted">
+            <Loader2 className="mb-3 h-6 w-6 animate-spin" />
+            <span className="text-sm">Carregando projetos...</span>
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-text-muted">
+            <AlertCircle className="mb-3 h-6 w-6 opacity-40" />
+            <span className="text-sm">
+              {searchQuery
+                ? 'Nenhum projeto encontrado'
+                : isDefaultWorkspace
+                  ? 'Nenhum projeto CapCut encontrado'
+                  : 'Nenhum projeto vinculado. Use "Adicionar" para vincular projetos CapCut.'}
+            </span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+            {filteredProjects.map((project, i) => (
                 <motion.div
                   key={project.path || i}
                   initial={{ opacity: 0, y: 10 }}
@@ -636,7 +645,6 @@ export function ProjectDashboard(): React.JSX.Element {
               ))}
             </div>
           )}
-        </div>
       </div>
 
       {/* Context menu */}

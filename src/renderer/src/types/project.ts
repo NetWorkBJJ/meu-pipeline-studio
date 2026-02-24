@@ -16,12 +16,32 @@ export interface DirectorConfig {
   variationSeed: number
 }
 
+export type BatchStatus = 'pending' | 'in_progress' | 'success' | 'error' | 'cancelled'
+
+export interface BatchResult {
+  batchIndex: number
+  startTake: number
+  endTake: number
+  sceneCount: number
+  takesGenerated: number
+  status: BatchStatus
+  error?: string
+  durationMs?: number
+}
+
 export interface DirectorProgress {
   isPlanning: boolean
   isGeneratingPrompts: boolean
   currentSceneIndex: number
   totalScenes: number
   error: string | null
+  currentBatch: number
+  totalBatches: number
+  batchStartTake: number
+  batchEndTake: number
+  completedTakes: number
+  batchResults: BatchResult[]
+  startedAt: number | null
 }
 
 export interface CharacterRef {

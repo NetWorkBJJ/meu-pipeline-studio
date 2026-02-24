@@ -12,16 +12,16 @@ export function GapIndicator({ report }: GapIndicatorProps): React.JSX.Element {
     <div
       className={`rounded-lg border p-3 ${
         isComplete
-          ? 'border-green-500/30 bg-green-500/5'
-          : 'border-yellow-500/30 bg-yellow-500/5'
+          ? 'border-success/30 bg-success/5'
+          : 'border-warning/30 bg-warning/5'
       }`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isComplete ? (
-            <CheckCircle2 className="h-4 w-4 text-green-400" />
+            <CheckCircle2 className="h-4 w-4 text-success" />
           ) : (
-            <AlertTriangle className="h-4 w-4 text-yellow-400" />
+            <AlertTriangle className="h-4 w-4 text-warning" />
           )}
           <span className="text-xs font-medium text-text">
             {report.coveredScenes}/{report.totalScenes} cenas com midia
@@ -29,7 +29,7 @@ export function GapIndicator({ report }: GapIndicatorProps): React.JSX.Element {
         </div>
         <span
           className={`text-sm font-bold ${
-            isComplete ? 'text-green-400' : 'text-yellow-400'
+            isComplete ? 'text-success' : 'text-warning'
           }`}
         >
           {report.coveragePercent}%
@@ -40,7 +40,7 @@ export function GapIndicator({ report }: GapIndicatorProps): React.JSX.Element {
       <div className="mt-2 h-1.5 rounded-full bg-surface overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-300 ${
-            isComplete ? 'bg-green-500' : 'bg-yellow-500'
+            isComplete ? 'bg-success' : 'bg-warning'
           }`}
           style={{ width: `${report.coveragePercent}%` }}
         />

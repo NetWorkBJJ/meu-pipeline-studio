@@ -1,4 +1,4 @@
-import { Home, Settings, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Settings, ChevronRight } from 'lucide-react'
 import { CapCutIcon } from '@/components/shared/CapCutIcon'
 import { motion } from 'framer-motion'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -28,25 +28,25 @@ export function TopBar(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-10 items-center justify-between border-b border-border bg-bg px-3">
-      <div className="flex items-center gap-2">
+    <div className="flex h-12 items-center justify-between border-b border-border bg-bg px-4">
+      <div className="flex items-center gap-2.5">
         <motion.button
           type="button"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={handleGoHome}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text"
           title="Voltar ao dashboard"
         >
-          <Home className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4" />
         </motion.button>
-        <div className="h-4 w-px bg-border" />
+        <div className="h-5 w-px bg-border" />
         {/* Breadcrumb */}
-        <div className="flex items-center gap-1 text-sm">
+        <div className="flex items-center gap-1.5 text-[13px]">
           {activeWorkspace && (
             <>
-              <span className="text-text-muted">{activeWorkspace.name}</span>
-              <ChevronRight className="h-3 w-3 text-text-muted/50" />
+              <span className="text-text-tertiary">{activeWorkspace.name}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-text-tertiary" />
             </>
           )}
           <span className="font-medium text-text" title={capCutDraftPath || undefined}>
@@ -55,7 +55,7 @@ export function TopBar(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <motion.button
           type="button"
           whileHover={{ scale: 1.05 }}
@@ -66,7 +66,7 @@ export function TopBar(): React.JSX.Element {
               addToast({ type: 'error', message: result.error || 'Erro ao abrir CapCut.' })
             }
           }}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text"
           title="Abrir CapCut"
         >
           <CapCutIcon className="h-4 w-4" />
@@ -76,7 +76,7 @@ export function TopBar(): React.JSX.Element {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setSettingsOpen(true)}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface hover:text-text"
           title="Configuracoes"
         >
           <Settings className="h-4 w-4" />

@@ -4,17 +4,19 @@
   --color-primary: #6366F1;
   --color-primary-hover: #4F46E5;
   --color-primary-light: #818CF8;
-  --color-bg: #09090B;
-  --color-surface: #111113;
-  --color-surface-hover: #1E1E22;
-  --color-surface-2: #18181B;
-  --color-surface-3: #1E1E22;
+  --color-bg: #0B0B0E;
+  --color-bg-input: #111114;
+  --color-surface: #16161A;
+  --color-surface-hover: #1C1C20;
+  --color-surface-2: #16161A;
+  --color-elevated: #1C1C20;
   --color-border: #27272A;
   --color-border-light: #3F3F46;
-  --color-text: #FAFAFA;
+  --color-text: #FAFAF9;
   --color-text-muted: #A1A1AA;
+  --color-text-tertiary: #6B6B70;
   --color-success: #22c55e;
-  --color-error: #ef4444;
+  --color-error: #E85A4F;
   --color-warning: #eab308;
 }
 
@@ -43,7 +45,7 @@
 }
 
 @utility gradient-card {
-  background: linear-gradient(180deg, #161618 0%, #0e0e10 100%);
+  background: linear-gradient(180deg, #16161A 0%, #0B0B0E 100%);
 }
 
 *,

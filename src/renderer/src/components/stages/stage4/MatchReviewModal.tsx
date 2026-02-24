@@ -56,19 +56,19 @@ export function MatchReviewModal({
 
             {/* Summary */}
             <div className="grid grid-cols-3 gap-2 mb-4">
-              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-2 text-center">
-                <CheckCircle2 className="mx-auto h-4 w-4 text-green-400 mb-1" />
-                <div className="text-sm font-medium text-green-400">{matches.length}</div>
+              <div className="rounded-lg border border-success/30 bg-success/5 p-2 text-center">
+                <CheckCircle2 className="mx-auto h-4 w-4 text-success mb-1" />
+                <div className="text-sm font-medium text-success">{matches.length}</div>
                 <div className="text-[10px] text-text-muted">Associados</div>
               </div>
-              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-2 text-center">
-                <FileQuestion className="mx-auto h-4 w-4 text-yellow-400 mb-1" />
-                <div className="text-sm font-medium text-yellow-400">{unmatchedFiles.length}</div>
+              <div className="rounded-lg border border-warning/30 bg-warning/5 p-2 text-center">
+                <FileQuestion className="mx-auto h-4 w-4 text-warning mb-1" />
+                <div className="text-sm font-medium text-warning">{unmatchedFiles.length}</div>
                 <div className="text-[10px] text-text-muted">Arquivos sem cena</div>
               </div>
-              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-2 text-center">
-                <AlertCircle className="mx-auto h-4 w-4 text-red-400 mb-1" />
-                <div className="text-sm font-medium text-red-400">{unmatchedScenes.length}</div>
+              <div className="rounded-lg border border-error/30 bg-error/5 p-2 text-center">
+                <AlertCircle className="mx-auto h-4 w-4 text-error mb-1" />
+                <div className="text-sm font-medium text-error">{unmatchedScenes.length}</div>
                 <div className="text-[10px] text-text-muted">Cenas sem midia</div>
               </div>
             </div>
@@ -95,10 +95,10 @@ export function MatchReviewModal({
                         <span
                           className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                             m.confidence >= 0.9
-                              ? 'bg-green-500/10 text-green-400'
+                              ? 'bg-success/10 text-success'
                               : m.confidence >= 0.5
-                                ? 'bg-yellow-500/10 text-yellow-400'
-                                : 'bg-red-500/10 text-red-400'
+                                ? 'bg-warning/10 text-warning'
+                                : 'bg-error/10 text-error'
                           }`}
                         >
                           {Math.round(m.confidence * 100)}%
@@ -120,7 +120,7 @@ export function MatchReviewModal({
             {/* Unmatched scenes */}
             {unmatchedScenes.length > 0 && (
               <div className="mt-3">
-                <span className="text-[10px] text-red-400">
+                <span className="text-[10px] text-error">
                   Cenas sem midia: {unmatchedScenes.map((s) => s.index).join(', ')}
                 </span>
               </div>

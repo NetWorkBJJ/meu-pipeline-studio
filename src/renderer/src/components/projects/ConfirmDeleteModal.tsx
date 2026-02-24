@@ -48,8 +48,8 @@ export function ConfirmDeleteModal({
     <Modal open={open} onClose={deleting ? () => {} : onClose} title="Excluir Projeto">
       <div className="space-y-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500/10">
-            <AlertTriangle className="h-4 w-4 text-red-400" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-error/10">
+            <AlertTriangle className="h-4 w-4 text-error" />
           </div>
           <div className="space-y-1 text-xs text-text-muted">
             <p>
@@ -57,7 +57,7 @@ export function ConfirmDeleteModal({
                 ? 'Este projeto sera excluido permanentemente do disco.'
                 : `Estes ${projectPaths.length} projetos serao excluidos permanentemente do disco.`}
             </p>
-            <p className="font-medium text-red-400">Esta acao nao pode ser desfeita.</p>
+            <p className="font-medium text-error">Esta acao nao pode ser desfeita.</p>
           </div>
         </div>
 

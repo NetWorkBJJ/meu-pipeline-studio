@@ -124,42 +124,38 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
   const uniqueNames = [...new Set(characterRefs.map((c) => c.name))]
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       {/* Sequence Mode */}
       <div>
-        <h4 className="text-xs font-medium text-text mb-2">Modo de sequencia</h4>
-        <div className="grid grid-cols-2 gap-2">
+        <h4 className="text-sm font-semibold text-text mb-2">Modo de sequencia</h4>
+        <div className="flex gap-3">
           {SEQUENCE_MODES.map((mode) => {
             const Icon = mode.icon
             const isSelected = config.sequenceMode === mode.value
             return (
-              <motion.button
+              <button
                 key={mode.value}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
+                type="button"
                 onClick={() => setDirectorConfig({ sequenceMode: mode.value })}
-                className={`flex items-start gap-2.5 rounded-lg border p-3 text-left transition-all ${
+                className={`flex items-center gap-2.5 rounded-lg px-4 py-3 text-left transition-all ${
                   isSelected
-                    ? 'border-primary bg-primary/5 shadow-glow-sm'
-                    : 'border-border bg-surface hover:border-border/80'
+                    ? 'border-2 border-primary bg-surface'
+                    : 'border border-border bg-surface hover:border-border-light'
                 }`}
               >
                 <Icon
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${
+                  className={`h-[18px] w-[18px] shrink-0 ${
                     isSelected ? 'text-primary' : 'text-text-muted'
                   }`}
                 />
-                <div>
-                  <span
-                    className={`text-xs font-medium ${
-                      isSelected ? 'text-primary' : 'text-text'
-                    }`}
-                  >
-                    {mode.label}
-                  </span>
-                  <p className="text-[10px] text-text-muted mt-0.5">{mode.description}</p>
-                </div>
-              </motion.button>
+                <span
+                  className={`text-[13px] ${
+                    isSelected ? 'font-medium text-text' : 'text-text-muted'
+                  }`}
+                >
+                  {mode.label}
+                </span>
+              </button>
             )
           })}
         </div>
@@ -167,15 +163,15 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
 
       {/* Timing Rules */}
       <div>
-        <h4 className="text-xs font-medium text-text mb-2">Regras de timing</h4>
+        <h4 className="text-sm font-semibold text-text mb-2">Regras de timing</h4>
         <p className="text-[10px] text-text-muted mb-2">
           Duracao variavel obrigatoria dentro da janela (proibido duracoes lineares)
         </p>
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-lg border border-border bg-surface p-3">
+          <div className="rounded-lg border border-[#0D9488] bg-surface p-3.5">
             <div className="flex items-center gap-1.5 mb-2">
-              <Film className="h-3.5 w-3.5 text-teal-400" />
-              <span className="text-xs font-medium text-text">Videos (VO3)</span>
+              <Film className="h-3.5 w-3.5 text-[#0D9488]" />
+              <span className="text-xs font-semibold text-[#0D9488]">Videos (VO3)</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex-1">
@@ -212,10 +208,10 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
               </div>
             </div>
           </div>
-          <div className="rounded-lg border border-border bg-surface p-3">
+          <div className="rounded-lg border border-[#7C3AED] bg-surface p-3.5">
             <div className="flex items-center gap-1.5 mb-2">
-              <ImageIcon className="h-3.5 w-3.5 text-violet-400" />
-              <span className="text-xs font-medium text-text">Imagens (Nano Banana)</span>
+              <ImageIcon className="h-3.5 w-3.5 text-[#7C3AED]" />
+              <span className="text-xs font-semibold text-[#7C3AED]">Imagens (Nano Banana)</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex-1">
@@ -257,7 +253,7 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
 
       {/* LLM -- Fixed to Claude Opus 4.6 */}
       <div>
-        <h4 className="text-xs font-medium text-text mb-2">Motor de IA</h4>
+        <h4 className="text-sm font-semibold text-text mb-2">Motor de IA</h4>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5">
             <Brain className="h-3.5 w-3.5 text-primary" />
@@ -273,12 +269,12 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
           {llmAvailable !== null && (
             <div
               className={`flex items-center gap-1.5 ${
-                llmAvailable ? 'text-green-400' : 'text-red-400'
+                llmAvailable ? 'text-success' : 'text-error'
               }`}
             >
               <div
                 className={`h-2 w-2 rounded-full ${
-                  llmAvailable ? 'bg-green-500' : 'bg-red-500'
+                  llmAvailable ? 'bg-success' : 'bg-error'
                 }`}
               />
               <span className="text-[10px] font-medium">
@@ -289,7 +285,7 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
         </div>
 
         {llmAvailable === false && (
-          <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+          <div className="mt-2 rounded-lg border border-warning/30 bg-warning/5 p-3">
             <p className="text-[10px] text-text-muted mb-2">
               Claude Code CLI nao encontrado. Instale para gerar prompts com IA.
             </p>
@@ -343,7 +339,7 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
         )}
 
         {llmAvailable && (
-          <div className="mt-2 rounded-lg border border-green-500/20 bg-green-500/5 p-3">
+          <div className="mt-2 rounded-lg border border-success/20 bg-success/5 p-3">
             <p className="text-[10px] text-text-muted mb-2">
               CLI instalado. Faca login para usar com sua assinatura:
             </p>
@@ -369,12 +365,12 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
       {/* Characters */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-medium text-text">Personagens (Character Anchors)</h4>
+          <h4 className="text-sm font-semibold text-text">Personagens (Character Anchors)</h4>
           <div className="flex items-center gap-1.5">
             {characterRefs.length > 0 && (
               <button
                 onClick={() => setCharacterRefs([])}
-                className="flex items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-[10px] text-text-muted transition-colors hover:text-red-400"
+                className="flex items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-[10px] text-text-muted transition-colors hover:text-error"
               >
                 <Trash2 className="h-3 w-3" />
                 Limpar

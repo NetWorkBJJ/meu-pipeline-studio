@@ -19,5 +19,9 @@
       "WebFetch(domain:docs.byteplus.com)",
       "Bash(xargs:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "figma"
+  ],
+  "enableAllProjectMcpServers": true
 }

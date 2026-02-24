@@ -65,7 +65,7 @@ export function Stage4Director(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-sm font-medium text-text">Direcao de Cenas</h3>
+        <h3 className="text-lg font-semibold text-text">Direcao de Cenas</h3>
         <p className="text-xs text-text-muted mt-1">
           Configure, planeje cenas, gere prompts e importe midias.
         </p>

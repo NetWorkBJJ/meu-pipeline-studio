@@ -4,10 +4,10 @@ import { useLogStore, selectLastLog, selectErrorCount } from '@/stores/useLogSto
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 
 const LOG_TYPE_COLORS = {
-  info: 'text-blue-400',
-  success: 'text-green-400',
-  error: 'text-red-400',
-  warning: 'text-yellow-400'
+  info: 'text-primary-light',
+  success: 'text-success',
+  error: 'text-error',
+  warning: 'text-warning'
 }
 
 export function StatusBar(): React.JSX.Element {
@@ -18,7 +18,7 @@ export function StatusBar(): React.JSX.Element {
   const { activeWorkspace } = useWorkspaceStore()
 
   return (
-    <footer className="flex items-center justify-between border-t border-border bg-bg px-4 py-1.5 text-[11px] text-text-muted">
+    <footer className="flex h-8 items-center justify-between border-t border-border bg-bg px-4 text-[11px] text-text-muted">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="flex items-center gap-1.5 flex-shrink-0">
           <motion.span
@@ -28,12 +28,12 @@ export function StatusBar(): React.JSX.Element {
                 : { scale: 1, opacity: 0.4 }
             }
             transition={capCutDraftPath ? { duration: 2, repeat: Infinity } : {}}
-            className={`inline-block h-1.5 w-1.5 rounded-full ${
+            className={`inline-block h-2 w-2 rounded-full ${
               capCutDraftPath ? 'bg-success' : 'bg-text-muted'
             }`}
           />
-          <span className={capCutDraftPath ? 'text-success' : 'text-text-muted/50'}>
-            {capCutDraftPath ? 'Conectado' : 'Desconectado'}
+          <span className="text-text-tertiary">
+            {capCutDraftPath ? 'Python bridge conectado' : 'Desconectado'}
           </span>
         </span>
 
@@ -46,16 +46,16 @@ export function StatusBar(): React.JSX.Element {
 
       <div className="flex flex-shrink-0 items-center gap-3">
         {errorCount > 0 && (
-          <span className="text-red-400">
+          <span className="text-error">
             {errorCount} erro{errorCount !== 1 ? 's' : ''}
           </span>
         )}
         {activeWorkspace && (
-          <span className="truncate text-text-muted/60">
+          <span className="truncate text-text-tertiary">
             {activeWorkspace.name}
           </span>
         )}
-        <span className="max-w-[300px] truncate font-mono text-text-muted/60">
+        <span className="max-w-[300px] truncate font-mono text-text-tertiary">
           {capCutDraftPath || 'Nenhum projeto'}
         </span>
       </div>

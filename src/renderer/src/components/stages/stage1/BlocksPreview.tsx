@@ -17,7 +17,7 @@ export function BlocksPreview({ onConfirm, onBack, loading }: BlocksPreviewProps
     <div className="flex flex-col gap-4">
       {/* Warning: no project selected */}
       {!capCutDraftPath && (
-        <div className="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-400">
+        <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           Selecione um projeto CapCut na tela inicial antes de confirmar.
         </div>
@@ -57,13 +57,13 @@ export function BlocksPreview({ onConfirm, onBack, loading }: BlocksPreviewProps
       <div className="overflow-auto rounded-lg border border-border">
         <table className="w-full table-fixed text-sm">
           <thead>
-            <tr className="border-b border-border bg-surface text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-              <th className="w-[48px] px-3 py-2.5">#</th>
-              <th className="px-3 py-2.5">Texto</th>
-              <th className="w-[72px] px-3 py-2.5 text-right">Chars</th>
-              <th className="w-[88px] px-3 py-2.5 text-right">Inicio</th>
-              <th className="w-[88px] px-3 py-2.5 text-right">Fim</th>
-              <th className="w-[88px] px-3 py-2.5 text-right">Duracao</th>
+            <tr className="border-b border-border bg-elevated text-left text-[11px] font-semibold text-text-tertiary">
+              <th className="w-[48px] px-4 py-2.5">#</th>
+              <th className="px-4 py-2.5">Texto</th>
+              <th className="w-[72px] px-4 py-2.5 text-right">Chars</th>
+              <th className="w-[88px] px-4 py-2.5 text-right">Inicio</th>
+              <th className="w-[88px] px-4 py-2.5 text-right">Fim</th>
+              <th className="w-[88px] px-4 py-2.5 text-right">Duracao</th>
             </tr>
           </thead>
           <tbody>
@@ -72,20 +72,20 @@ export function BlocksPreview({ onConfirm, onBack, loading }: BlocksPreviewProps
                 key={block.id}
                 className="border-b border-border/50 transition-colors even:bg-surface/50 hover:bg-surface-hover"
               >
-                <td className="px-3 py-2.5 tabular-nums text-text-muted">{block.index}</td>
+                <td className="px-4 py-2.5 tabular-nums text-text-muted">{block.index}</td>
                 <td className="max-w-0 truncate px-3 py-2.5 text-text" title={block.text}>
                   {block.text}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-muted">
+                <td className="px-4 py-2.5 text-right tabular-nums text-text-muted">
                   {block.characterCount}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-xs text-text-muted">
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-text-muted">
                   {msToDisplay(block.startMs)}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-xs text-text-muted">
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-text-muted">
                   {msToDisplay(block.endMs)}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-xs text-text-muted">
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-text-muted">
                   {msToDisplay(block.durationMs)}
                 </td>
               </tr>

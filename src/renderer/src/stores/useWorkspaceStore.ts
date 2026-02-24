@@ -150,13 +150,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const entry = state.registry.find((e) => e.id === state.activeWorkspaceId)
         if (!entry) return
 
+        // Deduplicate by normalized path (keep first occurrence)
+        const seen = new Set<string>()
+        const deduped = projects.filter((p) => {
+          const key = p.path.replace(/\\/g, '/')
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+
         await window.api.saveWorkspaceRecentProjects({
           workspacePath: entry.path,
-          recentProjects: projects
+          recentProjects: deduped
         })
         set((s) => ({
           activeWorkspace: s.activeWorkspace
-            ? { ...s.activeWorkspace, recentProjects: projects }
+            ? { ...s.activeWorkspace, recentProjects: deduped }
             : null
         }))
       },

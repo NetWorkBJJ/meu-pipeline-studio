@@ -10,7 +10,7 @@ export function StageProgress(): React.JSX.Element {
   const { currentStage, completedStages, setCurrentStage, canNavigateTo } = useStageStore()
 
   return (
-    <div className="flex items-center justify-center gap-0 border-b border-border bg-surface px-8 py-3">
+    <div className="flex items-center justify-center gap-0 border-b border-border bg-surface px-10 py-3">
       {stages.map((stage, i) => {
         const isActive = currentStage === stage
         const isCompleted = completedStages.has(stage)
@@ -20,7 +20,7 @@ export function StageProgress(): React.JSX.Element {
           <Fragment key={stage}>
             {i > 0 && (
               <div
-                className={`h-px flex-1 max-w-16 transition-colors duration-300 ${
+                className={`h-px flex-1 max-w-12 transition-colors duration-300 ${
                   completedStages.has(stages[i - 1]) ? 'bg-primary' : 'bg-border'
                 }`}
               />
@@ -40,22 +40,18 @@ export function StageProgress(): React.JSX.Element {
                     ? 'gradient-primary text-white shadow-glow-sm'
                     : isCompleted
                       ? 'bg-primary text-white'
-                      : isAvailable
-                        ? 'border-2 border-primary text-primary'
-                        : 'border border-border-light text-text-muted cursor-not-allowed opacity-50'
+                      : 'border-2 border-border-light text-text-tertiary'
                 }`}
               >
                 {isCompleted ? <Check className="h-3.5 w-3.5" /> : stage}
               </div>
               <span
-                className={`text-[10px] font-medium transition-colors duration-300 ${
+                className={`text-[11px] font-medium transition-colors duration-300 ${
                   isActive
                     ? 'text-primary-light'
                     : isCompleted
                       ? 'text-text'
-                      : isAvailable
-                        ? 'text-text-muted'
-                        : 'text-text-muted/50'
+                      : 'text-text-tertiary'
                 }`}
               >
                 {STAGE_LABELS[stage]}

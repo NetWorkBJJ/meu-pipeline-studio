@@ -7,8 +7,15 @@ import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
 
 export function SettingsModal(): React.JSX.Element | null {
   const { settingsOpen, setSettingsOpen, addToast } = useUIStore()
-  const { capCutDraftPath, mediaPreset, setCapCutDraftPath, setMediaPreset, addRecentProject } =
-    useProjectStore()
+  const {
+    capCutDraftPath,
+    mediaPreset,
+    ttsDefaults,
+    setCapCutDraftPath,
+    setMediaPreset,
+    setTtsDefaults,
+    addRecentProject
+  } = useProjectStore()
   const { activeWorkspace, activeWorkspaceId, updateWorkspace } = useWorkspaceStore()
 
   const [wsName, setWsName] = useState('')
@@ -249,7 +256,7 @@ export function SettingsModal(): React.JSX.Element | null {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div
-                        className={`h-2 w-2 rounded-full ${ttsHasKey ? 'bg-green-500' : 'bg-red-500'}`}
+                        className={`h-2 w-2 rounded-full ${ttsHasKey ? 'bg-success' : 'bg-error'}`}
                       />
                       <span className="text-xs font-medium text-text">API Key</span>
                     </div>
@@ -288,11 +295,27 @@ export function SettingsModal(): React.JSX.Element | null {
                       <button
                         type="button"
                         onClick={handleDeleteTtsKey}
-                        className="flex h-7 items-center rounded-md border border-border bg-surface px-1.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-red-400"
+                        className="flex h-7 items-center rounded-md border border-border bg-surface px-1.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-error"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
                     )}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-text-muted">Modelo TTS</span>
+                    <select
+                      value={ttsDefaults.ttsModel}
+                      onChange={(e) =>
+                        setTtsDefaults({
+                          ...ttsDefaults,
+                          ttsModel: e.target.value as 'flash' | 'pro'
+                        })
+                      }
+                      className="rounded-lg border border-border bg-surface px-2.5 py-1 text-xs text-text outline-none transition-colors focus:border-primary"
+                    >
+                      <option value="flash">Gemini 2.5 Flash (rapido)</option>
+                      <option value="pro">Gemini 2.5 Pro (qualidade)</option>
+                    </select>
                   </div>
                 </div>
               </div>

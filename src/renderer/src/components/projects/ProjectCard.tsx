@@ -103,11 +103,11 @@ export function ProjectCard({
         e.preventDefault()
         onContextMenu(e)
       }}
-      className={`group relative flex cursor-pointer flex-col rounded-xl border p-3 transition-all ${
+      className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border transition-all ${
         selected
           ? 'border-primary bg-primary/5 shadow-glow-sm'
           : exists
-            ? 'border-border bg-surface hover:border-primary/40 hover:bg-surface-hover hover:shadow-glow-sm'
+            ? 'border-border bg-surface shadow-[0_2px_12px_-2px_rgba(0,0,0,0.15)] hover:border-primary/40 hover:bg-surface-hover hover:shadow-glow-sm'
             : 'cursor-not-allowed border-border/50 bg-surface/50 opacity-50'
       }`}
     >
@@ -127,7 +127,7 @@ export function ProjectCard({
       )}
 
       {/* Thumbnail */}
-      <div className="mb-2 flex h-20 items-center justify-center overflow-hidden rounded-lg bg-background">
+      <div className="flex h-[100px] items-center justify-center overflow-hidden bg-elevated">
         {cover && !imgError ? (
           <img
             src={`file:///${cover.replace(/\\/g, '/')}`}
@@ -136,30 +136,33 @@ export function ProjectCard({
             onError={() => setImgError(true)}
           />
         ) : (
-          <Film className="h-6 w-6 text-text-muted/30" />
+          <Film className="h-7 w-7 text-text-tertiary" />
         )}
       </div>
 
-      {/* Name */}
-      <h3 className="mb-1 truncate text-sm font-medium text-text" title={name}>
-        {name || 'Sem nome'}
-      </h3>
+      {/* Content area with padding */}
+      <div className="flex flex-1 flex-col p-3">
+        {/* Name */}
+        <h3 className="mb-1 truncate text-sm font-medium text-text" title={name}>
+          {name || 'Sem nome'}
+        </h3>
 
-      {/* Metadata */}
-      <div className="mb-2 flex items-center gap-2 text-[10px] text-text-muted/70">
-        {durationUs > 0 && <span>{formatDuration(durationUs)}</span>}
-        {modifiedUs > 0 && (
-          <>
-            {durationUs > 0 && <span>|</span>}
-            <span>{formatRelativeDate(modifiedUs)}</span>
-          </>
-        )}
-        {!exists && <span className="text-error/70">pasta ausente</span>}
-      </div>
+        {/* Metadata */}
+        <div className="mb-2 flex items-center gap-2 text-[10px] text-text-muted/70">
+          {durationUs > 0 && <span>{formatDuration(durationUs)}</span>}
+          {modifiedUs > 0 && (
+            <>
+              {durationUs > 0 && <span>|</span>}
+              <span>{formatRelativeDate(modifiedUs)}</span>
+            </>
+          )}
+          {!exists && <span className="text-error/70">pasta ausente</span>}
+        </div>
 
-      {/* Pipeline progress */}
-      <div className="mt-auto">
-        <PipelineMiniStepper status={pipelineStatus} />
+        {/* Pipeline progress */}
+        <div className="mt-auto">
+          <PipelineMiniStepper status={pipelineStatus} />
+        </div>
       </div>
     </motion.div>
   )

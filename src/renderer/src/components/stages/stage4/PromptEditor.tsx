@@ -53,7 +53,7 @@ export function PromptEditor({
               title="Copiar prompt"
             >
               {copied ? (
-                <Check className="h-2.5 w-2.5 text-green-400" />
+                <Check className="h-2.5 w-2.5 text-success" />
               ) : (
                 <Copy className="h-2.5 w-2.5" />
               )}

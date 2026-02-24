@@ -15,10 +15,10 @@ interface SceneCardProps {
 }
 
 const STATUS_STYLES: Record<string, { color: string; label: string }> = {
-  pending: { color: 'text-yellow-400 bg-yellow-400/10', label: 'Pendente' },
-  generated: { color: 'text-blue-400 bg-blue-400/10', label: 'Gerado' },
-  imported: { color: 'text-green-400 bg-green-400/10', label: 'Importado' },
-  failed: { color: 'text-red-400 bg-red-400/10', label: 'Falhou' },
+  pending: { color: 'text-warning bg-warning/10', label: 'Pendente' },
+  generated: { color: 'text-primary-light bg-primary-light/10', label: 'Gerado' },
+  imported: { color: 'text-success bg-success/10', label: 'Importado' },
+  failed: { color: 'text-error bg-error/10', label: 'Falhou' },
   skipped: { color: 'text-text-muted bg-surface', label: 'Pulado' }
 }
 
@@ -125,7 +125,7 @@ export function SceneCard({
 
       {/* Media path */}
       {showMedia && scene.mediaPath && (
-        <p className="mt-1.5 truncate text-[10px] font-mono text-green-400">
+        <p className="mt-1.5 truncate text-[10px] font-mono text-success">
           {scene.mediaPath.split(/[/\\]/).pop()}
         </p>
       )}

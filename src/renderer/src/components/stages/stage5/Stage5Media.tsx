@@ -44,18 +44,12 @@ export function Stage5Media(): React.JSX.Element {
     }
 
     try {
-      const dir = await window.api.selectDirectory()
-      if (!dir) return
-
-      setBatchLoading(true)
-
       const files = await window.api.selectFiles([
         { name: 'Midia', extensions: ['mp4', 'mov', 'avi', 'mkv', 'jpg', 'jpeg', 'png', 'webp'] }
       ])
-      if (files.length === 0) {
-        setBatchLoading(false)
-        return
-      }
+      if (files.length === 0) return
+
+      setBatchLoading(true)
 
       const result = (await window.api.insertMediaBatch({
         draftPath: capCutDraftPath,
@@ -163,6 +157,19 @@ export function Stage5Media(): React.JSX.Element {
             {batchLoading ? 'Importando...' : 'Selecionar arquivos'}
           </button>
         </div>
+        {batchLoading && (
+          <div className="mt-3">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+              <motion.div
+                className="h-full rounded-full bg-primary"
+                initial={{ width: '0%' }}
+                animate={{ width: '100%' }}
+                transition={{ duration: 8, ease: 'linear' }}
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-text-muted">Inserindo midias na timeline...</p>
+          </div>
+        )}
         <div className="flex items-center gap-3 mt-3">
           <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
             <Image className="h-3 w-3" />
@@ -210,6 +217,9 @@ export function Stage5Media(): React.JSX.Element {
                 <p className="mt-0.5 text-xs text-text-muted/50">Sem midia</p>
               )}
             </div>
+            {scene.mediaPath && (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+            )}
             <button
               onClick={() => handleSelectMedia(scene.id)}
               className="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98]"
