@@ -1,8 +1,19 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, Trash2, ExternalLink } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Film,
+  Image,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Trash2
+} from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { detectGaps } from '@/lib/scenePlanner'
 
 type InsertStatus = 'idle' | 'inserting' | 'done' | 'error'
 
@@ -20,7 +31,11 @@ interface AnalysisTrackInfo {
   name: string
 }
 
-export function InsertPanel(): React.JSX.Element {
+interface InsertPanelProps {
+  onRetry?: () => void
+}
+
+export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
   const [status, setStatus] = useState<InsertStatus>('idle')
   const [logs, setLogs] = useState<InsertLog[]>([])
   const [existingTracks, setExistingTracks] = useState<AnalysisTrackInfo[]>([])
@@ -33,12 +48,21 @@ export function InsertPanel(): React.JSX.Element {
   const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
 
-  const textCount = existingTracks.length > 0
-    ? existingTracks.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segments, 0)
-    : trackOverview.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segmentCount, 0)
-  const videoCount = existingTracks.length > 0
-    ? existingTracks.filter((t) => t.type === 'video').reduce((sum, t) => sum + t.segments, 0)
-    : trackOverview.filter((t) => t.type === 'video').reduce((sum, t) => sum + t.segmentCount, 0)
+  const gapReport = useMemo(() => detectGaps(scenes), [scenes])
+  const missingVideos = gapReport.missingScenes.filter((s) => s.mediaType === 'video')
+  const missingImages = gapReport.missingScenes.filter((s) => s.mediaType === 'photo')
+  const hasGaps = gapReport.missingScenes.length > 0
+
+  const textCount =
+    existingTracks.length > 0
+      ? existingTracks.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segments, 0)
+      : trackOverview.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segmentCount, 0)
+  const videoCount =
+    existingTracks.length > 0
+      ? existingTracks.filter((t) => t.type === 'video').reduce((sum, t) => sum + t.segments, 0)
+      : trackOverview
+          .filter((t) => t.type === 'video')
+          .reduce((sum, t) => sum + t.segmentCount, 0)
   const hasExistingContent = textCount > 0 || videoCount > 0
 
   useEffect(() => {
@@ -182,7 +206,9 @@ export function InsertPanel(): React.JSX.Element {
       <div className="flex gap-4">
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
           <p className="text-[11px] font-medium text-text-muted">Legendas</p>
-          <p className="text-[28px] font-bold tabular-nums text-text mt-1.5">{storyBlocks.length}</p>
+          <p className="text-[28px] font-bold tabular-nums text-text mt-1.5">
+            {storyBlocks.length}
+          </p>
         </div>
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
           <p className="text-[11px] font-medium text-text-muted">Midias</p>
@@ -287,7 +313,8 @@ export function InsertPanel(): React.JSX.Element {
         </button>
       </div>
 
-      {status === 'done' && (
+      {/* Success: no gaps */}
+      {status === 'done' && !hasGaps && (
         <>
           <div className="border-t border-border" />
           <div className="flex items-center gap-3 rounded-lg border border-success/20 bg-success/5 p-4">
@@ -299,6 +326,69 @@ export function InsertPanel(): React.JSX.Element {
                 inseridas no CapCut. Abra o projeto para verificar.
               </p>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Success with gaps: retry panel */}
+      {status === 'done' && hasGaps && (
+        <>
+          <div className="border-t border-border" />
+          <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
+            <div className="flex items-start gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-warning">
+                  {gapReport.missingScenes.length} cenas sem midia
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  Cobertura: {gapReport.coveragePercent}% -{' '}
+                  {gapReport.timelineGaps.length} gap
+                  {gapReport.timelineGaps.length !== 1 && 's'} na timeline
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="rounded-md border border-border bg-bg p-2.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Film className="h-3 w-3 text-text-muted" />
+                  <p className="text-[10px] font-medium text-text-muted">Videos faltando</p>
+                </div>
+                <p className="text-lg font-bold tabular-nums text-text">{missingVideos.length}</p>
+                {missingVideos.length > 0 && (
+                  <p className="text-[10px] text-text-muted truncate mt-0.5">
+                    Cenas: {missingVideos.map((s) => s.index).join(', ')}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-md border border-border bg-bg p-2.5">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Image className="h-3 w-3 text-text-muted" />
+                  <p className="text-[10px] font-medium text-text-muted">Imagens faltando</p>
+                </div>
+                <p className="text-lg font-bold tabular-nums text-text">{missingImages.length}</p>
+                {missingImages.length > 0 && (
+                  <p className="text-[10px] text-text-muted truncate mt-0.5">
+                    Cenas: {missingImages.map((s) => s.index).join(', ')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {onRetry && (
+              <button
+                onClick={() => {
+                  setStatus('idle')
+                  setLogs([])
+                  onRetry()
+                }}
+                className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Preencher gaps
+              </button>
+            )}
           </div>
         </>
       )}

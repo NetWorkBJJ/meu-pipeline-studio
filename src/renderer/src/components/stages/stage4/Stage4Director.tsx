@@ -161,7 +161,7 @@ export function Stage4Director(): React.JSX.Element {
         )}
         {currentStep === 4 && (
           <motion.div key="insert" {...STEP_ANIMATION}>
-            <InsertPanel />
+            <InsertPanel onRetry={() => setCurrentStep(3)} />
           </motion.div>
         )}
       </AnimatePresence>

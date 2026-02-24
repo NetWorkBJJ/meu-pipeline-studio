@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   Upload,
@@ -7,7 +7,9 @@ import {
   FolderOpen,
   AlertTriangle,
   Magnet,
-  Trash2
+  Trash2,
+  Film,
+  Image
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -42,6 +44,7 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
   const { addToast } = useUIStore()
 
   const [showGapsOnly, setShowGapsOnly] = useState(false)
+  const [userToggledFilter, setUserToggledFilter] = useState(false)
   const [isMatching, setIsMatching] = useState(false)
   const [modalData, setModalData] = useState<{
     matches: MatchResult[]
@@ -52,6 +55,25 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
   const gapReport = useMemo(() => detectGaps(scenes), [scenes])
   const displayedScenes = showGapsOnly ? scenes.filter((s) => !s.mediaPath) : scenes
   const scenesWithMedia = scenes.filter((s) => s.mediaPath)
+
+  // Retry mode: some scenes have media AND there are gaps
+  const isRetryMode = scenesWithMedia.length > 0 && gapReport.missingScenes.length > 0
+  const missingVideos = gapReport.missingScenes.filter((s) => s.mediaType === 'video')
+  const missingImages = gapReport.missingScenes.filter((s) => s.mediaType === 'photo')
+
+  // Auto-activate gap filter when entering in retry mode
+  const didAutoFilter = useRef(false)
+  useEffect(() => {
+    if (isRetryMode && !userToggledFilter && !didAutoFilter.current) {
+      setShowGapsOnly(true)
+      didAutoFilter.current = true
+    }
+  }, [isRetryMode, userToggledFilter])
+
+  const handleToggleFilter = (): void => {
+    setUserToggledFilter(true)
+    setShowGapsOnly(!showGapsOnly)
+  }
 
   const buildSceneData = () =>
     scenes.map((s) => ({
@@ -167,9 +189,13 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
       {/* Header with title + actions */}
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-base font-semibold text-text">Importacao de Midias</h3>
+          <h3 className="text-base font-semibold text-text">
+            {isRetryMode ? 'Preencher Gaps' : 'Importacao de Midias'}
+          </h3>
           <p className="text-xs text-text-muted mt-1">
-            Associe arquivos de midia as cenas do projeto.
+            {isRetryMode
+              ? `${gapReport.missingScenes.length} cenas precisam de midia. Importe arquivos para preencher os gaps.`
+              : 'Associe arquivos de midia as cenas do projeto.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -196,10 +222,38 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
         </div>
       </div>
 
+      {/* Retry mode: gap summary by type */}
+      {isRetryMode && (
+        <div className="flex gap-3">
+          <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2">
+            <Film className="h-3.5 w-3.5 text-warning" />
+            <span className="text-xs font-medium text-warning">
+              {missingVideos.length} video{missingVideos.length !== 1 && 's'} faltando
+            </span>
+            {missingVideos.length > 0 && (
+              <span className="text-[10px] text-text-muted">
+                (cenas {missingVideos.map((s) => s.index).join(', ')})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2">
+            <Image className="h-3.5 w-3.5 text-warning" />
+            <span className="text-xs font-medium text-warning">
+              {missingImages.length} imagem{missingImages.length !== 1 && 'ns'} faltando
+            </span>
+            {missingImages.length > 0 && (
+              <span className="text-[10px] text-text-muted">
+                (cenas {missingImages.map((s) => s.index).join(', ')})
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Filter + clear row */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setShowGapsOnly(!showGapsOnly)}
+          onClick={handleToggleFilter}
           className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
             showGapsOnly
               ? 'border-warning/30 bg-warning/10 text-warning'
@@ -229,7 +283,9 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
           <Magnet className="h-4 w-4 shrink-0 text-primary mt-0.5" />
           <p className="text-xs text-text-muted">
             {scenes.length - scenesWithMedia.length} cenas sem midia - gaps serao preservados no
-            timeline. O ima (<kbd className="rounded bg-surface px-1 py-0.5 text-[10px] font-mono text-text">P</kbd>) sera desativado automaticamente no CapCut.
+            timeline. O ima (
+            <kbd className="rounded bg-surface px-1 py-0.5 text-[10px] font-mono text-text">P</kbd>
+            ) sera desativado automaticamente no CapCut.
           </p>
         </div>
       )}

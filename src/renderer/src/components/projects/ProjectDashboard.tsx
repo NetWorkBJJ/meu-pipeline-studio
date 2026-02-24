@@ -460,12 +460,12 @@ export function ProjectDashboard(): React.JSX.Element {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 flex-1 overflow-y-auto p-8">
+      <div className="relative z-10 flex-1 overflow-y-auto px-8 pt-8 pb-6">
         {/* Title row: title left, action button right */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-text">Meus Projetos</h1>
-            <p className="mt-1 text-sm text-text-muted">
+            <p className="mt-2 text-sm text-text-muted">
               {activeWorkspace?.name || 'Workspace'}
               {projects.length > 0 && ` \u2014 ${projects.length} projeto${projects.length !== 1 ? 's' : ''}`}
             </p>
@@ -483,7 +483,7 @@ export function ProjectDashboard(): React.JSX.Element {
         </div>
 
         {/* Search row */}
-        <div className="mb-6 flex items-center gap-3">
+        <div className="mb-8 flex items-center gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
             <input
@@ -561,8 +561,8 @@ export function ProjectDashboard(): React.JSX.Element {
 
         {/* Recent projects */}
         {recentProjects.length > 0 && !searchQuery && (
-          <div className="mb-6">
-            <h2 className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-text-muted">
+          <div className="mb-10">
+            <h2 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-text-muted">
               <Clock className="h-3 w-3" />
               Recentes
             </h2>

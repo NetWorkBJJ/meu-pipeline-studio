@@ -48,67 +48,69 @@
   background: linear-gradient(180deg, #16161A 0%, #0B0B0E 100%);
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-}
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+  }
 
-body {
-  min-height: 100vh;
-  color: var(--color-text);
-  background: var(--color-bg);
-  font-size: 14px;
-  line-height: 1.5;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  user-select: none;
-  overflow: hidden;
-}
+  body {
+    min-height: 100vh;
+    color: var(--color-text);
+    background: var(--color-bg);
+    font-size: 14px;
+    line-height: 1.5;
+    font-family:
+      Inter,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      Oxygen,
+      Ubuntu,
+      Cantarell,
+      'Fira Sans',
+      'Droid Sans',
+      'Helvetica Neue',
+      sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    overflow: hidden;
+  }
 
-#root {
-  height: 100vh;
-  width: 100vw;
-}
+  #root {
+    height: 100vh;
+    width: 100vw;
+  }
 
-::selection {
-  background: rgba(99, 102, 241, 0.3);
-  color: var(--color-text);
-}
+  ::selection {
+    background: rgba(99, 102, 241, 0.3);
+    color: var(--color-text);
+  }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
-  border: 2px solid transparent;
-  background-clip: content-box;
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
 }
