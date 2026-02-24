@@ -456,6 +456,12 @@ def director_match_media(params):
     return match_media_to_scenes(params)
 
 
+def director_scan_media_folder(params):
+    """Scan a folder for media files sorted by extracted number."""
+    from media_matcher import scan_media_folder
+    return scan_media_folder(params)
+
+
 METHODS = {
     "read_draft": read_draft,
     "load_full_project": load_full_project,
@@ -501,6 +507,7 @@ METHODS = {
     "director_decide_media_types": director_decide_media_types,
     "director_export_prompts": director_export_prompts,
     "director_match_media": director_match_media,
+    "director_scan_media_folder": director_scan_media_folder,
 }
 
 

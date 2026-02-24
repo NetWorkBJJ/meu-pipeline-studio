@@ -1,6 +1,16 @@
 import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Upload, Filter, CheckCircle2, FolderOpen } from 'lucide-react'
+import {
+  Upload,
+  Filter,
+  CheckCircle2,
+  FolderOpen,
+  Loader2,
+  ExternalLink,
+  ShieldCheck,
+  AlertTriangle,
+  Magnet
+} from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -17,9 +27,24 @@ interface MatchResult {
   match_reason: string
 }
 
+type MatchApiResult = {
+  matches: MatchResult[]
+  unmatched_files: string[]
+  unmatched_scenes: Array<{ id: string; index: number }>
+}
+
+type InsertStatus = 'idle' | 'inserting' | 'done' | 'error'
+
+interface InsertLog {
+  step: string
+  status: 'running' | 'done' | 'error'
+  detail?: string
+}
+
 export function MediaImporter(): React.JSX.Element {
   const scenes = useProjectStore((s) => s.scenes)
   const storyBlocks = useProjectStore((s) => s.storyBlocks)
+  const capCutDraftPath = useProjectStore((s) => s.capCutDraftPath)
   const { updateScene, bulkUpdateScenes } = useProjectStore()
   const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
@@ -32,32 +57,42 @@ export function MediaImporter(): React.JSX.Element {
     unmatchedScenes: Array<{ id: string; index: number }>
   } | null>(null)
 
+  const [insertStatus, setInsertStatus] = useState<InsertStatus>('idle')
+  const [insertLogs, setInsertLogs] = useState<InsertLog[]>([])
+
   const gapReport = useMemo(() => detectGaps(scenes), [scenes])
   const displayedScenes = showGapsOnly ? scenes.filter((s) => !s.mediaPath) : scenes
+  const scenesWithMedia = scenes.filter((s) => s.mediaPath)
+  const canInsert = scenesWithMedia.length > 0 && !!capCutDraftPath
 
-  const handleImport = async (): Promise<void> => {
+  const addLog = (step: string, status: InsertLog['status'], detail?: string): void => {
+    setInsertLogs((prev) => {
+      const existing = prev.findIndex((l) => l.step === step)
+      if (existing >= 0) {
+        const updated = [...prev]
+        updated[existing] = { step, status, detail }
+        return updated
+      }
+      return [...prev, { step, status, detail }]
+    })
+  }
+
+  const buildSceneData = () =>
+    scenes.map((s) => ({
+      id: s.id,
+      index: s.index,
+      filename_hint: s.filenameHint,
+      media_type: s.mediaType
+    }))
+
+  const runMatching = async (filePaths: string[]): Promise<void> => {
+    setIsMatching(true)
     try {
-      const filePaths = await window.api.directorSelectMediaFiles()
-      if (filePaths.length === 0) return
-
-      setIsMatching(true)
-
-      const sceneData = scenes.map((s) => ({
-        id: s.id,
-        index: s.index,
-        filename_hint: s.filenameHint,
-        media_type: s.mediaType
-      }))
-
       const result = (await window.api.directorMatchMediaFiles({
         media_files: filePaths,
-        scenes: sceneData,
+        scenes: buildSceneData(),
         strategy: 'auto'
-      })) as {
-        matches: MatchResult[]
-        unmatched_files: string[]
-        unmatched_scenes: Array<{ id: string; index: number }>
-      }
+      })) as MatchApiResult
 
       setModalData({
         matches: result.matches,
@@ -65,10 +100,38 @@ export function MediaImporter(): React.JSX.Element {
         unmatchedScenes: result.unmatched_scenes
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao importar midias'
+      const message = err instanceof Error ? err.message : 'Erro ao processar midias'
       addToast({ type: 'error', message })
     } finally {
       setIsMatching(false)
+    }
+  }
+
+  const handleImport = async (): Promise<void> => {
+    try {
+      const filePaths = await window.api.directorSelectMediaFiles()
+      if (filePaths.length === 0) return
+      await runMatching(filePaths)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao importar midias'
+      addToast({ type: 'error', message })
+    }
+  }
+
+  const handleFolderImport = async (): Promise<void> => {
+    try {
+      const result = await window.api.directorSelectMediaFolder()
+      if (!result.directory || result.files.length === 0) return
+
+      addToast({
+        type: 'info',
+        message: `${result.total} midias encontradas na pasta. Associando...`
+      })
+
+      await runMatching(result.files)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao importar pasta'
+      addToast({ type: 'error', message })
     }
   }
 
@@ -104,12 +167,69 @@ export function MediaImporter(): React.JSX.Element {
     }
   }
 
-  const handleConfirmImport = (): void => {
-    completeStage(4)
-    addToast({
-      type: 'success',
-      message: `Etapa 4 concluida. ${gapReport.coveredScenes}/${gapReport.totalScenes} cenas com midia.`
-    })
+  const handleInsertToTimeline = async (): Promise<void> => {
+    if (!canInsert) return
+
+    setInsertStatus('inserting')
+    setInsertLogs([])
+
+    try {
+      // 1. Backup
+      addLog('Criando backup...', 'running')
+      await window.api.createBackup(capCutDraftPath!)
+      addLog('Criando backup...', 'done', 'Backup salvo')
+
+      // 2. Clear existing video segments
+      addLog('Limpando midias anteriores...', 'running')
+      const clearResult = (await window.api.clearVideoSegments(capCutDraftPath!)) as {
+        removed_segments: number
+      }
+      addLog(
+        'Limpando midias anteriores...',
+        'done',
+        clearResult.removed_segments > 0
+          ? `${clearResult.removed_segments} removidas`
+          : 'Nenhuma anterior'
+      )
+
+      // 3. Write video segments with Director timing (sorted by timeline position)
+      addLog(`Inserindo ${scenesWithMedia.length} midias...`, 'running')
+      const videoScenes = [...scenesWithMedia]
+        .sort((a, b) => a.startMs - b.startMs)
+        .map((s) => ({
+          media_path: s.mediaPath,
+          start_ms: s.startMs,
+          end_ms: s.endMs,
+          media_type: s.mediaType
+        }))
+      const writeResult = (await window.api.writeVideoSegments(
+        capCutDraftPath!,
+        videoScenes
+      )) as { added_count: number }
+      addLog(
+        `Inserindo ${scenesWithMedia.length} midias...`,
+        'done',
+        `${writeResult.added_count} inseridas`
+      )
+
+      // 4. Sync metadata
+      addLog('Sincronizando metadata...', 'running')
+      await window.api.syncMetadata(capCutDraftPath!)
+      addLog('Sincronizando metadata...', 'done')
+
+      setInsertStatus('done')
+      completeStage(4)
+      completeStage(5)
+      addToast({
+        type: 'success',
+        message: `${writeResult.added_count} midias inseridas na timeline do CapCut.`
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao inserir na timeline'
+      addLog('Erro', 'error', message)
+      setInsertStatus('error')
+      addToast({ type: 'error', message: 'Erro durante a insercao na timeline.' })
+    }
   }
 
   return (
@@ -120,12 +240,22 @@ export function MediaImporter(): React.JSX.Element {
           <motion.button
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            onClick={handleImport}
-            disabled={isMatching || scenes.length === 0}
+            onClick={handleFolderImport}
+            disabled={isMatching || scenes.length === 0 || insertStatus === 'inserting'}
             className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
+            <FolderOpen className="h-3.5 w-3.5" />
+            {isMatching ? 'Processando...' : 'Importar pasta'}
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleImport}
+            disabled={isMatching || scenes.length === 0 || insertStatus === 'inserting'}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-bg px-4 py-1.5 text-xs font-medium text-text-muted transition-all duration-150 hover:text-text hover:border-primary/30 disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <Upload className="h-3.5 w-3.5" />
-            {isMatching ? 'Processando...' : 'Importar midias'}
+            Selecionar arquivos
           </motion.button>
           <button
             onClick={() => setShowGapsOnly(!showGapsOnly)}
@@ -144,16 +274,52 @@ export function MediaImporter(): React.JSX.Element {
       {/* Gap indicator */}
       <GapIndicator report={gapReport} />
 
+      {/* Gap / magnet warning */}
+      {scenesWithMedia.length > 0 && scenesWithMedia.length < scenes.length && (
+        <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <Magnet className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+          <p className="text-xs text-text-muted">
+            {scenes.length - scenesWithMedia.length} cenas sem midia - gaps serao preservados no
+            timeline. O ima (<kbd className="rounded bg-surface px-1 py-0.5 text-[10px] font-mono text-text">P</kbd>) sera desativado automaticamente no CapCut.
+          </p>
+        </div>
+      )}
+
+      {/* No draft warning */}
+      {!capCutDraftPath && scenesWithMedia.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+          <p className="text-xs text-warning">
+            Nenhum projeto CapCut selecionado. Selecione um draft na Etapa 2 para inserir midias na
+            timeline.
+          </p>
+        </div>
+      )}
+
+      {/* Insert progress logs */}
+      {insertLogs.length > 0 && (
+        <div className="rounded-lg border border-border bg-bg p-3 space-y-2 font-mono">
+          {insertLogs.map((log, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              {log.status === 'done' ? (
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-success" />
+              ) : log.status === 'running' ? (
+                <Loader2 className="h-3 w-3 shrink-0 text-primary animate-spin" />
+              ) : (
+                <AlertTriangle className="h-3 w-3 shrink-0 text-error" />
+              )}
+              <span className="text-text">{log.step}</span>
+              {log.detail && <span className="text-text-muted">{log.detail}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Scene grid */}
-      <div className="overflow-auto max-h-[calc(100vh-440px)] space-y-2">
+      <div className="overflow-auto max-h-[calc(100vh-500px)] space-y-2">
         {displayedScenes.map((scene) => (
           <div key={scene.id} className="relative">
-            <SceneCard
-              scene={scene}
-              blocks={storyBlocks}
-              showMedia
-              compact
-            />
+            <SceneCard scene={scene} blocks={storyBlocks} showMedia compact />
             {!scene.mediaPath && (
               <button
                 onClick={() => handleSelectIndividual(scene.id)}
@@ -167,18 +333,51 @@ export function MediaImporter(): React.JSX.Element {
         ))}
       </div>
 
-      {/* Confirm */}
-      <div className="flex justify-end pt-2 border-t border-border">
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleConfirmImport}
-          disabled={scenes.length === 0}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Confirmar importacao
-        </motion.button>
+      {/* Actions */}
+      <div className="flex items-center justify-between pt-2 border-t border-border">
+        <div className="flex items-center gap-2">
+          {insertStatus === 'done' && (
+            <>
+              <span className="flex items-center gap-1.5 text-xs text-success">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Inserido com backup!
+              </span>
+              <button
+                onClick={async () => {
+                  const result = await window.api.openCapCut()
+                  if (!result.success) {
+                    addToast({ type: 'error', message: result.error || 'Erro ao abrir CapCut.' })
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text transition-colors hover:bg-border"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Abrir no CapCut
+              </button>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <motion.button
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleInsertToTimeline}
+            disabled={!canInsert || insertStatus === 'inserting'}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {insertStatus === 'inserting' ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Inserindo...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Inserir na timeline
+              </>
+            )}
+          </motion.button>
+        </div>
       </div>
 
       {/* Match review modal */}

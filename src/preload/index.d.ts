@@ -125,6 +125,12 @@ interface ElectronAppAPI {
   directorExportPrompts: (params: Record<string, unknown>) => Promise<unknown>
   directorMatchMediaFiles: (params: Record<string, unknown>) => Promise<unknown>
   directorSelectMediaFiles: () => Promise<string[]>
+  directorSelectMediaFolder: () => Promise<{
+    directory: string | null
+    files: string[]
+    total: number
+    skipped: number
+  }>
   directorImportCharacters: () => Promise<{ files: string[]; directory?: string; error?: string }>
 }
 

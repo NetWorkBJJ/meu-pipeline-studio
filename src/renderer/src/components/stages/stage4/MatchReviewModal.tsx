@@ -107,9 +107,15 @@ export function MatchReviewModal({
                       <td className="px-3 py-1.5 text-right text-text-muted">
                         {m.match_reason === 'filename_convention'
                           ? 'Nome'
-                          : m.match_reason === 'sequential_fallback'
-                            ? 'Sequencial'
-                            : m.match_reason}
+                          : m.match_reason === 'filename_hint'
+                            ? 'Hint'
+                            : m.match_reason === 'sequential_by_type'
+                              ? 'Seq. tipo'
+                              : m.match_reason === 'sequential_fallback'
+                                ? 'Sequencial'
+                                : m.match_reason === 'sequential'
+                                  ? 'Sequencial'
+                                  : m.match_reason}
                       </td>
                     </tr>
                   ))}

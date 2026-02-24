@@ -176,6 +176,12 @@ const api = {
     ipcRenderer.invoke('director:match-media-files', params),
   directorSelectMediaFiles: (): Promise<string[]> =>
     ipcRenderer.invoke('director:select-media-files'),
+  directorSelectMediaFolder: (): Promise<{
+    directory: string | null
+    files: string[]
+    total: number
+    skipped: number
+  }> => ipcRenderer.invoke('director:select-media-folder'),
   directorImportCharacters: (): Promise<{ files: string[]; directory?: string; error?: string }> =>
     ipcRenderer.invoke('director:import-characters')
 }

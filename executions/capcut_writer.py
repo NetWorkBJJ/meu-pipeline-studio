@@ -531,6 +531,9 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
     Does NOT modify existing segments or materials.
     NEVER alters existing audio segments.
     """
+    # Sort scenes by timeline position to ensure correct render_index ordering
+    scenes = sorted(scenes, key=lambda s: s.get("start_ms", 0))
+
     path = Path(draft_path)
     if not path.exists():
         raise FileNotFoundError(f"Draft not found: {draft_path}")
@@ -694,6 +697,10 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
         })
 
     _recalculate_duration(draft)
+
+    # Disable main track magnet/snap so gaps are preserved
+    config = draft.setdefault("config", {})
+    config["maintrack_adsorb"] = False
 
     save_draft(draft, str(path))
 

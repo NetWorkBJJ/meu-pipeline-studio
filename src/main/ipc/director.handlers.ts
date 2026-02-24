@@ -120,6 +120,21 @@ export function registerDirectorHandlers(): void {
     return result.canceled ? [] : result.filePaths
   })
 
+  ipcMain.handle('director:select-media-folder', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Selecionar pasta de midias',
+      properties: ['openDirectory']
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { directory: null, files: [], total: 0, skipped: 0 }
+    }
+    const scanResult = (await callPython('director_scan_media_folder', {
+      folder_path: result.filePaths[0]
+    })) as { files: string[]; total: number; skipped: number }
+    return { directory: result.filePaths[0], ...scanResult }
+  })
+
   ipcMain.handle('director:import-characters', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showOpenDialog(win!, {
