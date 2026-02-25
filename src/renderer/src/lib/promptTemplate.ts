@@ -538,3 +538,108 @@ export function getPlatformName(platform: string): string {
       return platform
   }
 }
+
+// --- LLM Selective Fix ---
+
+const INTERNAL_EMOTION_BLOCKLIST_FIX = [
+  'processing', 'realizing', 'thinking', 'remembering', 'feeling',
+  'heart racing', 'heart warmed', 'weight of', 'loaded words', 'means everything',
+  'admitting fear', 'deeper meaning', 'crossed line', 'surprising himself',
+  'surprising herself', 'chose him', 'chose her', 'internal conflict',
+  'wondering', 'she chose', 'he chose', 'it means'
+]
+
+const RULE_INSTRUCTIONS: Record<string, (take: ParsedTake) => string> = {
+  'description-starts-camera': () =>
+    'A descricao DEVE iniciar com tecnica de camera (ex: "Slow dolly-in", "Static wide shot", "Handheld tracking", "Crane shot"). Reescreva a descricao mantendo o conteudo mas iniciando com uma tecnica de camera.',
+  'description-max-words': (take) => {
+    const wc = take.description.split(/\s+/).filter(Boolean).length
+    return `A descricao tem ${wc} palavras. Reduza para ~30 palavras mantendo a essencia cinematografica. Corte adjetivos e detalhes redundantes.`
+  },
+  'no-internal-emotions': (take) => {
+    const found = INTERNAL_EMOTION_BLOCKLIST_FIX.find((p) =>
+      take.description.toLowerCase().includes(p)
+    )
+    return `A descricao contem "${found}" (emocao interna invisivel pela camera). Substitua por manifestacao FISICA visivel: jaw tightening, hands gripping, breath visible, posture shifting, eyes widening, fists clenching.`
+  },
+  'character-not-all-same': () =>
+    'O mesmo personagem aparece em TODAS as cenas. Redistribua: use \u2014 em cenas descritivas/transicao, varie as combinacoes de personagens conforme a narrativa.',
+  'character-variety': () =>
+    'A variedade de elenco esta baixa. Use combinacoes diferentes de personagens. O Lead aparece mais, mas NAO em todas as cenas. Cenas de transicao/ambiente devem usar \u2014.',
+  'environment-consistency': () =>
+    'O ambiente esta inconsistente dentro do capitulo. Mantenha o MESMO local base e periodo do dia para takes do mesmo capitulo, variando apenas detalhes de iluminacao.',
+  'environment-lock-present': () =>
+    'O Environment Lock esta vazio. Preencha com formato: local + periodo do dia + tipo de iluminacao (ex: "Executive office, late afternoon, warm natural light through windows.").',
+  'description-matches-environment': () =>
+    'A descricao menciona um comodo/espaco diferente do Environment Lock. Alinhe ambos -- se o personagem mudou de lugar, atualize o Environment Lock. Se nao mudou, corrija a descricao.',
+  'take-count': () =>
+    'O numero de takes nao corresponde ao numero de cenas. Gere os takes faltantes seguindo o formato padrao.'
+}
+
+function deduplicateByLabelFix(characters: CharacterRef[]): CharacterRef[] {
+  const seen = new Set<string>()
+  return characters.filter((c) => {
+    const lower = c.label.toLowerCase()
+    if (seen.has(lower)) return false
+    seen.add(lower)
+    return true
+  })
+}
+
+export function buildFixPrompt(
+  failingTakes: Array<{ take: ParsedTake; violations: string[]; sceneText: string }>,
+  characters: CharacterRef[]
+): { systemPrompt: string; userMessage: string } {
+  let userMessage = `CORRECAO SELETIVA DE TAKES
+
+Voce recebera takes que falharam em regras de qualidade.
+Corrija APENAS os problemas indicados. NAO altere partes que ja estao corretas.
+Retorne os takes corrigidos no formato padrao de 4 linhas:
+
+(TAKE X)
+[Descricao]
+Negative Prompt: [...]
+Character Anchor: [...]
+Environment Lock: [...]
+
+`
+
+  if (characters.length > 0) {
+    userMessage += `ELENCO DISPONIVEL (copie EXATAMENTE no Character Anchor):\n`
+    for (const char of deduplicateByLabelFix(characters)) {
+      userMessage += `- "${char.label}"\n`
+    }
+    userMessage += `Se nenhum personagem aparece: Character Anchor: \u2014\n\n`
+  }
+
+  userMessage += `TAKES PARA CORRIGIR:\n`
+
+  for (const { take, violations, sceneText } of failingTakes) {
+    const instructions = violations
+      .map((ruleId) => {
+        const fn = RULE_INSTRUCTIONS[ruleId]
+        return fn ? fn(take) : null
+      })
+      .filter(Boolean)
+
+    userMessage += `\n---\n[TAKE ${take.takeNumber}] VIOLACOES: ${violations.join(', ')}\n`
+    userMessage += `Texto da cena: "${sceneText}"\n`
+    userMessage += `Take atual:\n`
+    userMessage += `(TAKE ${take.takeNumber})\n`
+    userMessage += `${take.description}\n`
+    userMessage += `Negative Prompt: ${take.negativePrompt}\n`
+    userMessage += `Character Anchor: ${take.characterAnchor}\n`
+    userMessage += `Environment Lock: ${take.environmentLock}\n`
+    userMessage += `INSTRUCOES:\n`
+    for (const instr of instructions) {
+      userMessage += `- ${instr}\n`
+    }
+  }
+
+  userMessage += `\n---\nGere APENAS os ${failingTakes.length} takes listados acima, corrigidos. Mantenha a numeracao original. Formato de 4 linhas por take.`
+
+  return {
+    systemPrompt: MASTER_PROMPT,
+    userMessage
+  }
+}

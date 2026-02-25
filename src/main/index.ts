@@ -1,10 +1,33 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, session } from 'electron'
 import { join } from 'path'
+import { existsSync, mkdirSync } from 'fs'
 import icon from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
 
 let mainWindow: BrowserWindow | null = null
+
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow
+}
+
+const VEO3_DOMAINS = [
+  'labs.google',
+  'accounts.google.com',
+  'accounts.youtube.com',
+  'myaccount.google.com'
+]
+
+// Global download path for VEO3 (can be overridden via IPC)
+let veo3DownloadPath = join(app.getPath('downloads'), 'MeuPipeline', 'midias')
+
+export function getVeo3DownloadPath(): string {
+  return veo3DownloadPath
+}
+
+export function setVeo3DownloadPath(p: string): void {
+  veo3DownloadPath = p
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -18,7 +41,8 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      webSecurity: false
+      webSecurity: false,
+      webviewTag: true
     }
   })
 
@@ -38,11 +62,60 @@ function createWindow(): void {
   }
 }
 
+function setupWebviewSecurity(): void {
+  app.on('web-contents-created', (_event, contents) => {
+    // Secure webview: disable node, enable context isolation
+    contents.on('will-attach-webview', (_e, webPreferences) => {
+      delete webPreferences.preload
+      webPreferences.nodeIntegration = false
+      webPreferences.nodeIntegrationInSubFrames = false
+      webPreferences.contextIsolation = true
+    })
+
+    // Intercept new windows from webviews
+    contents.setWindowOpenHandler(({ url }) => {
+      const isVeo3Domain = VEO3_DOMAINS.some((d) => url.includes(d))
+      if (isVeo3Domain) {
+        // Navigate within the webview instead of opening new window
+        setImmediate(() => contents.loadURL(url))
+      } else {
+        shell.openExternal(url)
+      }
+      return { action: 'deny' }
+    })
+  })
+}
+
+function setupVeo3Downloads(): void {
+  const veo3Session = session.fromPartition('persist:veo3')
+  veo3Session.on('will-download', (_event, item) => {
+    if (!existsSync(veo3DownloadPath)) {
+      mkdirSync(veo3DownloadPath, { recursive: true })
+    }
+
+    const filename = item.getFilename()
+    const savePath = join(veo3DownloadPath, filename)
+    item.setSavePath(savePath)
+
+    item.on('done', (_e, state) => {
+      if (state === 'completed' && mainWindow) {
+        mainWindow.webContents.send('veo3:download-complete', {
+          path: savePath,
+          filename,
+          folder: veo3DownloadPath
+        })
+      }
+    })
+  })
+}
+
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.meupipeline.studio')
   }
 
+  setupWebviewSecurity()
+  setupVeo3Downloads()
   startPythonBridge()
   registerAllHandlers()
   createWindow()

@@ -12,6 +12,7 @@ import { ScenePlannerPanel } from './ScenePlannerPanel'
 import { PromptStudio } from './PromptStudio'
 import { MediaImporter } from './MediaImporter'
 import { InsertPanel } from './InsertPanel'
+import { RetryPanel } from './RetryPanel'
 
 const STEP_ANIMATION = {
   initial: { opacity: 0, x: 20 },
@@ -37,8 +38,12 @@ export function Stage4Director(): React.JSX.Element {
   // Auto-detect restored state and jump to the appropriate step
   useEffect(() => {
     const hasMedia = scenes.some((s) => s.mediaPath)
+    const hasGaps = scenes.some((s) => !s.mediaPath)
     const hasPrompts = scenes.some((s) => s.prompt.trim())
-    if (hasMedia && currentStep === 0) {
+    if (hasMedia && hasGaps && currentStep === 0) {
+      setCompletedSteps(new Set([0, 1, 2, 3, 4]))
+      setCurrentStep(5)
+    } else if (hasMedia && currentStep === 0) {
       setCompletedSteps(new Set([0, 1, 2, 3]))
       setCurrentStep(4)
     } else if (hasPrompts && currentStep === 0) {
@@ -54,7 +59,7 @@ export function Stage4Director(): React.JSX.Element {
       next.add(step)
       return next
     })
-    if (step < 4) {
+    if (step < 5) {
       setCurrentStep((step + 1) as DirectorStep)
     }
   }, [])
@@ -161,7 +166,12 @@ export function Stage4Director(): React.JSX.Element {
         )}
         {currentStep === 4 && (
           <motion.div key="insert" {...STEP_ANIMATION}>
-            <InsertPanel onRetry={() => setCurrentStep(3)} />
+            <InsertPanel onRetry={() => setCurrentStep(5)} />
+          </motion.div>
+        )}
+        {currentStep === 5 && (
+          <motion.div key="retry" {...STEP_ANIMATION}>
+            <RetryPanel />
           </motion.div>
         )}
       </AnimatePresence>

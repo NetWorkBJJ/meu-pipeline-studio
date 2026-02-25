@@ -21,10 +21,10 @@ import {
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { buildLlmPayload, parseTakeOutput, formatTake, computeChunks } from '@/lib/promptTemplate'
+import { buildLlmPayload, parseTakeOutput, formatTake, computeChunks, buildFixPrompt } from '@/lib/promptTemplate'
 import type { ParsedTake } from '@/lib/promptTemplate'
 import { getCharactersForChapter } from '@/lib/characterParser'
-import { validatePromptQuality } from '@/lib/promptValidator'
+import { validatePromptQuality, autoFixTakes, identifyFailingTakes } from '@/lib/promptValidator'
 import type { QualityReport } from '@/lib/promptValidator'
 import type { BatchResult } from '@/types/project'
 import { PromptEditor } from './PromptEditor'
@@ -318,23 +318,160 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         })
       }
 
-      // Quality validation on all accumulated takes
+      // Quality validation + auto-fix + LLM fix (all automatic)
       if (allGeneratedTakes.length > 0) {
-        const parsedForValidation: ParsedTake[] = allGeneratedTakes.map((t) => ({
+        let parsedForValidation: ParsedTake[] = allGeneratedTakes.map((t) => ({
           takeNumber: t.take_number,
           description: t.description,
           negativePrompt: t.negative_prompt,
           characterAnchor: t.character_anchor,
           environmentLock: t.environment_lock
         }))
-        const report = validatePromptQuality(parsedForValidation, scenes, characterRefs, startingTakeNumber)
+
+        // First validation pass
+        let report = validatePromptQuality(parsedForValidation, scenes, characterRefs, startingTakeNumber)
+
+        // Phase A: deterministic auto-fix
+        const FIXABLE_RULES = new Set([
+          'take-sequence', 'no-duration-tag', 'no-abbreviation', 'character-names-valid',
+          'max-characters-per-anchor', 'negative-prompt-present', 'extended-negative-on-transition'
+        ])
+        const hasFixableFailures = report.rules.some((r) => !r.passed && FIXABLE_RULES.has(r.id))
+
+        if (hasFixableFailures) {
+          const { fixed, corrections } = autoFixTakes(parsedForValidation, characterRefs, scenes, startingTakeNumber)
+
+          if (corrections.length > 0) {
+            const fixUpdates = scenes
+              .map((scene, idx) => {
+                const fixedTake = fixed.find((t) => t.takeNumber === startingTakeNumber + idx)
+                if (!fixedTake) return null
+                return {
+                  id: scene.id,
+                  updates: {
+                    prompt: formatTake(fixedTake),
+                    promptRevision: scene.promptRevision + 1
+                  }
+                }
+              })
+              .filter(Boolean) as Array<{ id: string; updates: Partial<(typeof scenes)[0]> }>
+
+            if (fixUpdates.length > 0) bulkUpdateScenes(fixUpdates)
+            parsedForValidation = fixed
+            report = validatePromptQuality(fixed, scenes, characterRefs, startingTakeNumber)
+            console.log(`[Director] Auto-fix: ${corrections.length} correcoes deterministicas`)
+          }
+        }
+
+        // Phase B: automatic LLM fix for remaining failures
+        const LLM_RULES = new Set([
+          'description-starts-camera', 'description-max-words', 'no-internal-emotions',
+          'character-not-all-same', 'character-variety', 'environment-consistency',
+          'environment-lock-present', 'description-matches-environment'
+        ])
+        const hasLlmFailures = !report.passed && report.rules.some((r) => !r.passed && LLM_RULES.has(r.id))
+
+        if (hasLlmFailures) {
+          console.log('[Director] Iniciando correcao automatica com LLM...')
+          try {
+            const failingMap = identifyFailingTakes(parsedForValidation, scenes, characterRefs, startingTakeNumber)
+
+            if (failingMap.size > 0) {
+              const failingTakeData = [...failingMap.entries()]
+                .map(([takeNum, ruleIds]) => {
+                  const take = parsedForValidation.find((t) => t.takeNumber === takeNum)
+                  if (!take) return null
+                  const sceneIdx = takeNum - startingTakeNumber
+                  const scene = scenes[sceneIdx]
+                  if (!scene) return null
+                  const sceneBlocks = storyBlocks.filter((b) => scene.blockIds.includes(b.id))
+                  const sceneText = sceneBlocks.map((b) => b.text).join(' ')
+                  return { take, violations: ruleIds, sceneText }
+                })
+                .filter(Boolean) as Array<{ take: ParsedTake; violations: string[]; sceneText: string }>
+
+              if (failingTakeData.length > 0) {
+                const { systemPrompt, userMessage } = buildFixPrompt(failingTakeData, characterRefs)
+                console.log(`[Director] LLM fix: ${failingTakeData.length} takes, ${userMessage.length} chars`)
+
+                const fixResult = (await window.api.directorGeneratePrompts({
+                  provider: config.llmProvider,
+                  model: config.llmModel || undefined,
+                  system_prompt: systemPrompt,
+                  user_message: userMessage
+                })) as { takes: TakeRecord[]; success: boolean; raw_response?: string }
+
+                let llmFixedTakes: ParsedTake[] = []
+                if (fixResult.success && fixResult.takes?.length > 0) {
+                  llmFixedTakes = fixResult.takes.map((t) => ({
+                    takeNumber: t.take_number,
+                    description: t.description,
+                    negativePrompt: t.negative_prompt,
+                    characterAnchor: t.character_anchor,
+                    environmentLock: t.environment_lock
+                  }))
+                } else if (fixResult.raw_response) {
+                  llmFixedTakes = parseTakeOutput(fixResult.raw_response)
+                }
+
+                if (llmFixedTakes.length > 0) {
+                  // Apply LLM-corrected takes
+                  const llmUpdates = llmFixedTakes
+                    .map((take) => {
+                      const sceneIdx = take.takeNumber - startingTakeNumber
+                      const scene = scenes[sceneIdx]
+                      if (!scene) return null
+                      return {
+                        id: scene.id,
+                        updates: {
+                          prompt: formatTake(take),
+                          promptRevision: scene.promptRevision + 1
+                        }
+                      }
+                    })
+                    .filter(Boolean) as Array<{ id: string; updates: Partial<(typeof scenes)[0]> }>
+
+                  if (llmUpdates.length > 0) bulkUpdateScenes(llmUpdates)
+
+                  // Merge corrected takes and run deterministic fix again
+                  const merged = parsedForValidation.map((t) => {
+                    const corrected = llmFixedTakes.find((f) => f.takeNumber === t.takeNumber)
+                    return corrected || t
+                  })
+                  const { fixed: reFixed } = autoFixTakes(merged, characterRefs, scenes, startingTakeNumber)
+
+                  // Apply re-fixed takes
+                  const reFixUpdates = scenes
+                    .map((scene, idx) => {
+                      const take = reFixed.find((t) => t.takeNumber === startingTakeNumber + idx)
+                      if (!take) return null
+                      return {
+                        id: scene.id,
+                        updates: {
+                          prompt: formatTake(take),
+                          promptRevision: scene.promptRevision + 1
+                        }
+                      }
+                    })
+                    .filter(Boolean) as Array<{ id: string; updates: Partial<(typeof scenes)[0]> }>
+                  if (reFixUpdates.length > 0) bulkUpdateScenes(reFixUpdates)
+
+                  // Final validation
+                  report = validatePromptQuality(reFixed, scenes, characterRefs, startingTakeNumber)
+                  console.log(`[Director] LLM fix: ${llmFixedTakes.length} takes corrigidos. Score: ${report.score}/100`)
+                }
+              }
+            }
+          } catch (llmErr) {
+            console.error('[Director] Erro na correcao LLM (nao-fatal):', llmErr)
+          }
+        }
+
         setQualityReport(report)
 
         const failedBatches = currentBatchResults.filter((r) => r.status === 'error').length
         const cancelledBatches = currentBatchResults.filter((r) => r.status === 'cancelled').length
-        let msg = `${allGeneratedTakes.length}/${scenes.length} takes gerados`
-        if (chunks.length > 1) msg += ` (${chunks.length} lotes)`
-        msg += `. Qualidade: ${report.score}/100.`
+        let msg = `${allGeneratedTakes.length}/${scenes.length} takes. Qualidade: ${report.score}/100.`
         if (failedBatches > 0) msg += ` ${failedBatches} lote(s) com erro.`
         if (cancelledBatches > 0) msg += ` ${cancelledBatches} lote(s) cancelado(s).`
 

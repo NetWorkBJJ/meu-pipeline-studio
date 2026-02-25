@@ -132,6 +132,12 @@ interface ElectronAppAPI {
     skipped: number
   }>
   directorImportCharacters: () => Promise<{ files: string[]; directory?: string; error?: string }>
+
+  // VEO3
+  veo3ReadScript: (relativePath: string) => Promise<string | null>
+  veo3SetDownloadPath: (folderPath: string) => Promise<unknown>
+  veo3GetDownloadPath: () => Promise<string>
+  onVeo3DownloadComplete: (callback: (data: unknown) => void) => () => void
 }
 
 declare global {

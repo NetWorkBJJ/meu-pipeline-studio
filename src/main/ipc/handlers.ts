@@ -4,6 +4,7 @@ import { registerProjectHandlers } from './project.handlers'
 import { registerWorkspaceHandlers } from './workspace.handlers'
 import { registerTtsHandlers } from './tts.handlers'
 import { registerDirectorHandlers } from './director.handlers'
+import { registerVeo3Handlers } from './veo3.handlers'
 
 export function registerAllHandlers(): void {
   registerCapCutHandlers()
@@ -12,4 +13,5 @@ export function registerAllHandlers(): void {
   registerWorkspaceHandlers()
   registerTtsHandlers()
   registerDirectorHandlers()
+  registerVeo3Handlers()
 }

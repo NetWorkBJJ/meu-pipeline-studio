@@ -166,7 +166,7 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
       </div>
 
       {/* Action bar */}
-      <div className="relative z-10 flex h-12 items-center gap-3 px-6">
+      <div className="relative z-10 flex items-center gap-3 px-6 pt-5 pb-3">
         <button
           type="button"
           onClick={() => setCreateModalOpen(true)}
@@ -178,7 +178,7 @@ export function WorkspaceSelectorScreen(): React.JSX.Element {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 flex-1 overflow-y-auto p-6">
+      <div className="relative z-10 flex-1 overflow-y-auto px-6 pb-6 pt-3">
         {registryLoading && sortedRegistry.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-text-muted">
             <Loader2 className="mb-2 h-5 w-5 animate-spin" />

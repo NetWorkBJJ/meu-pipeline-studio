@@ -1,10 +1,10 @@
 import { Fragment } from 'react'
 import { motion } from 'framer-motion'
-import { Check } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
 import { useStageStore } from '@/stores/useStageStore'
 import { STAGE_LABELS, STAGE_DESCRIPTIONS } from '@/lib/constants'
 
-const stages = [1, 2, 3, 4] as const
+const stages = [1, 2, 3, 4, 5] as const
 
 export function StageProgress(): React.JSX.Element {
   const { currentStage, completedStages, setCurrentStage, canNavigateTo } = useStageStore()
@@ -15,6 +15,7 @@ export function StageProgress(): React.JSX.Element {
         const isActive = currentStage === stage
         const isCompleted = completedStages.has(stage)
         const isAvailable = canNavigateTo(stage)
+        const isVeo3 = stage === 5
 
         return (
           <Fragment key={stage}>
@@ -37,18 +38,30 @@ export function StageProgress(): React.JSX.Element {
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-all duration-300 ${
                   isActive
-                    ? 'gradient-primary text-white shadow-glow-sm'
+                    ? isVeo3
+                      ? 'bg-gradient-to-br from-blue-500 to-violet-500 text-white shadow-glow-sm'
+                      : 'gradient-primary text-white shadow-glow-sm'
                     : isCompleted
-                      ? 'bg-primary text-white'
+                      ? isVeo3
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-primary text-white'
                       : 'border-2 border-border-light text-text-tertiary'
                 }`}
               >
-                {isCompleted ? <Check className="h-3.5 w-3.5" /> : stage}
+                {isCompleted ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : isVeo3 ? (
+                  <Sparkles className="h-3.5 w-3.5" />
+                ) : (
+                  stage
+                )}
               </div>
               <span
                 className={`text-[11px] font-medium transition-colors duration-300 ${
                   isActive
-                    ? 'text-primary-light'
+                    ? isVeo3
+                      ? 'text-blue-400'
+                      : 'text-primary-light'
                     : isCompleted
                       ? 'text-text'
                       : 'text-text-tertiary'

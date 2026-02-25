@@ -177,10 +177,16 @@ def match_media_to_scenes(params):
             if scene_num > max_scene_index:
                 continue
             scene = scene_by_index.get(scene_num)
-            if scene and scene["id"] not in matched_scene_set:
-                matches.append(_make_match(scene, filepath, 1.0, "filename_convention"))
-                matched_file_set.add(filepath)
-                matched_scene_set.add(scene["id"])
+            if not scene or scene["id"] in matched_scene_set:
+                continue
+            # Verify media type matches (video->video, photo->photo)
+            file_type = _detect_media_type(filepath)
+            scene_type = scene.get("media_type")
+            if file_type and scene_type and file_type != scene_type:
+                continue
+            matches.append(_make_match(scene, filepath, 1.0, "filename_convention"))
+            matched_file_set.add(filepath)
+            matched_scene_set.add(scene["id"])
 
         # Phase 1.5: Match by filename_hint (e.g. scene_002 in basename)
         for filepath in valid_files:
@@ -212,12 +218,15 @@ def match_media_to_scenes(params):
             key=_sort_key,
         )
 
-        # Group scenes by expected media type
-        video_scenes = [s for s in remaining_scenes if s.get("media_type") == "video"]
-        image_scenes = [
-            s for s in remaining_scenes
-            if s.get("media_type") in ("photo", "image")
-        ]
+        # Group scenes by expected media type, sorted by index
+        video_scenes = sorted(
+            [s for s in remaining_scenes if s.get("media_type") == "video"],
+            key=lambda s: s.get("index", 0),
+        )
+        image_scenes = sorted(
+            [s for s in remaining_scenes if s.get("media_type") in ("photo", "image")],
+            key=lambda s: s.get("index", 0),
+        )
 
         # Pair videos to video scenes
         for filepath, scene in zip(remaining_videos, video_scenes):
@@ -236,7 +245,10 @@ def match_media_to_scenes(params):
             [f for f in valid_files if f not in matched_file_set],
             key=_sort_key,
         )
-        leftover_scenes = [s for s in scenes if s["id"] not in matched_scene_set]
+        leftover_scenes = sorted(
+            [s for s in scenes if s["id"] not in matched_scene_set],
+            key=lambda s: s.get("index", 0),
+        )
         for filepath, scene in zip(leftover_files, leftover_scenes):
             matches.append(_make_match(scene, filepath, 0.3, "sequential_fallback"))
             matched_file_set.add(filepath)

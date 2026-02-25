@@ -183,7 +183,20 @@ const api = {
     skipped: number
   }> => ipcRenderer.invoke('director:select-media-folder'),
   directorImportCharacters: (): Promise<{ files: string[]; directory?: string; error?: string }> =>
-    ipcRenderer.invoke('director:import-characters')
+    ipcRenderer.invoke('director:import-characters'),
+
+  // VEO3
+  veo3ReadScript: (relativePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('veo3:read-injector-script', relativePath),
+  veo3SetDownloadPath: (folderPath: string): Promise<unknown> =>
+    ipcRenderer.invoke('veo3:set-download-path', folderPath),
+  veo3GetDownloadPath: (): Promise<string> =>
+    ipcRenderer.invoke('veo3:get-download-path'),
+  onVeo3DownloadComplete: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown): void => callback(data)
+    ipcRenderer.on('veo3:download-complete', handler)
+    return () => ipcRenderer.removeListener('veo3:download-complete', handler)
+  }
 }
 
 if (process.contextIsolated) {

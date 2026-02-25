@@ -551,6 +551,341 @@ function rulesDescriptionMatchesEnvironment(takes: ParsedTake[]): QualityRule {
   }
 }
 
+// --- Auto-Fix Types ---
+
+export interface AutoFixCorrection {
+  takeNumber: number
+  ruleId: string
+  field: 'description' | 'negativePrompt' | 'characterAnchor' | 'environmentLock' | 'takeNumber'
+  before: string
+  after: string
+}
+
+export interface AutoFixResult {
+  fixed: ParsedTake[]
+  corrections: AutoFixCorrection[]
+  rulesApplied: string[]
+}
+
+const FORBIDDEN_TAG_PATTERNS = [
+  /\bDuration:\s*[\d.]+s?\.?\s*/gi,
+  /\[FOTO\]\s*/gi,
+  /\[VIDEO\]\s*/gi
+]
+
+const DEFAULT_NEGATIVE = 'text, watermark, typography, ui elements.'
+const EXTENDED_NEGATIVE_SUFFIX = ', violence, weapon, gore, sexual content.'
+const EXTENDED_KEYWORDS_SET = ['violence', 'weapon', 'gore', 'sexual']
+const MAX_ANCHOR_CHARS = 3
+
+export function autoFixTakes(
+  takes: ParsedTake[],
+  characters: CharacterRef[],
+  _scenes: Scene[],
+  startingTake: number
+): AutoFixResult {
+  if (takes.length === 0) return { fixed: [], corrections: [], rulesApplied: [] }
+
+  const corrections: AutoFixCorrection[] = []
+  const rulesApplied = new Set<string>()
+  const fixed = takes.map((t) => ({ ...t }))
+
+  // Fix 1: take-sequence — renumber sequentially
+  for (let i = 0; i < fixed.length; i++) {
+    const expected = startingTake + i
+    if (fixed[i].takeNumber !== expected) {
+      corrections.push({
+        takeNumber: expected,
+        ruleId: 'take-sequence',
+        field: 'takeNumber',
+        before: String(fixed[i].takeNumber),
+        after: String(expected)
+      })
+      fixed[i].takeNumber = expected
+      rulesApplied.add('take-sequence')
+    }
+  }
+
+  // Fix 2: no-duration-tag — strip forbidden tags from description/anchor/env
+  for (const take of fixed) {
+    for (const field of ['description', 'characterAnchor', 'environmentLock'] as const) {
+      let value = take[field]
+      for (const pattern of FORBIDDEN_TAG_PATTERNS) {
+        pattern.lastIndex = 0
+        value = value.replace(pattern, '')
+      }
+      value = value.trim()
+      if (value !== take[field]) {
+        corrections.push({
+          takeNumber: take.takeNumber,
+          ruleId: 'no-duration-tag',
+          field,
+          before: take[field],
+          after: value
+        })
+        take[field] = value
+        rulesApplied.add('no-duration-tag')
+      }
+    }
+  }
+
+  // Fix 3: no-abbreviation — expand abbreviated character names to full labels
+  if (characters.length > 0) {
+    for (const take of fixed) {
+      if (isEmptyAnchor(take.characterAnchor)) continue
+      const labels = extractCharacterLabels(take.characterAnchor)
+      let changed = false
+      const fixedLabels = labels.map((label) => {
+        const isExact = characters.some((c) => c.label.toLowerCase() === label.toLowerCase())
+        if (isExact) return label
+        const match = characters.find(
+          (c) => c.label.toLowerCase().startsWith(label.toLowerCase()) && label.length < c.label.length
+        )
+        if (match) {
+          changed = true
+          return match.label
+        }
+        return label
+      })
+      if (changed) {
+        const newAnchor = fixedLabels.join(' | ') + '.'
+        corrections.push({
+          takeNumber: take.takeNumber,
+          ruleId: 'no-abbreviation',
+          field: 'characterAnchor',
+          before: take.characterAnchor,
+          after: newAnchor
+        })
+        take.characterAnchor = newAnchor
+        rulesApplied.add('no-abbreviation')
+      }
+    }
+  }
+
+  // Fix 4: character-names-valid — remove unknown names (after abbreviation fix)
+  if (characters.length > 0) {
+    const knownSet = new Set(characters.map((c) => c.label.toLowerCase()))
+    for (const take of fixed) {
+      if (isEmptyAnchor(take.characterAnchor)) continue
+      const labels = extractCharacterLabels(take.characterAnchor)
+      const validLabels = labels.filter((l) => knownSet.has(l.toLowerCase()))
+      if (validLabels.length < labels.length) {
+        const newAnchor = validLabels.length > 0 ? validLabels.join(' | ') + '.' : '\u2014'
+        corrections.push({
+          takeNumber: take.takeNumber,
+          ruleId: 'character-names-valid',
+          field: 'characterAnchor',
+          before: take.characterAnchor,
+          after: newAnchor
+        })
+        take.characterAnchor = newAnchor
+        rulesApplied.add('character-names-valid')
+      }
+    }
+  }
+
+  // Fix 5: max-characters-per-anchor — trim to first 3
+  for (const take of fixed) {
+    if (isEmptyAnchor(take.characterAnchor)) continue
+    const labels = extractCharacterLabels(take.characterAnchor)
+    if (labels.length > MAX_ANCHOR_CHARS) {
+      const trimmed = labels.slice(0, MAX_ANCHOR_CHARS)
+      const newAnchor = trimmed.join(' | ') + '.'
+      corrections.push({
+        takeNumber: take.takeNumber,
+        ruleId: 'max-characters-per-anchor',
+        field: 'characterAnchor',
+        before: take.characterAnchor,
+        after: newAnchor
+      })
+      take.characterAnchor = newAnchor
+      rulesApplied.add('max-characters-per-anchor')
+    }
+  }
+
+  // Fix 6: negative-prompt-present — add default if missing
+  for (const take of fixed) {
+    if (!take.negativePrompt || take.negativePrompt.trim().length < 5) {
+      corrections.push({
+        takeNumber: take.takeNumber,
+        ruleId: 'negative-prompt-present',
+        field: 'negativePrompt',
+        before: take.negativePrompt,
+        after: DEFAULT_NEGATIVE
+      })
+      take.negativePrompt = DEFAULT_NEGATIVE
+      rulesApplied.add('negative-prompt-present')
+    }
+  }
+
+  // Fix 7: extended-negative-on-transition — append extended keywords on env transitions
+  for (let i = 0; i < fixed.length; i++) {
+    const isFirst = i === 0
+    const envChanged =
+      i > 0 &&
+      fixed[i].environmentLock.trim().toLowerCase() !==
+        fixed[i - 1].environmentLock.trim().toLowerCase()
+
+    if (isFirst || envChanged) {
+      const hasExtended = EXTENDED_KEYWORDS_SET.some((kw) =>
+        fixed[i].negativePrompt.toLowerCase().includes(kw)
+      )
+      if (!hasExtended) {
+        const before = fixed[i].negativePrompt
+        let neg = before.replace(/\.\s*$/, '')
+        neg += EXTENDED_NEGATIVE_SUFFIX
+        corrections.push({
+          takeNumber: fixed[i].takeNumber,
+          ruleId: 'extended-negative-on-transition',
+          field: 'negativePrompt',
+          before,
+          after: neg
+        })
+        fixed[i].negativePrompt = neg
+        rulesApplied.add('extended-negative-on-transition')
+      }
+    }
+  }
+
+  return {
+    fixed,
+    corrections,
+    rulesApplied: [...rulesApplied]
+  }
+}
+
+// --- Per-take failure identification (for LLM selective fix) ---
+
+export function identifyFailingTakes(
+  takes: ParsedTake[],
+  scenes: Scene[],
+  characters: CharacterRef[],
+  _startingTake: number
+): Map<number, string[]> {
+  const failures = new Map<number, string[]>()
+
+  const addFailure = (takeNum: number, ruleId: string): void => {
+    if (!failures.has(takeNum)) failures.set(takeNum, [])
+    failures.get(takeNum)!.push(ruleId)
+  }
+
+  // description-starts-camera
+  for (const take of takes) {
+    const lower = take.description.toLowerCase()
+    const startsWithCamera = CAMERA_KEYWORDS.some((kw) => lower.startsWith(kw))
+    if (!startsWithCamera) {
+      addFailure(take.takeNumber, 'description-starts-camera')
+    }
+  }
+
+  // description-max-words
+  for (const take of takes) {
+    const wordCount = take.description.split(/\s+/).filter(Boolean).length
+    if (wordCount > 35) {
+      addFailure(take.takeNumber, 'description-max-words')
+    }
+  }
+
+  // no-internal-emotions
+  for (const take of takes) {
+    const lower = take.description.toLowerCase()
+    for (const phrase of INTERNAL_EMOTION_BLOCKLIST) {
+      if (lower.includes(phrase)) {
+        addFailure(take.takeNumber, 'no-internal-emotions')
+        break
+      }
+    }
+  }
+
+  // environment-lock-present
+  for (const take of takes) {
+    if (!take.environmentLock || take.environmentLock.trim().length < 5) {
+      addFailure(take.takeNumber, 'environment-lock-present')
+    }
+  }
+
+  // description-matches-environment
+  for (const take of takes) {
+    const descLower = take.description.toLowerCase()
+    const envLower = take.environmentLock.toLowerCase()
+    for (const room of ROOM_KEYWORDS) {
+      if (descLower.includes(room) && !envLower.includes(room)) {
+        addFailure(take.takeNumber, 'description-matches-environment')
+        break
+      }
+    }
+  }
+
+  // environment-consistency (chapter-level — flag all takes in inconsistent chapters)
+  if (takes.length > 1) {
+    const chapterTakes: Record<number, Array<{ idx: number; env: string }>> = {}
+    for (let i = 0; i < Math.min(takes.length, scenes.length); i++) {
+      const chapter = scenes[i].chapter
+      const env = takes[i].environmentLock?.trim() || ''
+      if (!chapterTakes[chapter]) chapterTakes[chapter] = []
+      chapterTakes[chapter].push({ idx: i, env })
+    }
+    for (const entries of Object.values(chapterTakes)) {
+      if (entries.length <= 1) continue
+      const locations = entries.map((e) => e.env.split(/[,.]/).map((s) => s.trim())[0]?.toLowerCase() || '')
+      const uniqueLocations = new Set(locations)
+      if (uniqueLocations.size > Math.ceil(entries.length * 0.5)) {
+        for (const entry of entries) {
+          addFailure(takes[entry.idx].takeNumber, 'environment-consistency')
+        }
+      }
+    }
+  }
+
+  // character-not-all-same + character-variety (global — flag all takes with characters)
+  if (characters.length > 1 && takes.length > 1) {
+    const takesWithChars = takes.filter((t) => !isEmptyAnchor(t.characterAnchor))
+    if (takesWithChars.length > 0) {
+      const charFrequency: Record<string, number> = {}
+      for (const take of takesWithChars) {
+        const labels = extractCharacterLabels(take.characterAnchor)
+        for (const label of labels) {
+          charFrequency[label.toLowerCase()] = (charFrequency[label.toLowerCase()] || 0) + 1
+        }
+      }
+      const allSame = Object.values(charFrequency).some(
+        (count) => count === takesWithChars.length && takesWithChars.length >= 3
+      )
+      if (allSame) {
+        for (const take of takesWithChars) {
+          addFailure(take.takeNumber, 'character-not-all-same')
+        }
+      }
+
+      // character-variety check
+      const combos = new Set(
+        takesWithChars.map((t) =>
+          extractCharacterLabels(t.characterAnchor).sort().join('||').toLowerCase()
+        )
+      )
+      const leadChars = characters.filter((c) => {
+        const lower = c.role.toLowerCase()
+        return lower.includes('lead') || lower.includes('protagonist')
+      })
+      let leadDominance = 0
+      if (leadChars.length > 0) {
+        const leadLabels = new Set(leadChars.map((c) => c.label.toLowerCase()))
+        const leadAppearances = takesWithChars.filter((t) =>
+          extractCharacterLabels(t.characterAnchor).some((l) => leadLabels.has(l.toLowerCase()))
+        ).length
+        leadDominance = leadAppearances / takesWithChars.length
+      }
+      if (combos.size < 2 || (leadChars.length > 0 && leadDominance > 0.85)) {
+        for (const take of takesWithChars) {
+          addFailure(take.takeNumber, 'character-variety')
+        }
+      }
+    }
+  }
+
+  return failures
+}
+
 export function validatePromptQuality(
   takes: ParsedTake[],
   scenes: Scene[],

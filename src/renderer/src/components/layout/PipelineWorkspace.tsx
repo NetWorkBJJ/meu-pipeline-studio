@@ -13,6 +13,7 @@ import { Stage1Script } from '../stages/stage1/Stage1Script'
 import { Stage2Audio } from '../stages/stage2/Stage2Audio'
 import { Stage3Sync } from '../stages/stage3/Stage3Sync'
 import { Stage4Director } from '../stages/stage4/Stage4Director'
+import { Stage5Veo3 } from '../stages/stage5/Stage5Veo3'
 
 function StageContent(): React.JSX.Element {
   const { currentStage } = useStageStore()
@@ -26,6 +27,8 @@ function StageContent(): React.JSX.Element {
       return <Stage3Sync />
     case 4:
       return <Stage4Director />
+    case 5:
+      return <Stage5Veo3 />
     default:
       return <Stage1Script />
   }
@@ -87,14 +90,16 @@ export function PipelineWorkspace(): React.JSX.Element {
     setExternalChange(null)
   }, [capCutDraftPath, setExternalChange, addToast])
 
+  const isVeo3Stage = currentStage === 5
+
   return (
     <div className="flex h-full flex-col bg-bg">
       <TopBar />
       <StageProgress />
-      <ProjectSummaryBar />
+      {!isVeo3Stage && <ProjectSummaryBar />}
 
       {/* External change banner */}
-      {externalChange && (
+      {!isVeo3Stage && externalChange && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -134,10 +139,11 @@ export function PipelineWorkspace(): React.JSX.Element {
 
       {/* Main content - only show when loaded or no draft path */}
       {(projectLoaded || !capCutDraftPath) && (
-        <main className="flex-1 overflow-auto p-6">
+        <main className={`flex-1 ${isVeo3Stage ? 'overflow-hidden' : 'overflow-auto p-6'}`}>
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStage}
+              className={isVeo3Stage ? 'h-full' : undefined}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -149,7 +155,7 @@ export function PipelineWorkspace(): React.JSX.Element {
         </main>
       )}
 
-      <TimelinePanel />
+      {!isVeo3Stage && <TimelinePanel />}
       <StatusBar />
     </div>
   )

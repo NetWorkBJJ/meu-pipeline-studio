@@ -3,8 +3,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
-  Film,
-  Image,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -49,8 +47,6 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
   const { addToast } = useUIStore()
 
   const gapReport = useMemo(() => detectGaps(scenes), [scenes])
-  const missingVideos = gapReport.missingScenes.filter((s) => s.mediaType === 'video')
-  const missingImages = gapReport.missingScenes.filter((s) => s.mediaType === 'photo')
   const hasGaps = gapReport.missingScenes.length > 0
 
   const textCount =
@@ -330,52 +326,20 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
         </>
       )}
 
-      {/* Success with gaps: retry panel */}
+      {/* Success with gaps: point to Retry step */}
       {status === 'done' && hasGaps && (
         <>
           <div className="border-t border-border" />
-          <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
-            <div className="flex items-start gap-2 mb-3">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-warning">
-                  {gapReport.missingScenes.length} cenas sem midia
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  Cobertura: {gapReport.coveragePercent}% -{' '}
-                  {gapReport.timelineGaps.length} gap
-                  {gapReport.timelineGaps.length !== 1 && 's'} na timeline
-                </p>
-              </div>
+          <div className="flex items-center gap-3 rounded-lg border border-warning/20 bg-warning/5 p-4">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-warning">
+                {gapReport.missingScenes.length} cenas sem midia
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Cobertura: {gapReport.coveragePercent}%. Avance para o Retry para preencher os gaps.
+              </p>
             </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div className="rounded-md border border-border bg-bg p-2.5">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Film className="h-3 w-3 text-text-muted" />
-                  <p className="text-[10px] font-medium text-text-muted">Videos faltando</p>
-                </div>
-                <p className="text-lg font-bold tabular-nums text-text">{missingVideos.length}</p>
-                {missingVideos.length > 0 && (
-                  <p className="text-[10px] text-text-muted truncate mt-0.5">
-                    Cenas: {missingVideos.map((s) => s.index).join(', ')}
-                  </p>
-                )}
-              </div>
-              <div className="rounded-md border border-border bg-bg p-2.5">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Image className="h-3 w-3 text-text-muted" />
-                  <p className="text-[10px] font-medium text-text-muted">Imagens faltando</p>
-                </div>
-                <p className="text-lg font-bold tabular-nums text-text">{missingImages.length}</p>
-                {missingImages.length > 0 && (
-                  <p className="text-[10px] text-text-muted truncate mt-0.5">
-                    Cenas: {missingImages.map((s) => s.index).join(', ')}
-                  </p>
-                )}
-              </div>
-            </div>
-
             {onRetry && (
               <button
                 onClick={() => {
@@ -386,7 +350,7 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
                 className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Preencher gaps
+                Retry
               </button>
             )}
           </div>

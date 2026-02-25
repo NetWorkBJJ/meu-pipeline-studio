@@ -639,7 +639,7 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
         material_colors.append(extras["color"])
         vocal_list.append(extras["vocal_separation"])
 
-        render_index_value = 11000 + i
+        render_index_value = 11000 + len(video_track["segments"]) + i
 
         segment = {
             "caption_info": None,
