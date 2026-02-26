@@ -53,3 +53,7 @@ test-results/
 # Local scripts
 launch-dev.bat
 launch-dev.vbs
+
+# Temporary data files
+extracted_takes.txt
+takes_extraction_summary.txt

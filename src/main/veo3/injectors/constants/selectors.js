@@ -163,7 +163,7 @@
     // --- Mode detection (via settings button text) ---
     // Google Flow (Feb 2026): mode (Image/Video) is a TAB inside the settings dropdown,
     // NOT a standalone combobox. The settings button text reveals the active model:
-    //   "Nano Banana Pro" = IMAGE mode, "Veo 3.1" = VIDEO mode
+    //   "Nano Banana 2" = IMAGE mode, "Veo 3.1" = VIDEO mode
 
     detectCurrentMode: () => {
       const btn = window.veo3Selectors.settingsButton();

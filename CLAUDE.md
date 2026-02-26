@@ -17,19 +17,20 @@ Documento de governanca: `Agents.md` (raiz do projeto).
 - **Electron 39** (electron-vite 5) - app desktop com acesso ao filesystem
 - **React 19** + **TypeScript 5.9** - renderer
 - **Tailwind CSS v4** - estilizacao (CSS-first @theme, sem tailwind.config.js)
-- **Zustand 5** - estado global (4 stores: project, stage, ui, log)
+- **Zustand 5** - estado global (7 stores: project, stage, ui, log, workspace, veo3, veo3Automation)
 - **Framer Motion 11** - animacoes e transicoes (AnimatePresence, motion.div)
 - **Lucide React** - icones SVG
 - **Python 3.10+** - manipulacao do draft_content.json do CapCut (child_process, JSON-line protocol)
 
-## Pipeline (4 Stages)
+## Pipeline (5 Stages)
 
 | Stage | O Que Faz | Lib/Modulo | Componente |
 |-------|-----------|------------|------------|
 | 1. Script | Roteiro -> blocos de legenda | `scriptSplitter.ts` | Stage1Script |
-| 2. Audio | Detecta blocos de audio do CapCut | Python `capcut_reader.py` | Stage2Audio |
+| 2. Audio | TTS multi-provider (Google, ElevenLabs, MiniMax) | Python `tts_generator.py` + `capcut_reader.py` | Stage2Audio |
 | 3. Sync | Sincroniza texto + audio | `syncEngine.ts` | Stage3Sync |
 | 4. Director | Config, planejamento, prompts, import, insercao | `sceneGrouper.ts` + `capcut_writer.py` | Stage4Director |
+| 5. Veo3 | Geracao de video com Veo3 via browser automation | `flowCommandBuilder.ts` + injectors JS | Stage5Veo3 |
 
 ### Stage 4 Sub-steps
 
@@ -47,10 +48,18 @@ Documento de governanca: `Agents.md` (raiz do projeto).
 src/main/
   index.ts                     - Electron entry, inicia Python bridge + registra IPC
   python/bridge.ts             - Python process manager (spawn, JSON-line)
+  services/ai33.service.ts     - Wrapper da API ai33.pro (ElevenLabs, MiniMax, SFX, gen)
   ipc/handlers.ts              - Registro central de IPC handlers
   ipc/capcut.handlers.ts       - read-audio-blocks, write-text/video-segments, sync-metadata
   ipc/file.handlers.ts         - Selecao de arquivos (dialog)
   ipc/project.handlers.ts      - Selecao de draft, paths
+  ipc/workspace.handlers.ts    - CRUD de workspaces, load/save status
+  ipc/director.handlers.ts     - Planejamento LLM, scene grouping
+  ipc/tts.handlers.ts          - Google TTS, CapCut local TTS
+  ipc/ai33.handlers.ts         - 25+ handlers para ai33.pro API
+  ipc/veo3.handlers.ts         - Browser control, injector comms
+  ipc/draft-watcher.ts         - File watcher bidirecional no draft_content.json
+  veo3/injectors/              - Scripts JS injetados no browser (automacao Veo3)
 
 src/preload/
   index.ts                     - contextBridge API
@@ -63,14 +72,26 @@ src/renderer/src/
     useStageStore.ts           - Stage atual, navegacao
     useUIStore.ts              - Estado de UI (currentView, loading, timeline)
     useLogStore.ts             - Logs do app
+    useWorkspaceStore.ts       - Workspace/project selection, CRUD
+    useVeo3Store.ts            - Videos, contas e comandos Veo3
+    useVeo3AutomationStore.ts  - Estado da automacao Veo3
   types/
     project.ts                 - StoryBlock, AudioBlock, Scene, etc.
     capcut.ts                  - Tipos do draft_content.json
     ipc.ts                     - Tipos de IPC
+    ai33.ts                    - Tipos da API ai33.pro
+    tts.ts                     - Tipos de resposta TTS
+    veo3.ts                    - Tipos Veo3
+    workspace.ts               - Tipos de workspace
   lib/
     scriptSplitter.ts          - Stage 1: split de roteiro em blocos
     syncEngine.ts              - Stage 3: sincronizacao texto+audio
     sceneGrouper.ts            - Stage 4: agrupamento de cenas
+    scenePlanner.ts            - Planejamento de cenas + deteccao de gaps
+    promptTemplate.ts          - Template de prompts + parsing LLM
+    promptValidator.ts         - Validacao de qualidade de prompts
+    characterParser.ts         - Extracao de personagens
+    flowCommandBuilder.ts      - Builder de comandos Veo3
     time.ts                    - Conversoes de tempo (ms, us, SRT format)
     srt.ts                     - Parsing/geracao SRT
     constants.ts               - Constantes do app
@@ -83,14 +104,23 @@ src/renderer/src/
     stages/stage2/             - DraftSelector, AudioBlocksList, Stage2Audio
     stages/stage3/             - SyncPreview, Stage3Sync
     stages/stage4/             - DirectorStepper, DirectorConfigPanel, ScenePlannerPanel, PromptStudio, MediaImporter, InsertPanel, Stage4Director
+    stages/stage5/             - Stage5Veo3, Veo3Browser, Veo3Toolbar, Veo3Sidepanel, Veo3AccountManager
+    ai-tools/                  - Ai33ToolsPanel, Ai33TaskManager
+    projects/                  - ProjectCard, ProjectDashboard, modais
+    workspace/                 - WorkspaceCard, CreateModal
 
 executions/
-  main_bridge.py               - Entry point do processo Python
+  main_bridge.py               - Entry point do processo Python (29 metodos)
   capcut_reader.py             - Leitura de draft_content.json
   capcut_writer.py             - Escrita de segmentos no CapCut
   metadata_sync.py             - Sync de metadata (draft_meta_info, root_meta_info)
   srt_generator.py             - Geracao de arquivos SRT
   sync_engine.py               - Sync engine (gap removal, Ken Burns animations)
+  tts_generator.py             - Geracao TTS (Google Cloud, CapCut local)
+  llm_director.py              - Planejamento de cenas com LLM
+  media_matcher.py             - Matching de midias com cenas
+  draft_io.py                  - I/O de arquivos draft
+  debug_tools.py               - Ferramentas de debug/inspecao
   template_loader.py           - Loader de templates JSON do CapCut
   templates/                   - Templates JSON (text_material, text_segment, text_animation)
   requirements.txt             - Dependencias Python
@@ -155,7 +185,7 @@ directives/
 - Renderer -> Main: ipcRenderer.invoke (async, promise-based)
 - Main -> Renderer: webContents.send (eventos de progresso)
 - Main -> Python: spawn + stdin/stdout JSON-line
-- Canais IPC nomeados com namespace: "project:", "capcut:", "audio:", "file:"
+- Canais IPC nomeados com namespace: "project:", "capcut:", "audio:", "file:", "workspace:", "ai33:", "tts:", "director:", "veo3:"
 
 ## Comandos
 
@@ -171,8 +201,8 @@ npm run format         # Prettier
 
 ## Bugs Conhecidos
 
-1. **updateSubtitleTimings recebe IDs errados** - Stage 3 passa IDs de audio ao inves de IDs de texto. Sincronizacao falha silenciosamente.
-2. **Insercao duplicada no Stage 6** - Permite inserir segmentos multiplas vezes sem limpar anteriores. Timeline acumula duplicatas.
+1. ~~**updateSubtitleTimings recebe IDs errados**~~ - CORRIGIDO. Agora usa textMaterialId no StoryBlock.
+2. ~~**Insercao duplicada no Stage 4**~~ - CORRIGIDO. InsertPanel faz clear antes de reinsercao.
 3. ~~**Reset incompleto do Sidebar**~~ - CORRIGIDO. TopBar.handleGoHome agora chama `resetProject()` + `reset()` + `setCurrentView('home')`.
 
 ## Paths Importantes

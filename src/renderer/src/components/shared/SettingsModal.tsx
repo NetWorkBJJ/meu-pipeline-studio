@@ -33,6 +33,13 @@ export function SettingsModal(): React.JSX.Element | null {
   const [ai33Credits, setAi33Credits] = useState<number | null>(null)
   const [ai33Testing, setAi33Testing] = useState(false)
 
+  // ClickUp API key state
+  const [clickupHasKey, setClickupHasKey] = useState(false)
+  const [clickupKeyInput, setClickupKeyInput] = useState('')
+  const [clickupSaving, setClickupSaving] = useState(false)
+  const [clickupTesting, setClickupTesting] = useState(false)
+  const [clickupTeamName, setClickupTeamName] = useState<string | null>(null)
+
   useEffect(() => {
     if (settingsOpen) {
       if (activeWorkspace) {
@@ -41,6 +48,7 @@ export function SettingsModal(): React.JSX.Element | null {
       }
       window.api.ttsHasApiKey().then(setTtsHasKey).catch(() => setTtsHasKey(false))
       window.api.ai33HasApiKey().then(setAi33HasKey).catch(() => setAi33HasKey(false))
+      window.api.clickupHasApiKey().then(setClickupHasKey).catch(() => setClickupHasKey(false))
     }
   }, [settingsOpen, activeWorkspace])
 
@@ -144,6 +152,51 @@ export function SettingsModal(): React.JSX.Element | null {
       })
     } finally {
       setAi33Testing(false)
+    }
+  }
+
+  const handleSaveClickupKey = async (): Promise<void> => {
+    if (!clickupKeyInput.trim()) return
+    setClickupSaving(true)
+    try {
+      await window.api.clickupSaveApiKey(clickupKeyInput.trim())
+      setClickupHasKey(true)
+      setClickupKeyInput('')
+      addToast({ type: 'success', message: 'API Token ClickUp salvo.' })
+    } catch {
+      addToast({ type: 'error', message: 'Erro ao salvar API Token ClickUp.' })
+    } finally {
+      setClickupSaving(false)
+    }
+  }
+
+  const handleDeleteClickupKey = async (): Promise<void> => {
+    await window.api.clickupDeleteApiKey()
+    setClickupHasKey(false)
+    setClickupTeamName(null)
+    addToast({ type: 'success', message: 'API Token ClickUp removido.' })
+  }
+
+  const handleTestClickup = async (): Promise<void> => {
+    setClickupTesting(true)
+    try {
+      const res = (await window.api.clickupTestConnection()) as {
+        success: boolean
+        teamName: string | null
+      }
+      if (res.success && res.teamName) {
+        setClickupTeamName(res.teamName)
+        addToast({ type: 'success', message: `ClickUp conectado: ${res.teamName}` })
+      } else {
+        addToast({ type: 'warning', message: 'ClickUp conectado, mas nenhum workspace encontrado.' })
+      }
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Erro ao testar ClickUp.'
+      })
+    } finally {
+      setClickupTesting(false)
     }
   }
 
@@ -440,6 +493,83 @@ export function SettingsModal(): React.JSX.Element | null {
                       {ai33Credits !== null && (
                         <span className="text-[10px] text-text-muted">
                           Creditos: {ai33Credits.toLocaleString('pt-BR')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ClickUp API Token */}
+              <div className="flex flex-col gap-3">
+                <label className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  ClickUp (Demandas)
+                </label>
+                <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-bg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`h-2 w-2 rounded-full ${clickupHasKey ? 'bg-success' : 'bg-error'}`}
+                      />
+                      <span className="text-xs font-medium text-text">Personal API Token</span>
+                    </div>
+                    <a
+                      href="https://app.clickup.com/settings/apps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[10px] text-primary/70 transition-colors hover:text-primary"
+                    >
+                      ClickUp Apps
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="password"
+                      value={clickupKeyInput}
+                      onChange={(e) => setClickupKeyInput(e.target.value)}
+                      placeholder={clickupHasKey ? 'Alterar token...' : 'Cole seu Personal API Token (pk_...)'}
+                      className="flex-1 rounded-md border border-border bg-surface px-2.5 py-1 text-xs text-text outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      disabled={!clickupKeyInput.trim() || clickupSaving}
+                      onClick={handleSaveClickupKey}
+                      className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+                    >
+                      {clickupSaving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Check className="h-3 w-3" />
+                      )}
+                      Salvar
+                    </button>
+                    {clickupHasKey && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteClickupKey}
+                        className="flex h-7 items-center rounded-md border border-border bg-surface px-1.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-error"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  {clickupHasKey && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={clickupTesting}
+                        onClick={handleTestClickup}
+                        className="flex h-6 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[10px] font-medium text-text transition-colors hover:bg-surface-hover disabled:opacity-40"
+                      >
+                        {clickupTesting ? (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        ) : null}
+                        Testar conexao
+                      </button>
+                      {clickupTeamName && (
+                        <span className="text-[10px] text-text-muted">
+                          Workspace: {clickupTeamName}
                         </span>
                       )}
                     </div>

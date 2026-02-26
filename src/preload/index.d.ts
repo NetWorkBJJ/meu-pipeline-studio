@@ -238,6 +238,39 @@ interface ElectronAppAPI {
   }) => Promise<unknown>
 
   onAi33TaskProgress: (callback: (data: unknown) => void) => () => void
+
+  // ClickUp
+  clickupSaveApiKey: (apiKey: string) => Promise<unknown>
+  clickupHasApiKey: () => Promise<boolean>
+  clickupDeleteApiKey: () => Promise<unknown>
+  clickupGetTeams: () => Promise<unknown>
+  clickupGetSpaces: (teamId: string) => Promise<unknown>
+  clickupGetFolders: (spaceId: string) => Promise<unknown>
+  clickupGetFolderlessLists: (spaceId: string) => Promise<unknown>
+  clickupGetLists: (folderId: string) => Promise<unknown>
+  clickupGetTasks: (params: { listId: string; page?: number }) => Promise<unknown>
+  clickupGetTask: (taskId: string) => Promise<unknown>
+  clickupDownloadAttachment: (params: {
+    url: string
+    destDir?: string
+    fileName?: string
+  }) => Promise<unknown>
+  clickupDownloadTaskAttachments: (params: {
+    attachments: Array<{ url: string; fileName: string }>
+    destDir?: string
+  }) => Promise<unknown>
+  clickupReadTextFile: (filePath: string) => Promise<unknown>
+  clickupTestConnection: () => Promise<unknown>
+
+  // CDP (Chrome DevTools Protocol) automation
+  cdpAttach: (webContentsId: number) => Promise<{ success: boolean; error?: string }>
+  cdpDetach: () => Promise<{ success: boolean }>
+  cdpClickElement: (selector: string) => Promise<{ success: boolean; error?: string }>
+  cdpType: (text: string) => Promise<{ success: boolean; error?: string }>
+  cdpPress: (key: string) => Promise<{ success: boolean; error?: string }>
+  cdpEvaluate: (expression: string) => Promise<{ success: boolean; result?: unknown; error?: string }>
+  cdpGetRect: (selector: string) => Promise<{ success: boolean; rect?: unknown; error?: string }>
+  cdpPocTest: () => Promise<{ success: boolean; results?: unknown[]; error?: string }>
 }
 
 declare global {

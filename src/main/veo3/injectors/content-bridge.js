@@ -136,9 +136,8 @@
 
     // Phase 1.5: Wait for uploads to be 100% done, then clear prompt area
     window.__veo3_phase = 'CLEAR_PROMPT';
-    // waitForImageUpload may return on timeout before 100%, so we poll for no progress_activity
     console.log('[INIT] Ensuring all uploads are 100% complete...');
-    const uploadCheckTimeout = 60000; // 60s max
+    const uploadCheckTimeout = 15000; // 15s max (uploads are usually already done)
     const uploadCheckStart = Date.now();
     while (Date.now() - uploadCheckStart < uploadCheckTimeout) {
       const progressIcons = document.querySelectorAll('i.google-symbols, i.material-icons');
@@ -151,9 +150,9 @@
       }
       if (!stillUploading) break;
       console.log('[INIT] Upload still in progress, waiting...');
-      await sleep(2000);
+      await sleep(TIMING.POLL_NORMAL); // 500ms instead of 2s
     }
-    console.log('[INIT] All uploads complete, clearing prompt area...');
+    console.log('[INIT] All uploads complete (' + (Date.now() - uploadCheckStart) + 'ms), clearing prompt area...');
 
     // Click "Apagar comando" (close) button to clear residual state from upload
     // Google Flow is React - simple .click() may not trigger the handler, use robustClick
@@ -161,16 +160,15 @@
     if (clearBtn) {
       console.log('[INIT] Found clear button: "' + clearBtn.textContent.trim().substring(0, 40) + '"');
       await window.veo3RobustClick(clearBtn);
-      await sleep(TIMING.STANDARD);
+      await sleep(TIMING.SHORT);
       console.log('[INIT] Prompt area cleared');
     } else {
       console.log('[INIT] No clear button found (prompt may already be empty)');
     }
 
-    // Phase 2: Apply fixed settings (Landscape, x1) - AFTER upload
-    window.__veo3_phase = 'SETTINGS';
-    await applyFixedSettings();
-    await sleep(TIMING.STANDARD);
+    // Phase 2: Settings (Landscape, x1, mode) are now applied per-command inside
+    // ensureCreationMode() when the dropdown is already open for mode verification.
+    // No separate init step needed - saves an extra dropdown open/close cycle.
 
     // Phase 3: Process prompts in batches of BATCH_SIZE
     const totalBatches = Math.ceil(commandQueue.length / BATCH_SIZE);
@@ -324,7 +322,7 @@
 
     // Defensive: dismiss any stale dialogs from previous commands
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await sleep(TIMING.SHORT);
+    await sleep(TIMING.MICRO);
 
     // Step 1/4: Mode switch via settings dropdown tabs
     window.__veo3_phase = 'MODE_SWITCH';
@@ -333,7 +331,7 @@
     if (!modeOk) {
       // Fail-fast: do not proceed in wrong mode (causes cascading chaos)
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(TIMING.SHORT);
+      await sleep(TIMING.MICRO);
       throw new Error('Mode switch to "' + cmd.mode + '" failed');
     } else {
       console.log(tag + ' Step 1/4: Mode OK');
@@ -352,7 +350,7 @@
     window.__veo3_phase = 'FILL_PROMPT';
     console.log(tag + ' Step 3/4: Filling prompt (' + cmd.prompt.length + ' chars)...');
     await window.veo3Timing.fillSlateEditor(cmd.prompt);
-    await sleep(TIMING.AFTER_FILL);
+    // No extra sleep here - fillSlateEditor already includes AFTER_FILL delay internally
 
     // Step 4/4: Submit with retry chain
     window.__veo3_phase = 'SUBMIT';
@@ -398,11 +396,16 @@
     }
   }
 
-  // === MODE SWITCHING VIA SETTINGS DROPDOWN ===
+  // === MODE SWITCHING + SETTINGS VIA SETTINGS DROPDOWN ===
   // Google Flow (Feb 2026): mode is a TAB inside the settings dropdown menu.
   // The settings dropdown contains: Image/Video tabs, Landscape/Portrait tabs, x1-x4 tabs, model selector.
-  // Mode mapping: imagem -> IMAGE tab (Nano Banana Pro), texto/elementos -> VIDEO tab (Veo 3.1-Fast)
+  // Mode mapping: imagem -> IMAGE tab (Nano Banana 2), texto/elementos -> VIDEO tab (Veo 3.1-Fast)
   // The settings button text reveals the active model, allowing mode detection without opening dropdown.
+  //
+  // Settings (Landscape, x1) are applied INSIDE the same dropdown interaction on the first call,
+  // saving an extra open/close cycle. After first application, they persist and are not re-applied.
+
+  let settingsApplied = false; // Landscape + x1 applied at least once this session
 
   async function ensureCreationMode(targetMode) {
     const { sleep, TIMING } = window.veo3Timing;
@@ -411,85 +414,158 @@
     const currentMode = window.veo3Selectors.detectCurrentMode();
     const targetIsImage = (targetMode === 'imagem');
     const currentIsImage = (currentMode === 'imagem');
+    const needsModeSwitch = currentMode === null || targetIsImage !== currentIsImage;
 
-    console.log('[MODE] Current: ' + (currentMode || 'unknown') + ', Target: ' + targetMode);
+    console.log('[MODE] Current: ' + (currentMode || 'unknown') + ', Target: ' + targetMode +
+      (settingsApplied ? '' : ' (first run, will apply Landscape+x1)'));
 
-    if (currentMode !== null && targetIsImage === currentIsImage) {
-      console.log('[MODE] Already in correct mode (' + currentMode + '), no switch needed');
+    // If mode is already correct AND settings were already applied, skip entirely
+    if (!needsModeSwitch && settingsApplied) {
+      console.log('[MODE] Already in correct mode (' + currentMode + '), no action needed');
       return true;
     }
 
-    // Step 2: Open settings dropdown (same mechanism as applyFixedSettings)
-    const settingsBtn = window.veo3Selectors.settingsButton();
-    if (!settingsBtn) {
-      console.log('[MODE] Settings button not found, cannot switch mode');
-      return false;
-    }
+    // Outer retry: the full open-click-close-verify sequence can be retried
+    const MAX_SWITCH_ATTEMPTS = 2;
+    for (let switchAttempt = 1; switchAttempt <= MAX_SWITCH_ATTEMPTS; switchAttempt++) {
+      if (switchAttempt > 1) {
+        console.log('[MODE] Retry attempt ' + switchAttempt + '/' + MAX_SWITCH_ATTEMPTS + '...');
+        await sleep(TIMING.STANDARD);
+      }
 
-    let menuOpened = false;
-    const MAX_RETRIES = 3;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      console.log('[MODE] Opening settings dropdown (attempt ' + attempt + '/' + MAX_RETRIES + ')...');
-      await window.veo3RadixClick(settingsBtn);
+      // Step 2: Open settings dropdown
+      const settingsBtn = window.veo3Selectors.settingsButton();
+      if (!settingsBtn) {
+        console.log('[MODE] Settings button not found, cannot switch mode');
+        return false;
+      }
+
+      let menuOpened = false;
+      const MAX_OPEN_RETRIES = 3;
+      for (let attempt = 1; attempt <= MAX_OPEN_RETRIES; attempt++) {
+        console.log('[MODE] Opening settings dropdown (attempt ' + attempt + '/' + MAX_OPEN_RETRIES + ')...');
+        await window.veo3RadixClick(settingsBtn);
+        await sleep(TIMING.STANDARD);
+
+        // Verify dropdown opened by checking for any tab
+        const anyTab = document.querySelector('[role="tab"][aria-controls*="-content-LANDSCAPE"]') ||
+                       window.veo3Selectors.getModeTab(targetMode);
+        if (anyTab) {
+          menuOpened = true;
+          console.log('[MODE] Settings dropdown opened');
+          break;
+        }
+
+        if (attempt < MAX_OPEN_RETRIES) {
+          console.log('[MODE] Dropdown did not open, retrying...');
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await sleep(TIMING.MEDIUM);
+        }
+      }
+
+      if (!menuOpened) {
+        console.log('[MODE] Settings dropdown did not open after ' + MAX_OPEN_RETRIES + ' attempts');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await sleep(TIMING.SHORT);
+        continue;
+      }
+
+      // Step 2b: Apply Landscape + x1 on first run (dropdown is already open)
+      if (!settingsApplied) {
+        const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
+        if (landscapeTab && landscapeTab.getAttribute('data-state') !== 'active') {
+          window.veo3ClickLogger?.logNativeClick(landscapeTab, 'SETTINGS', 'Landscape tab');
+          landscapeTab.click();
+          await sleep(TIMING.SHORT);
+          console.log('[MODE] Applied Landscape setting');
+        }
+
+        const count1Tab = document.querySelector(window.veo3Selectors.tabCount(1));
+        if (count1Tab && count1Tab.getAttribute('data-state') !== 'active') {
+          window.veo3ClickLogger?.logNativeClick(count1Tab, 'SETTINGS', 'x1 tab');
+          count1Tab.click();
+          await sleep(TIMING.SHORT);
+          console.log('[MODE] Applied x1 setting');
+        }
+
+        settingsApplied = true;
+      }
+
+      // Step 3: Switch mode tab if needed (IMAGE or VIDEO)
+      if (needsModeSwitch) {
+        const modeTab = window.veo3Selectors.getModeTab(targetMode);
+        if (!modeTab) {
+          console.log('[MODE] Mode tab not found for "' + targetMode + '"');
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await sleep(TIMING.SHORT);
+          continue;
+        }
+
+        if (modeTab.getAttribute('data-state') !== 'active') {
+          const tabLabel = modeTab.textContent.trim();
+          window.veo3ClickLogger?.logNativeClick(modeTab, 'MODE_SWITCH', targetMode + ' tab: "' + tabLabel + '"');
+          await window.veo3RadixClick(modeTab);
+
+          // Step 3b: Verify tab activation INSIDE the dropdown (before closing)
+          let tabActivated = false;
+          for (let check = 0; check < 15; check++) { // 15 * 200ms = 3s max
+            await sleep(200);
+            const freshTab = window.veo3Selectors.getModeTab(targetMode);
+            if (freshTab && freshTab.getAttribute('data-state') === 'active') {
+              tabActivated = true;
+              break;
+            }
+          }
+
+          if (tabActivated) {
+            console.log('[MODE] Tab activated (data-state=active) for ' + (targetIsImage ? 'IMAGE' : 'VIDEO'));
+          } else {
+            console.log('[MODE] Tab click did not activate after 3s, will retry');
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            await sleep(TIMING.SHORT);
+            continue;
+          }
+        } else {
+          console.log('[MODE] Mode tab already active, no click needed');
+        }
+      }
+
+      // Step 4: Close settings dropdown
+      const closeBtnRef = window.veo3Selectors.settingsButton();
+      if (closeBtnRef) {
+        await window.veo3RadixClick(closeBtnRef);
+      }
       await sleep(TIMING.STANDARD);
 
-      // Verify dropdown opened by checking for mode tabs
-      const modeTab = window.veo3Selectors.getModeTab(targetMode);
-      if (modeTab) {
-        menuOpened = true;
-        console.log('[MODE] Settings dropdown opened');
-        break;
+      // Step 5: Verify mode (only if we switched)
+      if (needsModeSwitch) {
+        let newMode = null;
+        let success = false;
+        const verifyStart = Date.now();
+        const verifyTimeout = TIMING.MODE_VERIFY_TIMEOUT || 5000;
+        while (Date.now() - verifyStart < verifyTimeout) {
+          newMode = window.veo3Selectors.detectCurrentMode();
+          success = (targetIsImage && newMode === 'imagem') || (!targetIsImage && newMode !== 'imagem');
+          if (success) break;
+          await sleep(TIMING.POLL_NORMAL);
+        }
+
+        if (success) {
+          console.log('[MODE] Mode switched to "' + targetMode + '" (verified: ' + newMode + ', took ' + (Date.now() - verifyStart) + 'ms)');
+          return true;
+        }
+
+        console.log('[MODE] Mode verification failed after ' + verifyTimeout + 'ms. Current: ' + (newMode || 'unknown') + ', Target: ' + targetMode);
+        continue;
       }
 
-      if (attempt < MAX_RETRIES) {
-        console.log('[MODE] Dropdown did not open, retrying...');
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        await sleep(TIMING.MEDIUM);
-      }
+      // No mode switch needed, just applied settings
+      console.log('[MODE] Settings applied, mode already correct (' + currentMode + ')');
+      return true;
     }
 
-    if (!menuOpened) {
-      console.log('[MODE] Settings dropdown did not open after ' + MAX_RETRIES + ' attempts');
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(TIMING.SHORT);
-      return false;
-    }
-
-    // Step 3: Find and click the correct mode tab (IMAGE or VIDEO)
-    const modeTab = window.veo3Selectors.getModeTab(targetMode);
-    if (!modeTab) {
-      console.log('[MODE] Mode tab not found for "' + targetMode + '"');
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(TIMING.SHORT);
-      return false;
-    }
-
-    if (modeTab.getAttribute('data-state') !== 'active') {
-      const tabLabel = modeTab.textContent.trim();
-      window.veo3ClickLogger?.logNativeClick(modeTab, 'MODE_SWITCH', targetMode + ' tab: "' + tabLabel + '"');
-      modeTab.click();
-      if (window.veo3Highlight) window.veo3Highlight(modeTab);
-      await sleep(TIMING.MEDIUM);
-      console.log('[MODE] Clicked ' + (targetIsImage ? 'IMAGE' : 'VIDEO') + ' tab: "' + tabLabel + '"');
-    } else {
-      console.log('[MODE] Tab already active, no click needed');
-    }
-
-    // Step 4: Close settings dropdown
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await sleep(TIMING.MEDIUM);
-
-    // Step 5: Verify mode changed by re-reading settings button text
-    const newMode = window.veo3Selectors.detectCurrentMode();
-    const success = (targetIsImage && newMode === 'imagem') || (!targetIsImage && newMode !== 'imagem');
-
-    if (success) {
-      console.log('[MODE] Mode switched successfully to "' + targetMode + '" (verified: ' + newMode + ')');
-    } else {
-      console.log('[MODE] Mode switch FAILED. Current: ' + (newMode || 'unknown') + ', Target: ' + targetMode);
-    }
-
-    return success;
+    console.log('[MODE] Mode switch FAILED after ' + MAX_SWITCH_ATTEMPTS + ' attempts');
+    return false;
   }
 
   // Detect current mode from settings button text (for batch pause timing)

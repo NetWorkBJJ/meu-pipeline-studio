@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Play, Pause, Square, AlertTriangle, Loader2 } from 'lucide-react'
+import { Play, Pause, Square, AlertTriangle, Loader2, Zap, CheckCircle2, XCircle } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import type { WebviewElement, FlowCommand } from '@/types/veo3'
+
+interface CdpTestStep {
+  step: string
+  success: boolean
+  detail?: string
+  error?: string
+}
 
 interface SidepanelControlsTabProps {
   webviewRef: React.RefObject<WebviewElement | null>
@@ -52,6 +59,44 @@ export function SidepanelControlsTab({
   const chapters = [...new Set(commands.map((c) => c.chapter))].sort((a, b) => a - b)
 
   const [isPreparingImages, setIsPreparingImages] = useState(false)
+  const [cdpTestRunning, setCdpTestRunning] = useState(false)
+  const [cdpTestResults, setCdpTestResults] = useState<CdpTestStep[] | null>(null)
+
+  const handleCdpTest = async (): Promise<void> => {
+    const wv = webviewRef.current
+    if (!wv) {
+      setCdpTestResults([{ step: 'Init', success: false, error: 'Webview not available' }])
+      return
+    }
+
+    setCdpTestRunning(true)
+    setCdpTestResults(null)
+
+    try {
+      // Step 1: Attach CDP to webview
+      const wcId = wv.getWebContentsId()
+      console.log(`[CDP Test] Attaching to webContentsId: ${wcId}`)
+      const attachResult = await window.api.cdpAttach(wcId)
+      if (!attachResult.success) {
+        setCdpTestResults([{ step: 'Attach', success: false, error: attachResult.error }])
+        return
+      }
+
+      // Step 2: Run POC test
+      const testResult = await window.api.cdpPocTest()
+      const results = (testResult.results || []) as CdpTestStep[]
+
+      if (!testResult.success && results.length === 0) {
+        setCdpTestResults([{ step: 'POC Test', success: false, error: testResult.error }])
+      } else {
+        setCdpTestResults(results)
+      }
+    } catch (err) {
+      setCdpTestResults([{ step: 'Error', success: false, error: String(err) }])
+    } finally {
+      setCdpTestRunning(false)
+    }
+  }
 
   const handleStart = async (): Promise<void> => {
     if (!tabId) {
@@ -358,6 +403,53 @@ export function SidepanelControlsTab({
           </div>
         </div>
       )}
+
+      {/* CDP POC Test */}
+      <div className="border-t border-border pt-3">
+        <span className="text-[11px] font-medium text-text-muted">CDP Test (POC)</span>
+        <button
+          onClick={handleCdpTest}
+          disabled={cdpTestRunning || isRunning}
+          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 py-1.5 text-[11px] font-medium text-indigo-400 transition-colors hover:bg-indigo-500/20 disabled:opacity-40"
+        >
+          {cdpTestRunning ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Testando CDP...
+            </>
+          ) : (
+            <>
+              <Zap className="h-3 w-3" />
+              Test CDP
+            </>
+          )}
+        </button>
+        {cdpTestResults && (
+          <div className="mt-2 space-y-1">
+            {cdpTestResults.map((r, i) => (
+              <div
+                key={i}
+                className={`flex items-start gap-1.5 rounded px-2 py-1 text-[10px] ${
+                  r.success
+                    ? 'bg-green-500/5 text-green-400'
+                    : 'bg-red-500/5 text-red-400'
+                }`}
+              >
+                {r.success ? (
+                  <CheckCircle2 className="mt-0.5 h-2.5 w-2.5 shrink-0" />
+                ) : (
+                  <XCircle className="mt-0.5 h-2.5 w-2.5 shrink-0" />
+                )}
+                <div>
+                  <span className="font-medium">{r.step}</span>
+                  {r.detail && <span className="ml-1 text-text-muted">{r.detail}</span>}
+                  {r.error && <span className="ml-1">{r.error}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

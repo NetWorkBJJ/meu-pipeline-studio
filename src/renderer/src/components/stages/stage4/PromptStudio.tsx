@@ -176,7 +176,7 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
                     platform:
                       a.suggested_media_type === 'video'
                         ? ('vo3' as const)
-                        : ('nano-banana-pro' as const)
+                        : ('nano-banana-2' as const)
                   })
                 }
               }

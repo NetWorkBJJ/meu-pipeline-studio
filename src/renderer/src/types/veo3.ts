@@ -106,6 +106,7 @@ export type WebviewElement = HTMLElement & {
   setZoomFactor: (factor: number) => void
   getZoomFactor: () => number
   openDevTools: () => void
+  getWebContentsId: () => number
   addEventListener: (event: string, handler: (...args: unknown[]) => void) => void
   removeEventListener: (event: string, handler: (...args: unknown[]) => void) => void
 }

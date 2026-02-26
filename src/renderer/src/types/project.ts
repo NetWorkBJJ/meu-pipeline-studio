@@ -1,7 +1,7 @@
 // Director types
 export type SequenceMode = 'video-only' | 'image-only' | 'alternating' | 'ai-decided'
 export type GenerationStatus = 'pending' | 'generated' | 'imported' | 'failed' | 'skipped'
-export type MediaPlatform = 'vo3' | 'nano-banana-pro'
+export type MediaPlatform = 'vo3' | 'nano-banana-2'
 
 export interface DirectorConfig {
   sequenceMode: SequenceMode
@@ -145,6 +145,15 @@ export interface MediaPreset {
   defaultType: 'video' | 'photo'
   defaultDurationMs: number
   transitionMs: number
+}
+
+export interface ClickUpTaskRef {
+  taskId: string
+  taskName: string
+  listId: string
+  listName: string
+  url: string
+  importedAt: number
 }
 
 export interface CapCutProjectInfo {

@@ -104,7 +104,7 @@ export function SceneCard({
               const mediaType = e.target.value as 'video' | 'photo'
               onUpdate(scene.id, {
                 mediaType,
-                platform: mediaType === 'video' ? 'vo3' : 'nano-banana-pro'
+                platform: mediaType === 'video' ? 'vo3' : 'nano-banana-2'
               })
             }}
             onClick={(e) => e.stopPropagation()}

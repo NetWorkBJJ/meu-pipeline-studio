@@ -12,7 +12,8 @@ import type {
   CapCutProjectInfo,
   DirectorConfig,
   DirectorProgress,
-  CharacterRef
+  CharacterRef,
+  ClickUpTaskRef
 } from '@/types/project'
 
 interface RecentProject {
@@ -119,6 +120,7 @@ interface ProjectState {
   directorConfig: DirectorConfig
   directorProgress: DirectorProgress
   characterRefs: CharacterRef[]
+  clickUpTaskRef: ClickUpTaskRef | null
 
   setCapCutDraftPath: (path: string | null) => void
   setRawScript: (script: string) => void
@@ -147,6 +149,7 @@ interface ProjectState {
   bulkUpdateScenes: (updates: Array<{ id: string; updates: Partial<Scene> }>) => void
   setDirectorProgress: (progress: Partial<DirectorProgress>) => void
   setCharacterRefs: (refs: CharacterRef[]) => void
+  setClickUpTaskRef: (ref: ClickUpTaskRef | null) => void
   loadDirectorState: (snapshot: DirectorStateSnapshot) => void
 }
 
@@ -199,7 +202,8 @@ const initialState = {
     batchResults: [],
     startedAt: null
   } as DirectorProgress,
-  characterRefs: [] as CharacterRef[]
+  characterRefs: [] as CharacterRef[],
+  clickUpTaskRef: null as ClickUpTaskRef | null
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -433,6 +437,9 @@ export const useProjectStore = create<ProjectState>()(
       },
       setCharacterRefs: (refs) => {
         set({ characterRefs: refs })
+      },
+      setClickUpTaskRef: (ref) => {
+        set({ clickUpTaskRef: ref })
       },
       loadDirectorState: (snapshot) => {
         // Migrate scenes: ensure chapter is always a number (old snapshots may lack it)

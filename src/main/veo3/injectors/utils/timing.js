@@ -24,9 +24,10 @@
     BATCH_PAUSE_VIDEO: 60000,
     BATCH_PAUSE_IMAGE: 30000,
     BETWEEN_COMMANDS: 2000,
-    AFTER_SUBMIT: 1000,
+    AFTER_SUBMIT: 500,
     AFTER_MODE_SWITCH: 1000,
-    AFTER_FILL: 500
+    MODE_VERIFY_TIMEOUT: 5000,
+    AFTER_FILL: 300
   };
 
   function sleep(ms) {
@@ -212,18 +213,36 @@
     if (editor) {
       window.veo3Debug?.debug('DOM', 'Using Slate editor (fallback)');
       editor.focus();
-      await sleep(200);
+      await sleep(150);
 
-      // Clear existing content
-      document.execCommand('selectAll', false, null);
-      await sleep(100);
-      document.execCommand('delete', false, null);
-      await sleep(200);
+      // Clear any existing text first (from failed previous submission).
+      // The clear button ("Apagar comando") is only visible when editor has content.
+      const hasExistingText = editor.querySelector('[data-slate-string="true"]');
+      if (hasExistingText && hasExistingText.textContent.trim().length > 0) {
+        console.log('[fillSlateEditor] Clearing existing text before fill');
+        const clearBtn = window.veo3Selectors.clearButton();
+        if (clearBtn) {
+          await window.veo3RobustClick(clearBtn);
+          await sleep(TIMING.SHORT);
+          editor.focus();
+          await sleep(150);
+        }
+      }
+
+      // DO NOT use selectAll or Selection API - both crash Slate's selectionchange handler.
+      // selectAll selects the placeholder span (contenteditable=false) which isn't in Slate's
+      // WeakMap. The handler runs via setTimeout, and by then React may have re-rendered
+      // the DOM nodes, making old references stale -> "Cannot resolve a Slate node".
+      //
+      // After focus(), Slate's onFocusIn sets a valid internal selection (start of doc).
+      // execCommand('insertText') fires a trusted beforeinput event. Slate intercepts it
+      // and calls Transforms.insertText(editor, text) using its OWN internal selection,
+      // not the browser's. This correctly updates the model -> React re-renders -> submit works.
 
       let filled = false;
 
-      // Strategy 2a: execCommand('insertText') - triggers beforeinput event that Slate handles natively.
-      // More reliable than clipboard paste because it goes through the browser's standard input path.
+      // Strategy 2a: execCommand('insertText') at cursor position (no selectAll needed).
+      // Slate's beforeinput handler intercepts and uses its internal selection.
       document.execCommand('insertText', false, text);
       await sleep(TIMING.AFTER_FILL);
 
@@ -370,67 +389,65 @@
   async function submitWithRetry() {
     window.veo3Debug?.info('SUBMIT', 'Starting retry chain');
 
-    // Level 0: Radix/Pointer click (pointerdown/pointerup/click)
-    // Google Flow uses React/Radix - the settings button only works with pointerdown,
-    // and the submit button may have the same requirement.
+    // Level 0: Simple .click() (nardoto-flow pattern - most reliable for standard React buttons)
     const submitBtn0 = window.veo3Selectors?.submitButton?.();
-    window.veo3Debug?.debug('SUBMIT', 'Level 0: radixClick (pointerdown)', { found: !!submitBtn0 });
-    if (submitBtn0 && window.veo3RadixClick) {
-      await window.veo3RadixClick(submitBtn0);
+    window.veo3Debug?.debug('SUBMIT', 'Level 0: simple click', { found: !!submitBtn0 });
+    if (submitBtn0) {
+      if (window.veo3Highlight) window.veo3Highlight(submitBtn0);
+      window.veo3ClickLogger?.logNativeClick(submitBtn0, 'SUBMIT', 'simple click');
+      submitBtn0.click();
       await sleep(TIMING.AFTER_SUBMIT);
 
-      if (await checkSubmissionSuccess(5000)) return true;
-      window.veo3Debug?.debug('SUBMIT', 'Level 0 failed, trying robust click');
+      if (await checkSubmissionSuccess(3000)) return true;
+      window.veo3Debug?.debug('SUBMIT', 'Level 0 failed, trying radixClick');
     }
 
-    // Level 1: Robust click (click + mousedown/mouseup/click triple)
-    const submitBtn = window.veo3Selectors?.submitButton?.();
-    window.veo3Debug?.debug('SUBMIT', 'Level 1: robust click', { found: !!submitBtn });
-    if (submitBtn) {
+    // Level 1: Radix/Pointer click (pointerdown/pointerup/click)
+    // Google Flow uses React/Radix - settings button only works with pointerdown.
+    const submitBtn1 = window.veo3Selectors?.submitButton?.();
+    window.veo3Debug?.debug('SUBMIT', 'Level 1: radixClick (pointerdown)', { found: !!submitBtn1 });
+    if (submitBtn1 && window.veo3RadixClick) {
+      await window.veo3RadixClick(submitBtn1);
+      await sleep(TIMING.AFTER_SUBMIT);
+
+      if (await checkSubmissionSuccess(3000)) return true;
+      window.veo3Debug?.debug('SUBMIT', 'Level 1 failed, trying robust click');
+    }
+
+    // Level 2: Robust click (click + mousedown/mouseup/click triple)
+    const submitBtn2 = window.veo3Selectors?.submitButton?.();
+    window.veo3Debug?.debug('SUBMIT', 'Level 2: robust click', { found: !!submitBtn2 });
+    if (submitBtn2) {
       if (window.veo3RobustClick) {
-        await window.veo3RobustClick(submitBtn, { sendEnter: false });
+        await window.veo3RobustClick(submitBtn2, { sendEnter: false });
       } else if (window.veo3ClickFeedback) {
-        await window.veo3ClickFeedback.clickWithFeedback(submitBtn);
+        await window.veo3ClickFeedback.clickWithFeedback(submitBtn2);
       } else {
-        submitBtn.click();
+        submitBtn2.click();
       }
       await sleep(TIMING.AFTER_SUBMIT);
 
-      if (await checkSubmissionSuccess(5000)) return true;
-      window.veo3Debug?.debug('SUBMIT', 'Level 1 failed, trying robust click with Enter');
+      if (await checkSubmissionSuccess(3000)) return true;
+      window.veo3Debug?.debug('SUBMIT', 'Level 2 failed, trying robust click with Enter');
     }
 
-    // Level 2: Robust click + focus + Enter key on the submit button
-    const submitBtn2 = window.veo3Selectors?.submitButton?.();
-    window.veo3Debug?.debug('SUBMIT', 'Level 2: robust click + Enter', { found: !!submitBtn2 });
-    if (submitBtn2) {
+    // Level 3: Robust click + focus + Enter key on the submit button
+    const submitBtn3 = window.veo3Selectors?.submitButton?.();
+    window.veo3Debug?.debug('SUBMIT', 'Level 3: robust click + Enter', { found: !!submitBtn3 });
+    if (submitBtn3) {
       if (window.veo3RobustClick) {
-        await window.veo3RobustClick(submitBtn2, { sendEnter: true, focusFirst: true });
+        await window.veo3RobustClick(submitBtn3, { sendEnter: true, focusFirst: true });
       } else {
-        submitBtn2.focus();
-        submitBtn2.click();
+        submitBtn3.focus();
+        submitBtn3.click();
         await sleep(50);
-        submitBtn2.dispatchEvent(new KeyboardEvent('keydown', {
+        submitBtn3.dispatchEvent(new KeyboardEvent('keydown', {
           key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
         }));
       }
       await sleep(TIMING.AFTER_SUBMIT);
 
-      if (await checkSubmissionSuccess(5000)) return true;
-      window.veo3Debug?.debug('SUBMIT', 'Level 2 failed, trying form submit');
-    }
-
-    // Level 3: Try form submit
-    const form = document.querySelector('form');
-    window.veo3Debug?.debug('SUBMIT', 'Level 3: form submit', { found: !!form });
-    if (form) {
-      try {
-        form.requestSubmit?.() || form.submit();
-        await sleep(TIMING.AFTER_SUBMIT);
-        if (await checkSubmissionSuccess(5000)) return true;
-      } catch (e) {
-        window.veo3Debug?.warn('SUBMIT', 'Form submit error: ' + e.message);
-      }
+      if (await checkSubmissionSuccess(3000)) return true;
       window.veo3Debug?.debug('SUBMIT', 'Level 3 failed, trying Enter key on editor');
     }
 
@@ -455,7 +472,7 @@
     if (await checkSubmissionSuccess(5000)) return true;
     window.veo3Debug?.debug('SUBMIT', 'Level 4 failed, final retry');
 
-    // Level 5: Final retry - robust click submit button one more time
+    // Level 5: Final retry - robust click + Enter one more time
     const retryBtn = window.veo3Selectors?.submitButton?.();
     window.veo3Debug?.debug('SUBMIT', 'Level 5: final robust retry', { found: !!retryBtn });
     if (retryBtn) {

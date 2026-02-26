@@ -314,7 +314,57 @@ const api = {
     const handler = (_event: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('ai33:task-progress', handler)
     return () => ipcRenderer.removeListener('ai33:task-progress', handler)
-  }
+  },
+
+  // ClickUp
+  clickupSaveApiKey: (apiKey: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:save-api-key', apiKey),
+  clickupHasApiKey: (): Promise<boolean> => ipcRenderer.invoke('clickup:has-api-key'),
+  clickupDeleteApiKey: (): Promise<unknown> => ipcRenderer.invoke('clickup:delete-api-key'),
+  clickupGetTeams: (): Promise<unknown> => ipcRenderer.invoke('clickup:get-teams'),
+  clickupGetSpaces: (teamId: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-spaces', teamId),
+  clickupGetFolders: (spaceId: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-folders', spaceId),
+  clickupGetFolderlessLists: (spaceId: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-folderless-lists', spaceId),
+  clickupGetLists: (folderId: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-lists', folderId),
+  clickupGetTasks: (params: { listId: string; page?: number }): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-tasks', params),
+  clickupGetTask: (taskId: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-task', taskId),
+  clickupDownloadAttachment: (params: {
+    url: string
+    destDir?: string
+    fileName?: string
+  }): Promise<unknown> => ipcRenderer.invoke('clickup:download-attachment', params),
+  clickupDownloadTaskAttachments: (params: {
+    attachments: Array<{ url: string; fileName: string }>
+    destDir?: string
+  }): Promise<unknown> => ipcRenderer.invoke('clickup:download-task-attachments', params),
+  clickupReadTextFile: (filePath: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:read-text-file', filePath),
+  clickupTestConnection: (): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:test-connection'),
+
+  // CDP (Chrome DevTools Protocol) automation
+  cdpAttach: (webContentsId: number): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:attach', webContentsId),
+  cdpDetach: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('cdp:detach'),
+  cdpClickElement: (selector: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:click-element', selector),
+  cdpType: (text: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:type', text),
+  cdpPress: (key: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:press', key),
+  cdpEvaluate: (expression: string): Promise<{ success: boolean; result?: unknown; error?: string }> =>
+    ipcRenderer.invoke('cdp:evaluate', expression),
+  cdpGetRect: (selector: string): Promise<{ success: boolean; rect?: unknown; error?: string }> =>
+    ipcRenderer.invoke('cdp:get-rect', selector),
+  cdpPocTest: (): Promise<{ success: boolean; results?: unknown[]; error?: string }> =>
+    ipcRenderer.invoke('cdp:poc-test')
 }
 
 if (process.contextIsolated) {

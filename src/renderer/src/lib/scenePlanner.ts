@@ -128,7 +128,7 @@ function getMediaType(
 }
 
 function getPlatform(mediaType: 'video' | 'photo'): MediaPlatform {
-  return mediaType === 'video' ? 'vo3' : 'nano-banana-pro'
+  return mediaType === 'video' ? 'vo3' : 'nano-banana-2'
 }
 
 function getDurationRange(

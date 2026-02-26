@@ -116,7 +116,7 @@ export function determineFlowMode(
   scene: Scene,
   matchedCharacters: FlowCharacterImageRef[]
 ): FlowCreationMode {
-  if (scene.platform === 'nano-banana-pro') {
+  if (scene.platform === 'nano-banana-2') {
     return 'imagem'
   }
 

@@ -521,8 +521,8 @@ export function getPlatformDescription(platform: string): string {
   switch (platform) {
     case 'vo3':
       return 'Google VO3 (video generation, 6-8 seconds)'
-    case 'nano-banana-pro':
-      return 'Nano Banana Pro (image generation)'
+    case 'nano-banana-2':
+      return 'Nano Banana 2 (image generation)'
     default:
       return platform
   }
@@ -532,8 +532,8 @@ export function getPlatformName(platform: string): string {
   switch (platform) {
     case 'vo3':
       return 'Google VO3'
-    case 'nano-banana-pro':
-      return 'Nano Banana Pro'
+    case 'nano-banana-2':
+      return 'Nano Banana 2'
     default:
       return platform
   }

@@ -6,6 +6,8 @@ import { registerTtsHandlers } from './tts.handlers'
 import { registerDirectorHandlers } from './director.handlers'
 import { registerVeo3Handlers } from './veo3.handlers'
 import { registerAi33Handlers } from './ai33.handlers'
+import { registerCdpHandlers } from './cdp.handlers'
+import { registerClickUpHandlers } from './clickup.handlers'
 
 export function registerAllHandlers(): void {
   registerCapCutHandlers()
@@ -16,4 +18,6 @@ export function registerAllHandlers(): void {
   registerDirectorHandlers()
   registerVeo3Handlers()
   registerAi33Handlers()
+  registerCdpHandlers()
+  registerClickUpHandlers()
 }
