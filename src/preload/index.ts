@@ -192,6 +192,8 @@ const api = {
     ipcRenderer.invoke('veo3:set-download-path', folderPath),
   veo3GetDownloadPath: (): Promise<string> =>
     ipcRenderer.invoke('veo3:get-download-path'),
+  veo3ClearPartition: (partition: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('veo3:clear-partition', partition),
   onVeo3DownloadComplete: (callback: (data: unknown) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('veo3:download-complete', handler)

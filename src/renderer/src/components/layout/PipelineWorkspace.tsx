@@ -27,8 +27,6 @@ function StageContent(): React.JSX.Element {
       return <Stage3Sync />
     case 4:
       return <Stage4Director />
-    case 5:
-      return <Stage5Veo3 />
     default:
       return <Stage1Script />
   }
@@ -129,21 +127,27 @@ export function PipelineWorkspace(): React.JSX.Element {
         </motion.div>
       )}
 
-      {/* Loading state */}
-      {!projectLoaded && capCutDraftPath && (
+      {/* VEO3 stage: always mounted to preserve webviews, independent of project loading */}
+      <div
+        className={`flex-1 overflow-hidden ${isVeo3Stage ? '' : 'hidden'}`}
+      >
+        <Stage5Veo3 />
+      </div>
+
+      {/* Loading state (stages 1-4 only) */}
+      {!isVeo3Stage && !projectLoaded && capCutDraftPath && (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="mr-3 h-5 w-5 animate-spin text-primary" />
           <span className="text-sm text-text-muted">Carregando projeto...</span>
         </div>
       )}
 
-      {/* Main content - only show when loaded or no draft path */}
-      {(projectLoaded || !capCutDraftPath) && (
-        <main className={`flex-1 ${isVeo3Stage ? 'overflow-hidden' : 'overflow-auto p-6'}`}>
+      {/* Stages 1-4: normal animated transitions, only when loaded */}
+      {!isVeo3Stage && (projectLoaded || !capCutDraftPath) && (
+        <main className="flex-1 overflow-auto p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStage}
-              className={isVeo3Stage ? 'h-full' : undefined}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}

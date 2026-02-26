@@ -1,16 +1,8 @@
 import { useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { useVeo3Store } from '@/stores/useVeo3Store'
-import type { WebviewElement } from '@/types/veo3'
+import type { WebviewElement, Veo3ContentMessage } from '@/types/veo3'
 
 const VEO3_URL = 'https://labs.google/fx/pt/tools/flow'
-
-const LOGIN_SUCCESS_PATTERNS = [
-  '/loginStatus',
-  '/login_success',
-  '/web_login_success',
-  '/callback',
-  '/oauth/callback'
-]
 
 const AUTH_DOMAINS = [
   'accounts.google.com',
@@ -22,14 +14,30 @@ export interface Veo3BrowserHandle {
   getWebview: () => WebviewElement | null
 }
 
+export interface WebviewState {
+  isLoading: boolean
+  currentUrl: string
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
 interface Veo3BrowserProps {
+  partition: string
+  visible: boolean
   onReady?: () => void
+  onStateChange?: (state: Partial<WebviewState>) => void
+  onLoginDetected?: () => void
+  onContentMessage?: (msg: Veo3ContentMessage) => void
 }
 
 export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
-  function Veo3Browser({ onReady }, ref) {
+  function Veo3Browser(
+    { partition, visible, onReady, onStateChange, onLoginDetected, onContentMessage },
+    ref
+  ) {
     const webviewRef = useRef<WebviewElement | null>(null)
-    const { zoomFactor, setWebviewState, handleContentMessage } = useVeo3Store()
+    const wasOnAuthDomain = useRef(false)
+    const { zoomFactor } = useVeo3Store()
 
     useImperativeHandle(ref, () => ({
       getWebview: () => webviewRef.current
@@ -43,7 +51,7 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
 
         const handleDomReady = (): void => {
           wv.setZoomFactor(zoomFactor)
-          setWebviewState({
+          onStateChange?.({
             isLoading: false,
             currentUrl: wv.getURL(),
             canGoBack: wv.canGoBack(),
@@ -53,11 +61,11 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
         }
 
         const handleDidStartLoading = (): void => {
-          setWebviewState({ isLoading: true })
+          onStateChange?.({ isLoading: true })
         }
 
         const handleDidStopLoading = (): void => {
-          setWebviewState({
+          onStateChange?.({
             isLoading: false,
             currentUrl: wv.getURL(),
             canGoBack: wv.canGoBack(),
@@ -67,26 +75,20 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
 
         const handleDidNavigate = (_e: unknown): void => {
           const navUrl = wv.getURL()
-          setWebviewState({
+          onStateChange?.({
             currentUrl: navUrl,
             canGoBack: wv.canGoBack(),
             canGoForward: wv.canGoForward()
           })
 
-          // Detect login success and redirect back to Flow
-          const isLoginSuccess = LOGIN_SUCCESS_PATTERNS.some((pattern) =>
-            navUrl.includes(pattern)
-          )
-          if (isLoginSuccess) {
-            setTimeout(() => {
-              wv.src = VEO3_URL
-            }, 1000)
+          const isAuthDomain = AUTH_DOMAINS.some((d) => navUrl.includes(d))
+          if (isAuthDomain) {
+            wasOnAuthDomain.current = true
           }
 
-          // Detect if we are on an auth domain
-          const isAuthDomain = AUTH_DOMAINS.some((d) => navUrl.includes(d))
-          if (!isAuthDomain && navUrl.includes('labs.google')) {
-            setWebviewState({ isLoggedIn: true })
+          if (!isAuthDomain && navUrl.includes('labs.google') && wasOnAuthDomain.current) {
+            onLoginDetected?.()
+            wasOnAuthDomain.current = false
           }
         }
 
@@ -97,7 +99,7 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
           try {
             const data = JSON.parse(event.message)
             if (data.type === 'CONTENT_TO_SIDEPANEL' || data.action) {
-              handleContentMessage(data)
+              onContentMessage?.(data as Veo3ContentMessage)
             }
           } catch {
             // Not JSON, ignore
@@ -111,10 +113,9 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
         wv.addEventListener('did-navigate-in-page', handleDidNavigate)
         wv.addEventListener('console-message', handleConsoleMessage)
       },
-      [zoomFactor, setWebviewState, handleContentMessage, onReady]
+      [zoomFactor, onReady, onStateChange, onLoginDetected, onContentMessage]
     )
 
-    // Cleanup on unmount
     useEffect(() => {
       return () => {
         webviewRef.current = null
@@ -125,9 +126,13 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
       <webview
         ref={setWebviewElement as never}
         src={VEO3_URL}
-        partition="persist:veo3"
+        partition={partition}
         allowpopups={true}
-        style={{ width: '100%', height: '100%' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: visible ? 'flex' : 'none'
+        }}
       />
     )
   }

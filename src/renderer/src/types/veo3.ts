@@ -15,12 +15,28 @@ export interface Veo3DownloadItem {
   completedAt: number
 }
 
-export interface GoogleAccount {
+export interface Veo3Account {
   id: string
   name: string
-  email: string
-  avatarUrl?: string
+  description: string
   partition: string
+  color: string
+  createdAt: number
+  lastUsed: number | null
+}
+
+export interface Veo3Tab {
+  id: string
+  accountId: string
+}
+
+export interface TabPanelState {
+  sidepanelVisible: boolean
+  automationStatus: Veo3AutomationStatus
+  currentPromptIndex: number
+  totalPrompts: number
+  promptsProcessed: number
+  elapsedMs: number
 }
 
 export interface Veo3PromptItem {

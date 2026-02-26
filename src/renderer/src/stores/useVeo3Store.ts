@@ -1,128 +1,227 @@
 import { create } from 'zustand'
-import type { Veo3AutomationStatus, Veo3DownloadItem, GoogleAccount, Veo3ContentMessage } from '@/types/veo3'
+import { persist } from 'zustand/middleware'
+import type {
+  Veo3DownloadItem,
+  Veo3Account,
+  Veo3Tab
+} from '@/types/veo3'
 
-interface Veo3State {
-  // Webview
-  isLoading: boolean
-  currentUrl: string
-  canGoBack: boolean
-  canGoForward: boolean
+const MAX_ACCOUNTS = 5
+
+const ACCOUNT_COLORS = [
+  '#4285F4', // Google Blue
+  '#EA4335', // Google Red
+  '#34A853', // Google Green
+  '#FBBC04', // Google Yellow
+  '#8B5CF6' // Purple
+]
+
+// ─── Account Store (persisted) ───────────────────────────────────────
+
+interface Veo3AccountState {
+  accounts: Veo3Account[]
+  defaultAccountId: string | null
+
+  addAccount: (name: string, description?: string, color?: string) => Veo3Account | null
+  updateAccount: (id: string, updates: Partial<Pick<Veo3Account, 'name' | 'description' | 'color'>>) => void
+  removeAccount: (id: string) => void
+  setDefaultAccount: (id: string) => void
+  touchAccount: (id: string) => void
+  getNextPartition: () => string | null
+}
+
+export const useVeo3AccountStore = create<Veo3AccountState>()(
+  persist(
+    (set, get) => ({
+      accounts: [],
+      defaultAccountId: null,
+
+      addAccount: (name, description = '', color) => {
+        const state = get()
+        if (state.accounts.length >= MAX_ACCOUNTS) return null
+
+        const partition = get().getNextPartition()
+        if (!partition) return null
+
+        const usedColors = state.accounts.map((a) => a.color)
+        const autoColor = color || ACCOUNT_COLORS.find((c) => !usedColors.includes(c)) || ACCOUNT_COLORS[0]
+
+        const account: Veo3Account = {
+          id: `veo3_acc_${Date.now()}`,
+          name,
+          description,
+          partition,
+          color: autoColor,
+          createdAt: Date.now(),
+          lastUsed: null
+        }
+
+        set((s) => {
+          const updated = [...s.accounts, account]
+          return {
+            accounts: updated,
+            defaultAccountId: s.defaultAccountId ?? account.id
+          }
+        })
+
+        return account
+      },
+
+      updateAccount: (id, updates) => {
+        set((s) => ({
+          accounts: s.accounts.map((a) => (a.id === id ? { ...a, ...updates } : a))
+        }))
+      },
+
+      removeAccount: (id) => {
+        set((s) => {
+          const filtered = s.accounts.filter((a) => a.id !== id)
+          const newDefault =
+            s.defaultAccountId === id ? (filtered[0]?.id ?? null) : s.defaultAccountId
+          return { accounts: filtered, defaultAccountId: newDefault }
+        })
+      },
+
+      setDefaultAccount: (id) => {
+        set({ defaultAccountId: id })
+      },
+
+      touchAccount: (id) => {
+        set((s) => ({
+          accounts: s.accounts.map((a) =>
+            a.id === id ? { ...a, lastUsed: Date.now() } : a
+          )
+        }))
+      },
+
+      getNextPartition: () => {
+        const used = get().accounts.map((a) => a.partition)
+        for (let i = 1; i <= MAX_ACCOUNTS; i++) {
+          const name = `persist:veo3-account-${i}`
+          if (!used.includes(name)) return name
+        }
+        return null
+      }
+    }),
+    {
+      name: 'veo3-accounts',
+      partialize: (state) => ({
+        accounts: state.accounts,
+        defaultAccountId: state.defaultAccountId
+      })
+    }
+  )
+)
+
+// ─── Tab Store (persisted) ───────────────────────────────────────────
+
+interface Veo3TabState {
+  tabs: Veo3Tab[]
+  activeTabId: string | null
+
+  openTab: (accountId: string) => Veo3Tab
+  closeTab: (tabId: string) => void
+  setActiveTab: (tabId: string) => void
+  reorderTabs: (reordered: Veo3Tab[]) => void
+  isAccountOpen: (accountId: string) => boolean
+  getActiveTab: () => Veo3Tab | null
+  resetTabs: () => void
+}
+
+export const useVeo3TabStore = create<Veo3TabState>()(
+  persist(
+    (set, get) => ({
+      tabs: [],
+      activeTabId: null,
+
+      openTab: (accountId) => {
+        const tab: Veo3Tab = {
+          id: `veo3_tab_${Date.now()}`,
+          accountId
+        }
+
+        set((s) => ({
+          tabs: [...s.tabs, tab],
+          activeTabId: tab.id
+        }))
+
+        return tab
+      },
+
+      closeTab: (tabId) => {
+        set((s) => {
+          const filtered = s.tabs.filter((t) => t.id !== tabId)
+          let newActive = s.activeTabId
+          if (s.activeTabId === tabId) {
+            newActive = filtered.length > 0 ? filtered[filtered.length - 1].id : null
+          }
+          return { tabs: filtered, activeTabId: newActive }
+        })
+      },
+
+      setActiveTab: (tabId) => {
+        set({ activeTabId: tabId })
+      },
+
+      reorderTabs: (reordered) => {
+        set({ tabs: reordered })
+      },
+
+      isAccountOpen: (accountId) => {
+        return get().tabs.some((t) => t.accountId === accountId)
+      },
+
+      getActiveTab: () => {
+        const { tabs, activeTabId } = get()
+        return tabs.find((t) => t.id === activeTabId) ?? null
+      },
+
+      resetTabs: () => {
+        set({ tabs: [], activeTabId: null })
+      }
+    }),
+    {
+      name: 'veo3-tabs',
+      partialize: (state) => ({
+        tabs: state.tabs,
+        activeTabId: state.activeTabId
+      })
+    }
+  )
+)
+
+// ─── UI Store (not persisted - global settings) ─────────────────────
+
+interface Veo3UIState {
   zoomFactor: number
-  isLoggedIn: boolean
 
-  // Sidepanel
-  sidepanelVisible: boolean
-
-  // Automation
-  automationStatus: Veo3AutomationStatus
-  currentPromptIndex: number
-  totalPrompts: number
-  promptsProcessed: number
-  elapsedMs: number
-
-  // Downloads
+  // Downloads (global, shared across all tabs)
   downloadPath: string
   autoDownload: boolean
   downloads: Veo3DownloadItem[]
 
-  // Accounts
-  accounts: GoogleAccount[]
-  activeAccountIndex: number
-
   // Actions
-  setWebviewState: (state: Partial<Pick<Veo3State, 'isLoading' | 'currentUrl' | 'canGoBack' | 'canGoForward' | 'zoomFactor' | 'isLoggedIn'>>) => void
-  setSidepanelVisible: (visible: boolean) => void
-  toggleSidepanel: () => void
-  setAutomationStatus: (status: Veo3AutomationStatus) => void
-  handleContentMessage: (msg: Veo3ContentMessage) => void
+  setZoomFactor: (factor: number) => void
   addDownload: (item: Veo3DownloadItem) => void
   setDownloadPath: (path: string) => void
   setAutoDownload: (auto: boolean) => void
-  addAccount: (account: GoogleAccount) => void
-  setActiveAccount: (index: number) => void
   reset: () => void
 }
 
-const initialState = {
-  isLoading: false,
-  currentUrl: '',
-  canGoBack: false,
-  canGoForward: false,
+const uiInitialState = {
   zoomFactor: 0.8,
-  isLoggedIn: false,
-  sidepanelVisible: true,
-  automationStatus: 'idle' as Veo3AutomationStatus,
-  currentPromptIndex: 0,
-  totalPrompts: 0,
-  promptsProcessed: 0,
-  elapsedMs: 0,
   downloadPath: '',
   autoDownload: true,
-  downloads: [] as Veo3DownloadItem[],
-  accounts: [] as GoogleAccount[],
-  activeAccountIndex: 0
+  downloads: [] as Veo3DownloadItem[]
 }
 
-export const useVeo3Store = create<Veo3State>((set) => ({
-  ...initialState,
+export const useVeo3Store = create<Veo3UIState>((set) => ({
+  ...uiInitialState,
 
-  setWebviewState: (partial) => set(partial),
-
-  setSidepanelVisible: (visible) => set({ sidepanelVisible: visible }),
-
-  toggleSidepanel: () => set((state) => ({ sidepanelVisible: !state.sidepanelVisible })),
-
-  setAutomationStatus: (status) => set({ automationStatus: status }),
-
-  handleContentMessage: (msg) => {
-    const { action, data } = msg
-    if (!action) return
-
-    switch (action) {
-      case 'AUTOMATION_STARTED':
-        set({ automationStatus: 'running' })
-        break
-      case 'AUTOMATION_STOPPED':
-        set({ automationStatus: 'stopped' })
-        break
-      case 'AUTOMATION_PAUSED':
-        set({ automationStatus: 'paused' })
-        break
-      case 'AUTOMATION_RESUMED':
-        set({ automationStatus: 'running' })
-        break
-      case 'AUTOMATION_COMPLETE':
-        set({ automationStatus: 'completed' })
-        break
-      case 'AUTOMATION_PROGRESS': {
-        const progress = data as { current?: number; total?: number; elapsed?: number } | undefined
-        if (progress) {
-          set({
-            currentPromptIndex: progress.current ?? 0,
-            totalPrompts: progress.total ?? 0,
-            elapsedMs: progress.elapsed ?? 0,
-            promptsProcessed: progress.current ?? 0
-          })
-        }
-        break
-      }
-      case 'LOGIN_DETECTED':
-        set({ isLoggedIn: true })
-        break
-    }
-  },
-
-  addDownload: (item) =>
-    set((state) => ({ downloads: [item, ...state.downloads] })),
-
+  setZoomFactor: (factor) => set({ zoomFactor: factor }),
+  addDownload: (item) => set((s) => ({ downloads: [item, ...s.downloads] })),
   setDownloadPath: (path) => set({ downloadPath: path }),
-
   setAutoDownload: (auto) => set({ autoDownload: auto }),
 
-  addAccount: (account) =>
-    set((state) => ({ accounts: [...state.accounts, account] })),
-
-  setActiveAccount: (index) => set({ activeAccountIndex: index }),
-
-  reset: () => set(initialState)
+  reset: () => set(uiInitialState)
 }))

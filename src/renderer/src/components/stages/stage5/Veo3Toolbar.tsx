@@ -7,10 +7,12 @@ import {
   PanelRightOpen,
   ZoomIn,
   ZoomOut,
-  Bug
+  Bug,
+  Users
 } from 'lucide-react'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import type { WebviewElement } from '@/types/veo3'
+import type { WebviewState } from './Veo3Browser'
 
 const VEO3_HOME_URL = 'https://labs.google/fx/pt/tools/flow'
 
@@ -18,19 +20,22 @@ const ZOOM_LEVELS = [0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 1.0]
 
 interface Veo3ToolbarProps {
   webviewRef: { current: WebviewElement | null }
+  webviewState: WebviewState
+  sidepanelVisible: boolean
+  onToggleSidepanel: () => void
+  onOpenAccountManager: () => void
 }
 
-export function Veo3Toolbar({ webviewRef }: Veo3ToolbarProps): React.JSX.Element {
-  const {
-    isLoading,
-    currentUrl,
-    canGoBack,
-    canGoForward,
-    zoomFactor,
-    sidepanelVisible,
-    toggleSidepanel,
-    setWebviewState
-  } = useVeo3Store()
+export function Veo3Toolbar({
+  webviewRef,
+  webviewState,
+  sidepanelVisible,
+  onToggleSidepanel,
+  onOpenAccountManager
+}: Veo3ToolbarProps): React.JSX.Element {
+  const { zoomFactor, setZoomFactor } = useVeo3Store()
+
+  const { isLoading, currentUrl, canGoBack, canGoForward } = webviewState
 
   const handleBack = (): void => {
     webviewRef.current?.goBack()
@@ -59,7 +64,7 @@ export function Veo3Toolbar({ webviewRef }: Veo3ToolbarProps): React.JSX.Element
     const nextIndex = Math.min(currentIndex + 1, ZOOM_LEVELS.length - 1)
     const newZoom = ZOOM_LEVELS[nextIndex]
     webviewRef.current?.setZoomFactor(newZoom)
-    setWebviewState({ zoomFactor: newZoom })
+    setZoomFactor(newZoom)
   }
 
   const handleZoomOut = (): void => {
@@ -67,7 +72,7 @@ export function Veo3Toolbar({ webviewRef }: Veo3ToolbarProps): React.JSX.Element
     const prevIndex = Math.max(currentIndex - 1, 0)
     const newZoom = ZOOM_LEVELS[prevIndex]
     webviewRef.current?.setZoomFactor(newZoom)
-    setWebviewState({ zoomFactor: newZoom })
+    setZoomFactor(newZoom)
   }
 
   const handleDevTools = (): void => {
@@ -80,6 +85,17 @@ export function Veo3Toolbar({ webviewRef }: Veo3ToolbarProps): React.JSX.Element
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-3">
+      {/* Account manager */}
+      <button
+        onClick={onOpenAccountManager}
+        className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-white/5 hover:text-text"
+        title="Gerenciar contas"
+      >
+        <Users className="h-3.5 w-3.5" />
+      </button>
+
+      <div className="mx-1 h-4 w-px bg-border" />
+
       {/* Navigation */}
       <button
         onClick={handleBack}
@@ -151,7 +167,7 @@ export function Veo3Toolbar({ webviewRef }: Veo3ToolbarProps): React.JSX.Element
 
       {/* Toggle sidepanel */}
       <button
-        onClick={toggleSidepanel}
+        onClick={onToggleSidepanel}
         className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-white/5 hover:text-text"
         title={sidepanelVisible ? 'Esconder painel' : 'Mostrar painel'}
       >

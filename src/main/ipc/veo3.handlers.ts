@@ -1,4 +1,4 @@
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, session } from 'electron'
 import { readFileSync, existsSync } from 'fs'
 import { join, normalize, resolve } from 'path'
 import { getVeo3DownloadPath, setVeo3DownloadPath } from '../index'
@@ -38,5 +38,20 @@ export function registerVeo3Handlers(): void {
 
   ipcMain.handle('veo3:get-download-path', async () => {
     return getVeo3DownloadPath()
+  })
+
+  ipcMain.handle('veo3:clear-partition', async (_event, partitionName: string) => {
+    if (!partitionName.startsWith('persist:veo3-account-')) {
+      return { success: false, error: 'Invalid partition name' }
+    }
+
+    try {
+      const ses = session.fromPartition(partitionName)
+      await ses.clearStorageData()
+      await ses.clearCache()
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
   })
 }

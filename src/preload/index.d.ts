@@ -137,6 +137,7 @@ interface ElectronAppAPI {
   veo3ReadScript: (relativePath: string) => Promise<string | null>
   veo3SetDownloadPath: (folderPath: string) => Promise<unknown>
   veo3GetDownloadPath: () => Promise<string>
+  veo3ClearPartition: (partition: string) => Promise<{ success: boolean; error?: string }>
   onVeo3DownloadComplete: (callback: (data: unknown) => void) => () => void
 }
 

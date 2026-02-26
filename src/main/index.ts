@@ -72,41 +72,47 @@ function setupWebviewSecurity(): void {
       webPreferences.contextIsolation = true
     })
 
-    // Intercept new windows from webviews
-    contents.setWindowOpenHandler(({ url }) => {
-      const isVeo3Domain = VEO3_DOMAINS.some((d) => url.includes(d))
-      if (isVeo3Domain) {
-        // Navigate within the webview instead of opening new window
-        setImmediate(() => contents.loadURL(url))
-      } else {
-        shell.openExternal(url)
-      }
-      return { action: 'deny' }
-    })
+    // Intercept new windows only from webview contents (not from main window)
+    if (contents.getType() === 'webview') {
+      contents.setWindowOpenHandler(({ url }) => {
+        const isVeo3Domain = VEO3_DOMAINS.some((d) => url.includes(d))
+        if (isVeo3Domain) {
+          // Navigate within the webview instead of opening new window
+          setImmediate(() => contents.loadURL(url))
+        } else {
+          shell.openExternal(url)
+        }
+        return { action: 'deny' }
+      })
+    }
+  })
+}
+
+function handleVeo3Download(_event: Electron.Event, item: Electron.DownloadItem): void {
+  if (!existsSync(veo3DownloadPath)) {
+    mkdirSync(veo3DownloadPath, { recursive: true })
+  }
+
+  const filename = item.getFilename()
+  const savePath = join(veo3DownloadPath, filename)
+  item.setSavePath(savePath)
+
+  item.on('done', (_e, state) => {
+    if (state === 'completed' && mainWindow) {
+      mainWindow.webContents.send('veo3:download-complete', {
+        path: savePath,
+        filename,
+        folder: veo3DownloadPath
+      })
+    }
   })
 }
 
 function setupVeo3Downloads(): void {
-  const veo3Session = session.fromPartition('persist:veo3')
-  veo3Session.on('will-download', (_event, item) => {
-    if (!existsSync(veo3DownloadPath)) {
-      mkdirSync(veo3DownloadPath, { recursive: true })
-    }
-
-    const filename = item.getFilename()
-    const savePath = join(veo3DownloadPath, filename)
-    item.setSavePath(savePath)
-
-    item.on('done', (_e, state) => {
-      if (state === 'completed' && mainWindow) {
-        mainWindow.webContents.send('veo3:download-complete', {
-          path: savePath,
-          filename,
-          folder: veo3DownloadPath
-        })
-      }
-    })
-  })
+  for (let i = 1; i <= 5; i++) {
+    const accountSession = session.fromPartition(`persist:veo3-account-${i}`)
+    accountSession.on('will-download', handleVeo3Download)
+  }
 }
 
 app.whenReady().then(() => {
