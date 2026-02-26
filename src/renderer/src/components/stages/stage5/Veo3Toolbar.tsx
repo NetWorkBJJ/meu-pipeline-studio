@@ -8,7 +8,9 @@ import {
   ZoomIn,
   ZoomOut,
   Bug,
-  Users
+  Users,
+  LayoutGrid,
+  Square
 } from 'lucide-react'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import type { WebviewElement } from '@/types/veo3'
@@ -22,7 +24,9 @@ interface Veo3ToolbarProps {
   webviewRef: { current: WebviewElement | null }
   webviewState: WebviewState
   sidepanelVisible: boolean
+  splitView: boolean
   onToggleSidepanel: () => void
+  onToggleSplitView: () => void
   onOpenAccountManager: () => void
 }
 
@@ -30,7 +34,9 @@ export function Veo3Toolbar({
   webviewRef,
   webviewState,
   sidepanelVisible,
+  splitView,
   onToggleSidepanel,
+  onToggleSplitView,
   onOpenAccountManager
 }: Veo3ToolbarProps): React.JSX.Element {
   const { zoomFactor, setZoomFactor } = useVeo3Store()
@@ -163,6 +169,21 @@ export function Veo3Toolbar({
         title="DevTools"
       >
         <Bug className="h-3.5 w-3.5" />
+      </button>
+
+      {/* Split view toggle */}
+      <button
+        onClick={onToggleSplitView}
+        className={`rounded-md p-1.5 transition-colors hover:bg-white/5 hover:text-text ${
+          splitView ? 'text-primary' : 'text-text-muted'
+        }`}
+        title={splitView ? 'Visualizacao em abas' : 'Visualizacao em grade'}
+      >
+        {splitView ? (
+          <Square className="h-3.5 w-3.5" />
+        ) : (
+          <LayoutGrid className="h-3.5 w-3.5" />
+        )}
       </button>
 
       {/* Toggle sidepanel */}

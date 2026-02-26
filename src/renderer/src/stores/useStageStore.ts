@@ -44,6 +44,7 @@ export const useStageStore = create<StageState>((set, get) => ({
   canNavigateTo: (stage): boolean => {
     if (get().freeNavigation) return true
     if (stage === 1) return true
+    if (stage === 5) return true // VEO3 Flow always accessible
     return get().completedStages.has(stage - 1)
   },
 

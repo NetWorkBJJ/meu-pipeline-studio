@@ -49,7 +49,7 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
         const wv = el as WebviewElement
         webviewRef.current = wv
 
-        const handleDomReady = (): void => {
+        const handleDomReady = async (): Promise<void> => {
           wv.setZoomFactor(zoomFactor)
           onStateChange?.({
             isLoading: false,
@@ -57,6 +57,32 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
             canGoBack: wv.canGoBack(),
             canGoForward: wv.canGoForward()
           })
+
+          // Inject automation scripts (only on Flow pages)
+          const currentUrl = wv.getURL()
+          if (currentUrl.includes('labs.google') && currentUrl.includes('flow')) {
+            const INJECTOR_SCRIPTS = [
+              'constants/selectors.js',
+              'utils/timing.js',
+              'utils/click-feedback.js',
+              'automation/image-automator.js',
+              'automation/gallery-mapper.js',
+              'automation/image-ref-manager.js',
+              'automation/elements-mode-handler.js',
+              'automation/image-creation-handler.js',
+              'content-bridge.js'
+            ]
+
+            for (const script of INJECTOR_SCRIPTS) {
+              try {
+                const code = await window.api.veo3ReadScript(script)
+                if (code) await wv.executeJavaScript(code)
+              } catch (err) {
+                console.error(`[Veo3Browser] Failed to inject ${script}:`, err)
+              }
+            }
+          }
+
           onReady?.()
         }
 

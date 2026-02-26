@@ -45,6 +45,50 @@ export interface Veo3PromptItem {
   status: 'pending' | 'generating' | 'done' | 'failed'
 }
 
+// Flow automation types
+export type FlowCreationMode = 'texto' | 'elementos' | 'imagem'
+
+export type FlowCommandStatus =
+  | 'queued'
+  | 'sending'
+  | 'submitted'
+  | 'generating'
+  | 'done'
+  | 'failed'
+  | 'skipped'
+
+export interface FlowCharacterImageRef {
+  characterId: string
+  name: string
+  keywords: string[]
+  imagePath: string | null
+  galleryItemName: string | null
+}
+
+export interface FlowCommand {
+  id: string
+  sceneId: string
+  sceneIndex: number
+  chapter: number
+  prompt: string
+  mode: FlowCreationMode
+  characterImages: FlowCharacterImageRef[]
+  status: FlowCommandStatus
+  tabId: string | null
+  submittedAt: number | null
+  completedAt: number | null
+  error: string | null
+}
+
+export interface FlowAutomationState {
+  commands: FlowCommand[]
+  isRunning: boolean
+  isPaused: boolean
+  currentCommandIndex: number
+  startedAt: number | null
+  error: string | null
+}
+
 export type WebviewElement = HTMLElement & {
   src: string
   partition: string

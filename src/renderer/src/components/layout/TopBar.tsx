@@ -1,4 +1,4 @@
-import { ArrowLeft, Settings, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Settings, ChevronRight, Sparkles } from 'lucide-react'
 import { CapCutIcon } from '@/components/shared/CapCutIcon'
 import { motion } from 'framer-motion'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -17,7 +17,7 @@ function extractProjectFolder(path: string | null): string {
 export function TopBar(): React.JSX.Element {
   const { capCutDraftPath, projectSummary, resetProject } = useProjectStore()
   const { setCurrentView, setSettingsOpen, addToast } = useUIStore()
-  const { reset } = useStageStore()
+  const { currentStage, setCurrentStage, reset } = useStageStore()
   const { activeWorkspace } = useWorkspaceStore()
 
   const handleGoHome = (): void => {
@@ -70,6 +70,20 @@ export function TopBar(): React.JSX.Element {
           title="Abrir CapCut"
         >
           <CapCutIcon className="h-4 w-4" />
+        </motion.button>
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setCurrentStage(5)}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+            currentStage === 5
+              ? 'bg-primary/15 text-primary'
+              : 'text-text-muted hover:bg-surface hover:text-text'
+          }`}
+          title="VEO3 Flow"
+        >
+          <Sparkles className="h-4 w-4" />
         </motion.button>
         <motion.button
           type="button"

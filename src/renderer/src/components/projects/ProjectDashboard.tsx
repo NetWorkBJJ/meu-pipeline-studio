@@ -15,7 +15,8 @@ import {
   X,
   Link,
   Layers,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Sparkles
 } from 'lucide-react'
 import { CapCutIcon } from '@/components/shared/CapCutIcon'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -445,6 +446,19 @@ export function ProjectDashboard(): React.JSX.Element {
             title="Abrir CapCut"
           >
             <CapCutIcon className="h-[18px] w-[18px]" />
+          </motion.button>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setCurrentView('pipeline')
+              useStageStore.getState().setCurrentStage(5)
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-elevated text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+            title="VEO3 Flow"
+          >
+            <Sparkles className="h-[18px] w-[18px]" />
           </motion.button>
           <motion.button
             type="button"
