@@ -74,10 +74,12 @@
     }
 
     commandQueue = data.commands || [];
-    window.veo3Debug?.info('AUTO', 'Starting automation', { commandCount: commandQueue.length, modes: commandQueue.map(c => c.mode) });
+    const allCharacterImages = data.allCharacterImages || [];
+    console.log('[INIT] START_AUTOMATION received: ' + commandQueue.length + ' commands, ' + allCharacterImages.length + ' character images');
+    console.log('[INIT] Modes: ' + commandQueue.map(c => c.mode).join(', '));
 
     if (commandQueue.length === 0) {
-      window.veo3Debug?.error('AUTO', 'No commands to process');
+      console.log('[INIT] ERROR: No commands to process');
       notifySidepanel('AUTOMATION_ERROR', { message: 'No commands to process' });
       return;
     }
@@ -91,26 +93,23 @@
 
     notifySidepanel('AUTOMATION_STARTED', { total: commandQueue.length });
 
-    // Wait for Google Flow to fully load (Slate editor must exist before any interaction)
+    // Wait for Google Flow to fully load (Slate editor must exist)
+    console.log('[INIT] Waiting for prompt field...');
     const promptField = await window.veo3Timing.waitForAnyElement([
       '[data-slate-editor="true"][contenteditable="true"]',
       '#PINHOLE_TEXT_AREA_ELEMENT_ID'
     ], 15000);
     if (!promptField) {
-      window.veo3Debug?.error('AUTO', 'No prompt field found - page may not be loaded');
+      console.log('[INIT] ERROR: No prompt field found - page may not be loaded');
       notifySidepanel('AUTOMATION_ERROR', { message: 'Google Flow page not ready (no prompt field found)' });
       automationState.running = false;
       return;
     }
-    console.log('[ContentBridge] Page ready - prompt field found:', promptField.tagName);
+    console.log('[INIT] Page ready: ' + promptField.tagName + ' found');
 
-    // Apply fixed settings (Landscape, x1) - uses exact selector, skips if not found
-    await applyFixedSettings();
-    await sleep(TIMING.STANDARD);
-
-    // Phase 1: Pre-upload all unique character images
+    // Phase 1: Pre-upload ALL character images FIRST (before any settings)
     if (automationState.running) {
-      const preUploadResults = await preUploadCharacterImages(commandQueue);
+      const preUploadResults = await preUploadCharacterImages(allCharacterImages, commandQueue);
 
       // Update command queue with gallery names from pre-upload
       if (preUploadResults.size > 0) {
@@ -123,7 +122,7 @@
             }
           }
         }
-        window.veo3Debug?.info('PRE_UPLOAD', 'Updated gallery names for ' + preUploadResults.size + ' characters');
+        console.log('[PRE_UPLOAD] Gallery names mapped for ' + preUploadResults.size + ' characters');
       }
     }
 
@@ -131,8 +130,13 @@
       return;
     }
 
-    // Phase 2: Process prompts in batches of BATCH_SIZE
+    // Phase 2: Apply fixed settings (Landscape, x1) - AFTER upload
+    await applyFixedSettings();
+    await sleep(TIMING.STANDARD);
+
+    // Phase 3: Process prompts in batches of BATCH_SIZE
     const totalBatches = Math.ceil(commandQueue.length / BATCH_SIZE);
+    console.log('[BATCH] Starting prompt processing: ' + commandQueue.length + ' commands in ' + totalBatches + ' batches');
 
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       if (!automationState.running) break;
@@ -141,7 +145,7 @@
       const batchEnd = Math.min(batchStart + BATCH_SIZE, commandQueue.length);
       const batchCommands = commandQueue.slice(batchStart, batchEnd);
 
-      console.log(`[ContentBridge] Batch ${batchIndex + 1}/${totalBatches} (commands ${batchStart + 1}-${batchEnd})`);
+      console.log('[BATCH ' + (batchIndex + 1) + '/' + totalBatches + '] Commands ' + (batchStart + 1) + '-' + batchEnd);
 
       // Process commands within this batch
       for (let i = 0; i < batchCommands.length; i++) {
@@ -168,7 +172,9 @@
         });
 
         try {
-          notifySidepanel('PROMPT_SUBMITTED', { commandId: cmd.id, index: globalIndex });
+          // Notify start of processing (not "submitted" - that's misleading)
+          notifySidepanel('PROMPT_PROCESSING', { commandId: cmd.id, index: globalIndex });
+
           const result = await processCommand(cmd, globalIndex);
 
           if (result?.skipped) {
@@ -181,7 +187,7 @@
             notifySidepanel('PROMPT_COMPLETED', { commandId: cmd.id, index: globalIndex });
           }
         } catch (err) {
-          console.error(`[ContentBridge] Error processing command #${globalIndex}:`, err);
+          console.error('[FLOW ' + (globalIndex + 1) + '/' + commandQueue.length + '] ERROR: ' + err.message);
           notifySidepanel('PROMPT_FAILED', {
             commandId: cmd.id,
             index: globalIndex,
@@ -203,7 +209,7 @@
           : TIMING.BATCH_PAUSE_VIDEO;
         const pauseSec = Math.round(pauseMs / 1000);
 
-        console.log(`[ContentBridge] Batch ${batchIndex + 1} done. Pausing ${pauseSec}s before next batch...`);
+        console.log('[BATCH ' + (batchIndex + 1) + '/' + totalBatches + '] Done. Pausing ' + pauseSec + 's (' + currentMode + ' mode)...');
         notifySidepanel('BATCH_PAUSE', {
           batch: batchIndex + 1,
           totalBatches,
@@ -223,6 +229,7 @@
 
           const remaining = Math.max(0, Math.round((pauseMs - (Date.now() - pauseStart)) / 1000));
           if (remaining > 0 && remaining % 10 === 0) {
+            console.log('[BATCH PAUSE] ' + remaining + 's remaining...');
             notifySidepanel('BATCH_PAUSE_UPDATE', {
               remainingSeconds: remaining,
               batch: batchIndex + 1,
@@ -234,6 +241,8 @@
     }
 
     automationState.running = false;
+    const totalElapsed = Math.round((Date.now() - automationState.startedAt) / 1000);
+    console.log('[DONE] Automation complete: ' + commandQueue.length + ' commands in ' + totalElapsed + 's');
     notifySidepanel('AUTOMATION_COMPLETE', {
       processed: commandQueue.length,
       elapsed: Date.now() - automationState.startedAt,
@@ -245,7 +254,7 @@
     automationState.running = false;
     automationState.paused = false;
     notifySidepanel('AUTOMATION_STOPPED', {});
-    console.log('[ContentBridge] Automation stopped');
+    console.log('[STOP] Automation stopped');
   }
 
   function togglePause() {
@@ -255,45 +264,55 @@
 
     if (automationState.paused) {
       notifySidepanel('AUTOMATION_PAUSED', {});
-      console.log('[ContentBridge] Automation paused');
+      console.log('[PAUSE] Automation paused');
     } else {
       notifySidepanel('AUTOMATION_RESUMED', {});
-      console.log('[ContentBridge] Automation resumed');
+      console.log('[RESUME] Automation resumed');
     }
   }
 
   // === COMMAND PROCESSING ===
+  // Each command goes through 4 steps: mode switch → gallery select → fill prompt → submit
 
   async function processCommand(cmd, globalIndex) {
-    window.veo3Debug?.info('AUTO', 'Processing command #' + globalIndex, {
-      mode: cmd.mode,
-      prompt: cmd.prompt?.substring(0, 80),
-      characters: cmd.characterImages?.length || 0
-    });
+    const { sleep, TIMING } = window.veo3Timing;
+    const total = commandQueue.length;
+    const tag = '[FLOW ' + (globalIndex + 1) + '/' + total + ']';
 
-    // Ensure correct mode (Video/Image) via config menu tabs
+    console.log(tag + ' === Processing: "' + (cmd.prompt?.substring(0, 60) || '') + '..." ===');
+    console.log(tag + ' Mode: ' + cmd.mode + ' | Characters: ' + (cmd.characterImages?.length || 0));
+
+    // Step 1/4: Mode switch
+    console.log(tag + ' Step 1/4: Switching mode to "' + cmd.mode + '"...');
     const modeOk = await ensureModeViaConfigMenu(cmd.mode);
     if (!modeOk) {
-      window.veo3Debug?.warn('MODE', 'Mode switch to "' + cmd.mode + '" not confirmed, proceeding anyway');
+      console.log(tag + ' Step 1/4: Mode switch not confirmed, proceeding anyway');
+    } else {
+      console.log(tag + ' Step 1/4: Mode OK');
     }
 
-    // Select character references from gallery if needed
+    // Step 2/4: Gallery selection (if command has character images)
     if (cmd.characterImages && cmd.characterImages.length > 0) {
+      console.log(tag + ' Step 2/4: Selecting ' + cmd.characterImages.length + ' character(s) from gallery...');
       await selectCharactersFromGallery(cmd.characterImages, globalIndex);
+    } else {
+      console.log(tag + ' Step 2/4: No characters (text-only prompt)');
     }
 
-    // Fill prompt text in Slate editor
-    window.veo3Debug?.debug('AUTO', 'Filling prompt', { length: cmd.prompt.length });
+    // Step 3/4: Fill prompt text in Slate editor
+    console.log(tag + ' Step 3/4: Filling prompt (' + cmd.prompt.length + ' chars)...');
     await window.veo3Timing.fillSlateEditor(cmd.prompt);
+    await sleep(TIMING.AFTER_FILL);
 
-    // Submit with retry chain
-    window.veo3Debug?.debug('AUTO', 'Submitting prompt...');
+    // Step 4/4: Submit with retry chain
+    console.log(tag + ' Step 4/4: Submitting...');
     const submitted = await window.veo3Timing.submitWithRetry();
     if (!submitted) {
+      console.log(tag + ' === FAILED (all submission strategies failed) ===');
       throw new Error('All submission strategies failed');
     }
 
-    window.veo3Debug?.info('AUTO', 'Submission confirmed for command #' + globalIndex);
+    console.log(tag + ' === DONE ===');
     return { skipped: false };
   }
 
@@ -302,20 +321,26 @@
 
   async function selectCharactersFromGallery(characterImages, promptIndex) {
     const { sleep, TIMING } = window.veo3Timing;
+    const total = commandQueue.length;
+    const tag = '[FLOW ' + (promptIndex + 1) + '/' + total + ']';
 
     for (const charImg of characterImages) {
       if (!automationState.running) break;
 
-      const searchName = charImg.galleryItemName || charImg.name;
-      if (!searchName) continue;
+      // Use galleryItemName (set by pre-upload from original filename) or fall back to character name
+      const searchName = charImg.galleryItemName || charImg.name || charImg.characterId;
+      if (!searchName) {
+        console.log(tag + '   > Gallery: no name to search, skipping');
+        continue;
+      }
 
-      window.veo3Debug?.debug('GALLERY', 'Selecting character: ' + searchName);
+      console.log(tag + '   > Gallery: clicking "+", searching "' + searchName + '"...');
 
       const selected = await window.veo3GalleryMapper.selectMediaByName(searchName);
       if (selected) {
-        window.veo3Debug?.info('GALLERY', 'Character selected: ' + searchName);
+        console.log(tag + '   > Gallery: match found and selected');
       } else {
-        window.veo3Debug?.warn('GALLERY', 'Character not found in gallery: ' + searchName);
+        console.log(tag + '   > Gallery: "' + searchName + '" NOT FOUND in gallery');
       }
 
       await sleep(TIMING.MEDIUM);
@@ -323,106 +348,102 @@
   }
 
   // === MODE SWITCHING VIA CONFIG MENU ===
-  // Opens the settings menu (button with crop_16_9 + x1) and clicks the correct tab.
-  // For 'elementos': ensure Video + Ingredients
-  // For 'texto': ensure Video
-  // For 'imagem': ensure Image
+  // IMPORTANT: The settings button is a Radix UI toggle. robustClick() does .click() + mousedown/mouseup/click
+  // which effectively double-clicks, opening then immediately closing the menu.
+  // We MUST use simple .click() for this button.
+  //
+  // Also: the tabs (Video/Image) are INSIDE the dropdown, invisible when closed.
+  // So we detect the current mode from the BUTTON TEXT (e.g. "Video crop_16_9 x1" = video mode)
+  // and only open the menu when we need to actually SWITCH modes.
 
   async function ensureModeViaConfigMenu(targetMode) {
     const { sleep, TIMING } = window.veo3Timing;
-    window.veo3Debug?.info('MODE', 'Ensuring mode: ' + targetMode);
 
-    // Determine which tabs to activate
-    let mediaTab = null;  // 'VIDEO' or 'IMAGE'
-    let subTab = null;    // 'VIDEO_REFERENCES' (Ingredients) or null
-
+    // Determine target media type
+    let targetMedia = 'VIDEO'; // 'texto' and 'elementos' both use Video
     if (targetMode === 'imagem') {
-      mediaTab = 'IMAGE';
-    } else if (targetMode === 'elementos') {
-      mediaTab = 'VIDEO';
-      subTab = 'VIDEO_REFERENCES'; // Ingredients
-    } else {
-      mediaTab = 'VIDEO';
+      targetMedia = 'IMAGE';
     }
 
-    // Quick check: are the correct tabs already active? (check without opening menu)
-    const videoTabEl = document.querySelector(window.veo3Selectors.tabVideo);
-    const imageTabEl = document.querySelector(window.veo3Selectors.tabImage);
-
-    // If tabs are visible (menu already open or persisted state), check them
-    if (videoTabEl && imageTabEl) {
-      const videoActive = videoTabEl.getAttribute('data-state') === 'active';
-      const imageActive = imageTabEl.getAttribute('data-state') === 'active';
-
-      if (mediaTab === 'VIDEO' && videoActive && !subTab) {
-        window.veo3Debug?.debug('MODE', 'Already in Video mode');
-        return true;
-      }
-      if (mediaTab === 'IMAGE' && imageActive) {
-        window.veo3Debug?.debug('MODE', 'Already in Image mode');
-        return true;
-      }
-    }
-
-    // Need to open config menu and switch tabs
+    // Detect current mode from settings button TEXT (no need to open menu)
     const settingsBtn = window.veo3Selectors.settingsButton();
     if (!settingsBtn) {
-      window.veo3Debug?.warn('MODE', 'Settings button not found, cannot switch mode');
+      console.log('[MODE] Settings button not found, cannot detect or switch mode');
       return false;
     }
 
-    // Open settings menu
-    if (window.veo3RobustClick) {
-      await window.veo3RobustClick(settingsBtn);
-    } else {
-      settingsBtn.click();
-    }
-    await sleep(TIMING.MEDIUM);
+    const btnText = settingsBtn.textContent.trim().toLowerCase();
+    const currentIsImage = btnText.includes('image') || btnText.includes('imagem');
+    const currentIsVideo = btnText.includes('video') || btnText.includes('vídeo');
 
-    // Verify menu opened
-    const menuCheck = document.querySelector('[role="tab"][aria-controls*="-content-VIDEO"]') ||
-                      document.querySelector('[role="tab"][aria-controls*="-content-IMAGE"]');
-    if (!menuCheck) {
-      window.veo3Debug?.warn('MODE', 'Config menu did not open');
+    // Check if already in correct mode (skip opening menu entirely)
+    if (targetMedia === 'VIDEO' && currentIsVideo && targetMode !== 'elementos') {
+      console.log('[MODE] Already in Video mode, no switch needed');
+      return true;
+    }
+    if (targetMedia === 'IMAGE' && currentIsImage) {
+      console.log('[MODE] Already in Image mode, no switch needed');
+      return true;
+    }
+
+    // Need to open config menu and switch tabs
+    // Use radixClick (PointerEvent) - Radix UI listens to onPointerDown, not onClick
+    console.log('[MODE] Switching from ' + (currentIsImage ? 'Image' : 'Video') + ' to ' + targetMedia + '...');
+
+    let menuOpened = false;
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      // Radix UI DropdownMenu trigger needs pointerdown event
+      await window.veo3RadixClick(settingsBtn);
+      await sleep(TIMING.STANDARD);
+
+      const menuCheck = document.querySelector('[role="tab"][aria-controls*="-content-VIDEO"]') ||
+                        document.querySelector('[role="tab"][aria-controls*="-content-IMAGE"]');
+      if (menuCheck) {
+        menuOpened = true;
+        break;
+      }
+
+      if (attempt < MAX_RETRIES) {
+        console.log('[MODE] Menu did not open (attempt ' + attempt + '/' + MAX_RETRIES + '), retrying...');
+        // Escape to clear any half-state, then wait before retry
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await sleep(TIMING.MEDIUM);
+      }
+    }
+
+    if (!menuOpened) {
+      console.log('[MODE] Config menu did not open after ' + MAX_RETRIES + ' attempts, skipping');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(TIMING.SHORT);
       return false;
     }
 
-    // Click media tab (Video or Image)
-    const mediaTabSelector = mediaTab === 'IMAGE'
+    // Click media tab (Video or Image) - simple click for tabs too
+    const mediaTabSelector = targetMedia === 'IMAGE'
       ? window.veo3Selectors.tabImage
       : window.veo3Selectors.tabVideo;
     const mediaTabTarget = document.querySelector(mediaTabSelector);
 
     if (mediaTabTarget) {
-      if (window.veo3RobustClick) {
-        await window.veo3RobustClick(mediaTabTarget);
-      } else {
-        mediaTabTarget.click();
-      }
+      mediaTabTarget.click();
+      if (window.veo3Highlight) window.veo3Highlight(mediaTabTarget);
       await sleep(TIMING.SHORT);
-      window.veo3Debug?.debug('MODE', 'Clicked ' + mediaTab + ' tab');
     } else {
-      window.veo3Debug?.warn('MODE', mediaTab + ' tab not found in menu');
+      console.log('[MODE] ' + targetMedia + ' tab not found in menu');
     }
 
     // Click sub-tab if needed (Ingredients for elementos mode)
-    if (subTab) {
+    if (targetMode === 'elementos') {
       await sleep(TIMING.SHORT);
-      const subTabSelector = window.veo3Selectors.tabIngredients;
-      const subTabEl = document.querySelector(subTabSelector);
+      const subTabEl = document.querySelector(window.veo3Selectors.tabIngredients);
 
       if (subTabEl) {
-        if (window.veo3RobustClick) {
-          await window.veo3RobustClick(subTabEl);
-        } else {
-          subTabEl.click();
-        }
+        subTabEl.click();
+        if (window.veo3Highlight) window.veo3Highlight(subTabEl);
         await sleep(TIMING.SHORT);
-        window.veo3Debug?.debug('MODE', 'Clicked Ingredients sub-tab');
       } else {
-        window.veo3Debug?.warn('MODE', 'Ingredients sub-tab not found');
+        console.log('[MODE] Ingredients sub-tab not found');
       }
     }
 
@@ -430,101 +451,188 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(TIMING.MEDIUM);
 
-    window.veo3Debug?.info('MODE', 'Mode switch to ' + targetMode + ' completed');
+    console.log('[MODE] Switched to ' + targetMedia);
     return true;
   }
 
   // Detect current mode from config button text (for batch pause timing)
   function detectCurrentMode() {
-    // Check config button text for hints
     const settingsBtn = window.veo3Selectors.settingsButton();
     if (settingsBtn) {
       const text = settingsBtn.textContent.trim().toLowerCase();
       if (text.includes('image') || text.includes('imagem')) return 'imagem';
     }
-    return 'texto'; // Default to video-based mode for timing
+    return 'texto';
   }
 
   // === PRE-UPLOAD CHARACTER IMAGES ===
+  // Uploads ALL character images to Google Flow's gallery.
+  // Receives the full list from the sidepanel (all characters from Stage 4 folder).
+  // Falls back to extracting from commands if allCharacterImages is empty.
 
-  async function preUploadCharacterImages(commands) {
+  async function preUploadCharacterImages(allCharacterImages, commands) {
     const { sleep, TIMING } = window.veo3Timing;
     const results = new Map(); // characterId -> galleryItemName
 
-    // Collect unique characters that need upload
-    const uniqueChars = new Map(); // characterId -> { name, dataUrl, fileName }
-    for (const cmd of commands) {
-      if (!cmd.characterImages) continue;
-      for (const img of cmd.characterImages) {
-        if (img.image?.dataUrl && !uniqueChars.has(img.characterId)) {
-          uniqueChars.set(img.characterId, {
-            name: img.name,
-            dataUrl: img.image.dataUrl,
-            fileName: img.image.name || (img.name + '.png')
-          });
-        }
-      }
-    }
+    // Build file entries from the full character images list
+    const fileEntries = [];
 
-    if (uniqueChars.size === 0) {
-      window.veo3Debug?.debug('PRE_UPLOAD', 'No character images to upload');
-      return results;
-    }
+    if (allCharacterImages && allCharacterImages.length > 0) {
+      // Image data is pre-loaded in window.__veo3_imageCache by the sidepanel
+      // (sent individually to avoid 8MB+ payload size issues with executeJavaScript)
+      const imgCache = window.__veo3_imageCache || {};
+      const cacheSize = Object.keys(imgCache).length;
+      console.log('[PRE_UPLOAD] Image cache: ' + cacheSize + ' entries');
+      console.log('[PRE_UPLOAD] Received ' + allCharacterImages.length + ' character images from project');
 
-    window.veo3Debug?.info('PRE_UPLOAD', 'Uploading ' + uniqueChars.size + ' character images');
-    notifySidepanel('PRE_UPLOAD_START', { count: uniqueChars.size });
+      // Deduplicate by fileName to avoid uploading the same image file twice
+      const seenFileNames = new Set();
 
-    let uploadedCount = 0;
-    for (const [charId, charData] of uniqueChars) {
-      if (!automationState.running) break;
+      for (const img of allCharacterImages) {
+        // Get dataUrl from pre-loaded cache (NOT from payload - payload is metadata only)
+        const cached = imgCache[img.characterId];
+        const dataUrl = cached?.dataUrl || img.dataUrl;
+        const fileName = cached?.fileName || img.fileName;
 
-      const file = window.dataUrlToFile(charData.dataUrl, charData.fileName);
-      if (!file) {
-        window.veo3Debug?.warn('PRE_UPLOAD', 'dataUrlToFile returned null for: ' + charData.name);
-        continue;
-      }
-
-      try {
-        window.veo3Debug?.debug('PRE_UPLOAD', 'Uploading: ' + charData.name);
-
-        // Upload via multi-strategy (clipboard paste -> drag on body -> etc)
-        const dispatched = await window.simulateImageDragDrop(file);
-        if (!dispatched) {
-          window.veo3Debug?.warn('PRE_UPLOAD', 'All upload strategies failed for: ' + charData.name);
+        if (!dataUrl || !fileName) {
+          console.log('[PRE_UPLOAD] Skipping (no data): ' + (img.name || img.characterId));
           continue;
         }
 
-        await sleep(800);
-
-        // Wait for and confirm crop dialog (15s timeout)
-        await window.waitAndConfirmCrop(15000);
-
-        // Wait for upload to complete (30s timeout, corrected signal detection)
-        const uploaded = await window.waitForImageUpload(30000);
-        if (uploaded) {
-          uploadedCount++;
-          const galleryName = charData.fileName.replace(/\.\w+$/, '');
-          results.set(charId, galleryName);
-          window.veo3Debug?.debug('PRE_UPLOAD', 'Uploaded: ' + charData.name);
-        } else {
-          window.veo3Debug?.warn('PRE_UPLOAD', 'Upload verification timed out for: ' + charData.name);
-          // Still map the gallery name - it may have uploaded without visual confirmation
-          const galleryName = charData.fileName.replace(/\.\w+$/, '');
-          results.set(charId, galleryName);
+        // Skip duplicate file names (same image used by multiple characters)
+        if (seenFileNames.has(fileName)) {
+          console.log('[PRE_UPLOAD] Skipping duplicate: ' + fileName);
+          const galleryName = fileName.replace(/\.\w+$/, '');
+          results.set(img.characterId, galleryName);
+          continue;
         }
-      } catch (err) {
-        window.veo3Debug?.warn('PRE_UPLOAD', 'Upload failed for ' + charData.name + ': ' + err.message);
+        seenFileNames.add(fileName);
+
+        const file = window.dataUrlToFile(dataUrl, fileName);
+        if (!file) {
+          console.log('[PRE_UPLOAD] dataUrlToFile failed for: ' + (img.name || fileName));
+          continue;
+        }
+        fileEntries.push({
+          charId: img.characterId,
+          file,
+          charData: { name: img.name, fileName, dataUrl }
+        });
       }
 
-      await sleep(TIMING.STANDARD);
+      // Clean up image cache after building file entries
+      delete window.__veo3_imageCache;
+    } else {
+      // Fallback: extract unique characters from commands (old behavior)
+      console.log('[PRE_UPLOAD] No allCharacterImages provided, extracting from commands...');
+      const uniqueChars = new Map();
+      for (const cmd of commands) {
+        if (!cmd.characterImages) continue;
+        for (const img of cmd.characterImages) {
+          if (img.image?.dataUrl && !uniqueChars.has(img.characterId)) {
+            uniqueChars.set(img.characterId, {
+              name: img.name,
+              dataUrl: img.image.dataUrl,
+              fileName: img.image.name || (img.name + '.png')
+            });
+          }
+        }
+      }
+      for (const [charId, charData] of uniqueChars) {
+        const file = window.dataUrlToFile(charData.dataUrl, charData.fileName);
+        if (file) {
+          fileEntries.push({ charId, file, charData });
+        }
+      }
     }
 
-    notifySidepanel('PRE_UPLOAD_COMPLETE', {
-      uploaded: uploadedCount,
-      total: uniqueChars.size
-    });
+    if (fileEntries.length === 0) {
+      console.log('[PRE_UPLOAD] No character images to upload');
+      return results;
+    }
 
-    window.veo3Debug?.info('PRE_UPLOAD', 'Upload complete: ' + uploadedCount + '/' + uniqueChars.size);
+    console.log('[PRE_UPLOAD] ' + fileEntries.length + ' character image(s) to upload');
+    for (const { charData } of fileEntries) {
+      console.log('[PRE_UPLOAD] - ' + charData.fileName);
+    }
+    notifySidepanel('PRE_UPLOAD_START', { count: fileEntries.length });
+
+    // Upload ALL files via batch clipboard paste.
+    // Uses Object.defineProperty to force clipboardData (Chromium ignores it in constructor).
+    // If batch fails, falls back to individual pastes.
+    try {
+      const allFiles = fileEntries.map(f => f.file);
+      const fileNames = allFiles.map(f => f.name).join(', ');
+      console.log('[PRE_UPLOAD] Batch paste: ' + fileNames);
+
+      // Try batch upload (all files at once)
+      const dispatched = await window.batchDragDrop(allFiles);
+
+      if (dispatched) {
+        await sleep(2000);
+
+        // Wait for crop dialogs (one per image) and confirm each
+        console.log('[PRE_UPLOAD] Waiting for crop dialogs...');
+        for (let i = 0; i < fileEntries.length; i++) {
+          const confirmed = await window.waitAndConfirmCrop(15000);
+          if (confirmed) {
+            console.log('[PRE_UPLOAD] Crop ' + (i + 1) + '/' + fileEntries.length + ' confirmed');
+          } else {
+            console.log('[PRE_UPLOAD] Crop ' + (i + 1) + '/' + fileEntries.length + ' not found (may not be needed)');
+            break;
+          }
+          await sleep(500);
+        }
+
+        // Wait for all uploads to complete
+        console.log('[PRE_UPLOAD] Waiting for uploads to complete...');
+        const uploadTimeout = Math.max(45000, fileEntries.length * 15000);
+        await window.waitForImageUpload(uploadTimeout);
+      } else {
+        console.log('[PRE_UPLOAD] Batch upload failed, trying individual pastes...');
+
+        // Fallback: individual paste per file
+        for (let i = 0; i < fileEntries.length; i++) {
+          if (!automationState.running) break;
+          const { file, charData } = fileEntries[i];
+          console.log('[PRE_UPLOAD] Individual paste ' + (i + 1) + '/' + fileEntries.length + ': ' + charData.fileName);
+
+          await window.simulateImageDragDrop(file);
+          await sleep(1000);
+
+          const confirmed = await window.waitAndConfirmCrop(15000);
+          if (confirmed) {
+            console.log('[PRE_UPLOAD] Crop ' + (i + 1) + '/' + fileEntries.length + ' confirmed');
+          }
+
+          if (i < fileEntries.length - 1) await sleep(1500);
+        }
+
+        await window.waitForImageUpload(Math.max(30000, fileEntries.length * 12000));
+      }
+
+      // Map gallery names for all entries (use original filename without extension)
+      let uploadedCount = 0;
+      for (const { charId, charData } of fileEntries) {
+        const galleryName = charData.fileName.replace(/\.\w+$/, '');
+        results.set(charId, galleryName);
+        uploadedCount++;
+      }
+
+      console.log('[PRE_UPLOAD] Upload complete: ' + uploadedCount + '/' + fileEntries.length + ' gallery names mapped');
+      notifySidepanel('PRE_UPLOAD_COMPLETE', {
+        uploaded: uploadedCount,
+        total: fileEntries.length
+      });
+    } catch (err) {
+      console.log('[PRE_UPLOAD] Error during upload: ' + err.message);
+      for (const { charId, charData } of fileEntries) {
+        const galleryName = charData.fileName.replace(/\.\w+$/, '');
+        results.set(charId, galleryName);
+      }
+      notifySidepanel('PRE_UPLOAD_COMPLETE', { uploaded: 0, total: fileEntries.length });
+    }
+
     return results;
   }
 
@@ -533,60 +641,74 @@
   async function applyFixedSettings() {
     const { sleep, TIMING } = window.veo3Timing;
 
-    // Open settings panel (exact selector: must have BOTH crop icon AND count text)
     const settingsBtn = window.veo3Selectors.settingsButton();
     if (!settingsBtn) {
-      console.log('[ContentBridge] Settings button not found (no button has both aspect icon + count), skipping');
+      console.log('[SETTINGS] Button not found (no button has both aspect icon + count), skipping');
       return;
     }
 
-    if (window.veo3RobustClick) {
-      await window.veo3RobustClick(settingsBtn);
-    } else {
-      settingsBtn.click();
-    }
-    await sleep(TIMING.MEDIUM);
+    console.log('[SETTINGS] Applying fixed settings (Landscape, x1)...');
 
-    // Verify menu actually opened (look for tab elements)
-    const menuOpened = document.querySelector('[role="tab"][aria-controls*="LANDSCAPE"]');
+    // IMPORTANT: Use radixClick (PointerEvent) for Radix UI DropdownMenu trigger.
+    // Radix UI listens to onPointerDown, NOT onClick or onMouseDown.
+    // - .click() alone does NOT dispatch pointerdown → menu won't open
+    // - robustClick() dispatches mousedown (not pointerdown) + double-clicks → toggles open/closed
+    let menuOpened = false;
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      console.log('[SETTINGS] Attempt ' + attempt + '/' + MAX_RETRIES + ': clicking settings button (pointerdown)...');
+
+      await window.veo3RadixClick(settingsBtn);
+      await sleep(TIMING.STANDARD * attempt); // 1s, 2s, 3s
+
+      const menuCheck = document.querySelector('[role="tab"][aria-controls*="LANDSCAPE"]');
+      if (menuCheck) {
+        menuOpened = true;
+        console.log('[SETTINGS] Menu opened');
+        break;
+      }
+
+      if (attempt < MAX_RETRIES) {
+        console.log('[SETTINGS] Menu did not open, retrying...');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await sleep(TIMING.MEDIUM);
+      }
+    }
+
     if (!menuOpened) {
-      console.log('[ContentBridge] Settings menu did not open, skipping settings');
+      console.log('[SETTINGS] Menu did not open after ' + MAX_RETRIES + ' attempts, skipping settings');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(TIMING.SHORT);
       return;
     }
 
-    // Click Landscape tab
+    // Click Landscape tab (simple click for tabs)
     const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
     if (landscapeTab) {
-      if (window.veo3RobustClick) {
-        await window.veo3RobustClick(landscapeTab);
-      } else {
-        landscapeTab.click();
-      }
+      landscapeTab.click();
+      if (window.veo3Highlight) window.veo3Highlight(landscapeTab);
       await sleep(TIMING.SHORT);
+      console.log('[SETTINGS] Clicked Landscape tab');
     }
 
     // Click x1 tab
     const count1Tab = document.querySelector(window.veo3Selectors.tabCount(1));
     if (count1Tab) {
-      if (window.veo3RobustClick) {
-        await window.veo3RobustClick(count1Tab);
-      } else {
-        count1Tab.click();
-      }
+      count1Tab.click();
+      if (window.veo3Highlight) window.veo3Highlight(count1Tab);
       await sleep(TIMING.SHORT);
+      console.log('[SETTINGS] Clicked x1 tab');
     }
 
     // Close settings
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(TIMING.MEDIUM);
 
-    console.log('[ContentBridge] Fixed settings applied (Landscape, x1)');
+    console.log('[SETTINGS] Settings applied. Closing menu.');
   }
 
   async function applySettings(data) {
-    console.log('[ContentBridge] Apply settings:', data);
+    console.log('[SETTINGS] Apply custom settings:', data);
   }
 
   // === MEDIA LIBRARY MAPPING ===
@@ -599,7 +721,7 @@
       });
     } catch (err) {
       notifySidepanel('AUTOMATION_ERROR', {
-        message: `Media library mapping failed: ${err.message}`
+        message: 'Media library mapping failed: ' + err.message
       });
     }
   }

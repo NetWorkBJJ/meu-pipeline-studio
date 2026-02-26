@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ListOrdered } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
-import type { FlowCommand, FlowCreationMode } from '@/types/veo3'
+import type { FlowCommand, FlowCreationMode, FlowCharacterImageRef } from '@/types/veo3'
 
 const MODE_LABELS: Record<FlowCreationMode, string> = {
   texto: 'Text',
@@ -25,12 +25,35 @@ const STATUS_COLORS: Record<string, string> = {
   skipped: 'bg-white/5 text-text-muted'
 }
 
+function CharacterBadge({
+  ci,
+  thumbnail
+}: {
+  ci: FlowCharacterImageRef
+  thumbnail: string | undefined
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5">
+      {thumbnail && (
+        <img
+          src={thumbnail}
+          alt={ci.name}
+          className="h-4 w-4 shrink-0 rounded-sm object-cover"
+        />
+      )}
+      <span className="text-[9px] text-text-muted">{ci.name}</span>
+    </div>
+  )
+}
+
 function CommandCard({
   command,
-  isActive
+  isActive,
+  thumbnails
 }: {
   command: FlowCommand
   isActive: boolean
+  thumbnails: Map<string, string>
 }): React.JSX.Element {
   return (
     <div
@@ -59,12 +82,11 @@ function CommandCard({
       {command.characterImages.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {command.characterImages.map((ci) => (
-            <span
+            <CharacterBadge
               key={ci.characterId}
-              className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] text-text-muted"
-            >
-              {ci.name}
-            </span>
+              ci={ci}
+              thumbnail={ci.imagePath ? thumbnails.get(ci.imagePath) : undefined}
+            />
           ))}
         </div>
       )}
@@ -76,6 +98,41 @@ function CommandCard({
   )
 }
 
+function useCharacterThumbnails(commands: FlowCommand[]): Map<string, string> {
+  const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map())
+
+  useEffect(() => {
+    const paths = new Set<string>()
+    for (const cmd of commands) {
+      for (const ci of cmd.characterImages) {
+        if (ci.imagePath) paths.add(ci.imagePath)
+      }
+    }
+
+    if (paths.size === 0) return
+
+    let cancelled = false
+    const loadThumbnails = async (): Promise<void> => {
+      const map = new Map<string, string>()
+      for (const path of paths) {
+        if (cancelled) break
+        try {
+          const dataUrl = await window.api.veo3ReadImageAsDataUrl(path)
+          if (dataUrl) map.set(path, dataUrl)
+        } catch {
+          // Skip failed loads
+        }
+      }
+      if (!cancelled) setThumbnails(map)
+    }
+
+    loadThumbnails()
+    return () => { cancelled = true }
+  }, [commands.length])
+
+  return thumbnails
+}
+
 interface SidepanelPlanTabProps {
   tabId: string | null
 }
@@ -85,6 +142,7 @@ export function SidepanelPlanTab({ tabId }: SidepanelPlanTabProps): React.JSX.El
   const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
   const { currentCommandIndex, isRunning } = tabState
   const commands = getFilteredCommands(tabId)
+  const thumbnails = useCharacterThumbnails(commands)
 
   const activeRef = useRef<HTMLDivElement>(null)
 
@@ -132,7 +190,11 @@ export function SidepanelPlanTab({ tabId }: SidepanelPlanTabProps): React.JSX.El
           key={cmd.id}
           ref={i === currentCommandIndex && isRunning ? activeRef : undefined}
         >
-          <CommandCard command={cmd} isActive={i === currentCommandIndex && isRunning} />
+          <CommandCard
+            command={cmd}
+            isActive={i === currentCommandIndex && isRunning}
+            thumbnails={thumbnails}
+          />
         </div>
       ))}
     </div>

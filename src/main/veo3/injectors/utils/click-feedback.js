@@ -193,6 +193,45 @@
     return true;
   }
 
+  /**
+   * Click for Radix UI components (DropdownMenu, Popover, etc.)
+   * Radix UI listens to onPointerDown, NOT onClick or onMouseDown.
+   * A regular .click() or mousedown dispatch will NOT open Radix menus.
+   */
+  async function radixClick(element) {
+    if (!element) return false;
+    if (CLICK_FEEDBACK_CONFIG.enabled) highlightElement(element);
+
+    const rect = element.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const opts = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      isPrimary: true,
+      clientX: cx,
+      clientY: cy,
+      screenX: cx,
+      screenY: cy
+    };
+
+    element.dispatchEvent(new PointerEvent('pointerdown', opts));
+    await new Promise(r => setTimeout(r, 100));
+    element.dispatchEvent(new PointerEvent('pointerup', opts));
+    await new Promise(r => setTimeout(r, 50));
+    // Also dispatch click for any non-Radix handlers that listen to click
+    element.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true, button: 0,
+      clientX: cx, clientY: cy
+    }));
+
+    return true;
+  }
+
   async function dispatchWithFeedback(element, events) {
     if (!element) return false;
     if (CLICK_FEEDBACK_CONFIG.enabled) highlightElement(element);
@@ -224,6 +263,7 @@
 
   window.veo3Click = clickWithFeedback;
   window.veo3RobustClick = robustClick;
+  window.veo3RadixClick = radixClick;
   window.veo3Highlight = highlightElement;
 
   console.log('[Flow] Click feedback loaded');

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Play, Pause, Square, AlertTriangle, Loader2 } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
+import { useProjectStore } from '@/stores/useProjectStore'
 import type { WebviewElement, FlowCommand } from '@/types/veo3'
 
 interface SidepanelControlsTabProps {
@@ -98,8 +99,18 @@ export function SidepanelControlsTab({
     // Enrich character images with data URLs before sending to webview
     setIsPreparingImages(true)
     let enrichedCmds: FlowCommand[]
+    let allCharacterImages: Array<{
+      characterId: string
+      name: string
+      imagePath: string
+      dataUrl: string
+      fileName: string
+    }> = []
     try {
       enrichedCmds = await enrichCommandsWithImageData(tabCmds)
+      // Load ALL character images from project (not just matched ones)
+      allCharacterImages = await loadAllCharacterImages()
+      console.log(`[SidepanelControls] Loaded ${allCharacterImages.length} character images for upload`)
     } catch (err) {
       console.error('[SidepanelControls] Failed to enrich images:', err)
       enrichedCmds = tabCmds
@@ -109,15 +120,48 @@ export function SidepanelControlsTab({
 
     startTab(tabId)
 
-    const payload = JSON.stringify({
-      type: 'SIDEPANEL_TO_CONTENT',
-      action: 'START_AUTOMATION',
-      data: { commands: enrichedCmds }
-    })
-
     try {
+      // Step 1: Pre-load images into webview cache (one at a time, ~500KB each)
+      // This avoids sending a massive 8MB+ payload via a single executeJavaScript call
+      console.log(`[SidepanelControls] Pre-loading ${allCharacterImages.length} images into webview...`)
+      await wv.executeJavaScript('window.__veo3_imageCache = {}')
+      for (let i = 0; i < allCharacterImages.length; i++) {
+        const img = allCharacterImages[i]
+        const imgPayload = JSON.stringify({ dataUrl: img.dataUrl, fileName: img.fileName })
+        await wv.executeJavaScript(
+          `window.__veo3_imageCache[${JSON.stringify(img.characterId)}] = ${imgPayload}`
+        )
+        console.log(
+          `[SidepanelControls] Image ${i + 1}/${allCharacterImages.length}: ${img.fileName}`
+        )
+      }
+
+      // Step 2: Send lightweight metadata via postMessage (NO base64 data)
+      const lightCommands = enrichedCmds.map((cmd) => ({
+        ...cmd,
+        characterImages: cmd.characterImages.map((ci) => ({
+          ...ci,
+          image: ci.image ? { name: ci.image.name } : undefined
+        }))
+      }))
+
+      const lightCharImages = allCharacterImages.map((img) => ({
+        characterId: img.characterId,
+        name: img.name,
+        fileName: img.fileName
+      }))
+
+      const payload = JSON.stringify({
+        type: 'SIDEPANEL_TO_CONTENT',
+        action: 'START_AUTOMATION',
+        data: {
+          commands: lightCommands,
+          allCharacterImages: lightCharImages
+        }
+      })
+
       await wv.executeJavaScript(`window.postMessage(${payload}, '*')`)
-      console.log('[SidepanelControls] START_AUTOMATION sent to webview')
+      console.log('[SidepanelControls] START_AUTOMATION sent (metadata only, images pre-loaded)')
     } catch (err) {
       console.error('[SidepanelControls] executeJavaScript failed:', err)
       stopTab(tabId, 'Falha ao enviar comandos para o webview.')
@@ -318,6 +362,40 @@ export function SidepanelControlsTab({
   )
 }
 
+async function loadAllCharacterImages(): Promise<
+  Array<{ characterId: string; name: string; imagePath: string; dataUrl: string; fileName: string }>
+> {
+  const { characterRefs } = useProjectStore.getState()
+  const result: Array<{
+    characterId: string
+    name: string
+    imagePath: string
+    dataUrl: string
+    fileName: string
+  }> = []
+
+  for (const ref of characterRefs) {
+    if (!ref.imagePath) continue
+    try {
+      const dataUrl = await window.api.veo3ReadImageAsDataUrl(ref.imagePath)
+      if (dataUrl) {
+        const fileName = ref.imagePath.split(/[\\/]/).pop() || `${ref.name}.png`
+        result.push({
+          characterId: ref.id,
+          name: ref.name,
+          imagePath: ref.imagePath,
+          dataUrl,
+          fileName
+        })
+      }
+    } catch (err) {
+      console.warn(`[loadAllCharacterImages] Failed to read: ${ref.imagePath}`, err)
+    }
+  }
+
+  return result
+}
+
 async function enrichCommandsWithImageData(cmds: FlowCommand[]): Promise<FlowCommand[]> {
   const imageCache = new Map<string, string>()
 
@@ -344,7 +422,10 @@ async function enrichCommandsWithImageData(cmds: FlowCommand[]): Promise<FlowCom
       ...img,
       image:
         img.imagePath && imageCache.has(img.imagePath)
-          ? { dataUrl: imageCache.get(img.imagePath)!, name: `${img.name}.png` }
+          ? {
+              dataUrl: imageCache.get(img.imagePath)!,
+              name: img.imagePath.split(/[\\/]/).pop() || `${img.name}.png`
+            }
           : undefined
     }))
   }))
