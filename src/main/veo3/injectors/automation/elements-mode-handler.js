@@ -9,9 +9,9 @@
 
   const elementsHandler = {
     async isElementsModeActive() {
-      const modeText = window.veo3Selectors.getCurrentModeText();
-      if (!modeText) return false;
-      return modeText.includes('element') || modeText.includes('elemento');
+      // elementos and texto both use VIDEO mode in Google Flow.
+      // The distinction is whether character images are attached (handled by content-bridge).
+      return window.veo3Selectors.detectCurrentMode() === 'video';
     },
 
     async processPromptWithElements(promptIndex, commandData) {

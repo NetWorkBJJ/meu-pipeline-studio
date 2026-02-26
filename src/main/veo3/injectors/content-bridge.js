@@ -91,6 +91,9 @@
     automationState.currentIndex = 0;
     automationState.startedAt = Date.now();
 
+    window.__veo3_phase = 'INIT';
+    window.veo3ClickLogger?.resetClickLog();
+
     notifySidepanel('AUTOMATION_STARTED', { total: commandQueue.length });
 
     // Wait for Google Flow to fully load (Slate editor must exist)
@@ -108,6 +111,7 @@
     console.log('[INIT] Page ready: ' + promptField.tagName + ' found');
 
     // Phase 1: Pre-upload ALL character images FIRST (before any settings)
+    window.__veo3_phase = 'PRE_UPLOAD';
     if (automationState.running) {
       const preUploadResults = await preUploadCharacterImages(allCharacterImages, commandQueue);
 
@@ -130,7 +134,41 @@
       return;
     }
 
+    // Phase 1.5: Wait for uploads to be 100% done, then clear prompt area
+    window.__veo3_phase = 'CLEAR_PROMPT';
+    // waitForImageUpload may return on timeout before 100%, so we poll for no progress_activity
+    console.log('[INIT] Ensuring all uploads are 100% complete...');
+    const uploadCheckTimeout = 60000; // 60s max
+    const uploadCheckStart = Date.now();
+    while (Date.now() - uploadCheckStart < uploadCheckTimeout) {
+      const progressIcons = document.querySelectorAll('i.google-symbols, i.material-icons');
+      let stillUploading = false;
+      for (const icon of progressIcons) {
+        if (icon.textContent.trim() === 'progress_activity') {
+          stillUploading = true;
+          break;
+        }
+      }
+      if (!stillUploading) break;
+      console.log('[INIT] Upload still in progress, waiting...');
+      await sleep(2000);
+    }
+    console.log('[INIT] All uploads complete, clearing prompt area...');
+
+    // Click "Apagar comando" (close) button to clear residual state from upload
+    // Google Flow is React - simple .click() may not trigger the handler, use robustClick
+    const clearBtn = window.veo3Selectors.clearButton();
+    if (clearBtn) {
+      console.log('[INIT] Found clear button: "' + clearBtn.textContent.trim().substring(0, 40) + '"');
+      await window.veo3RobustClick(clearBtn);
+      await sleep(TIMING.STANDARD);
+      console.log('[INIT] Prompt area cleared');
+    } else {
+      console.log('[INIT] No clear button found (prompt may already be empty)');
+    }
+
     // Phase 2: Apply fixed settings (Landscape, x1) - AFTER upload
+    window.__veo3_phase = 'SETTINGS';
     await applyFixedSettings();
     await sleep(TIMING.STANDARD);
 
@@ -241,6 +279,8 @@
     }
 
     automationState.running = false;
+    window.__veo3_phase = 'DONE';
+    window.veo3ClickLogger?.printClickSummary();
     const totalElapsed = Math.round((Date.now() - automationState.startedAt) / 1000);
     console.log('[DONE] Automation complete: ' + commandQueue.length + ' commands in ' + totalElapsed + 's');
     notifySidepanel('AUTOMATION_COMPLETE', {
@@ -282,16 +322,25 @@
     console.log(tag + ' === Processing: "' + (cmd.prompt?.substring(0, 60) || '') + '..." ===');
     console.log(tag + ' Mode: ' + cmd.mode + ' | Characters: ' + (cmd.characterImages?.length || 0));
 
-    // Step 1/4: Mode switch
+    // Defensive: dismiss any stale dialogs from previous commands
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(TIMING.SHORT);
+
+    // Step 1/4: Mode switch via settings dropdown tabs
+    window.__veo3_phase = 'MODE_SWITCH';
     console.log(tag + ' Step 1/4: Switching mode to "' + cmd.mode + '"...');
-    const modeOk = await ensureModeViaConfigMenu(cmd.mode);
+    const modeOk = await ensureCreationMode(cmd.mode);
     if (!modeOk) {
-      console.log(tag + ' Step 1/4: Mode switch not confirmed, proceeding anyway');
+      // Fail-fast: do not proceed in wrong mode (causes cascading chaos)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(TIMING.SHORT);
+      throw new Error('Mode switch to "' + cmd.mode + '" failed');
     } else {
       console.log(tag + ' Step 1/4: Mode OK');
     }
 
     // Step 2/4: Gallery selection (if command has character images)
+    window.__veo3_phase = 'GALLERY_SELECT';
     if (cmd.characterImages && cmd.characterImages.length > 0) {
       console.log(tag + ' Step 2/4: Selecting ' + cmd.characterImages.length + ' character(s) from gallery...');
       await selectCharactersFromGallery(cmd.characterImages, globalIndex);
@@ -300,11 +349,13 @@
     }
 
     // Step 3/4: Fill prompt text in Slate editor
+    window.__veo3_phase = 'FILL_PROMPT';
     console.log(tag + ' Step 3/4: Filling prompt (' + cmd.prompt.length + ' chars)...');
     await window.veo3Timing.fillSlateEditor(cmd.prompt);
     await sleep(TIMING.AFTER_FILL);
 
     // Step 4/4: Submit with retry chain
+    window.__veo3_phase = 'SUBMIT';
     console.log(tag + ' Step 4/4: Submitting...');
     const submitted = await window.veo3Timing.submitWithRetry();
     if (!submitted) {
@@ -347,121 +398,104 @@
     }
   }
 
-  // === MODE SWITCHING VIA CONFIG MENU ===
-  // IMPORTANT: The settings button is a Radix UI toggle. robustClick() does .click() + mousedown/mouseup/click
-  // which effectively double-clicks, opening then immediately closing the menu.
-  // We MUST use simple .click() for this button.
-  //
-  // Also: the tabs (Video/Image) are INSIDE the dropdown, invisible when closed.
-  // So we detect the current mode from the BUTTON TEXT (e.g. "Video crop_16_9 x1" = video mode)
-  // and only open the menu when we need to actually SWITCH modes.
+  // === MODE SWITCHING VIA SETTINGS DROPDOWN ===
+  // Google Flow (Feb 2026): mode is a TAB inside the settings dropdown menu.
+  // The settings dropdown contains: Image/Video tabs, Landscape/Portrait tabs, x1-x4 tabs, model selector.
+  // Mode mapping: imagem -> IMAGE tab (Nano Banana Pro), texto/elementos -> VIDEO tab (Veo 3.1-Fast)
+  // The settings button text reveals the active model, allowing mode detection without opening dropdown.
 
-  async function ensureModeViaConfigMenu(targetMode) {
+  async function ensureCreationMode(targetMode) {
     const { sleep, TIMING } = window.veo3Timing;
 
-    // Determine target media type
-    let targetMedia = 'VIDEO'; // 'texto' and 'elementos' both use Video
-    if (targetMode === 'imagem') {
-      targetMedia = 'IMAGE';
+    // Step 1: Detect current mode from settings button text (no dropdown needed)
+    const currentMode = window.veo3Selectors.detectCurrentMode();
+    const targetIsImage = (targetMode === 'imagem');
+    const currentIsImage = (currentMode === 'imagem');
+
+    console.log('[MODE] Current: ' + (currentMode || 'unknown') + ', Target: ' + targetMode);
+
+    if (currentMode !== null && targetIsImage === currentIsImage) {
+      console.log('[MODE] Already in correct mode (' + currentMode + '), no switch needed');
+      return true;
     }
 
-    // Detect current mode from settings button TEXT (no need to open menu)
+    // Step 2: Open settings dropdown (same mechanism as applyFixedSettings)
     const settingsBtn = window.veo3Selectors.settingsButton();
     if (!settingsBtn) {
-      console.log('[MODE] Settings button not found, cannot detect or switch mode');
+      console.log('[MODE] Settings button not found, cannot switch mode');
       return false;
     }
-
-    const btnText = settingsBtn.textContent.trim().toLowerCase();
-    const currentIsImage = btnText.includes('image') || btnText.includes('imagem');
-    const currentIsVideo = btnText.includes('video') || btnText.includes('vídeo');
-
-    // Check if already in correct mode (skip opening menu entirely)
-    if (targetMedia === 'VIDEO' && currentIsVideo && targetMode !== 'elementos') {
-      console.log('[MODE] Already in Video mode, no switch needed');
-      return true;
-    }
-    if (targetMedia === 'IMAGE' && currentIsImage) {
-      console.log('[MODE] Already in Image mode, no switch needed');
-      return true;
-    }
-
-    // Need to open config menu and switch tabs
-    // Use radixClick (PointerEvent) - Radix UI listens to onPointerDown, not onClick
-    console.log('[MODE] Switching from ' + (currentIsImage ? 'Image' : 'Video') + ' to ' + targetMedia + '...');
 
     let menuOpened = false;
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      // Radix UI DropdownMenu trigger needs pointerdown event
+      console.log('[MODE] Opening settings dropdown (attempt ' + attempt + '/' + MAX_RETRIES + ')...');
       await window.veo3RadixClick(settingsBtn);
       await sleep(TIMING.STANDARD);
 
-      const menuCheck = document.querySelector('[role="tab"][aria-controls*="-content-VIDEO"]') ||
-                        document.querySelector('[role="tab"][aria-controls*="-content-IMAGE"]');
-      if (menuCheck) {
+      // Verify dropdown opened by checking for mode tabs
+      const modeTab = window.veo3Selectors.getModeTab(targetMode);
+      if (modeTab) {
         menuOpened = true;
+        console.log('[MODE] Settings dropdown opened');
         break;
       }
 
       if (attempt < MAX_RETRIES) {
-        console.log('[MODE] Menu did not open (attempt ' + attempt + '/' + MAX_RETRIES + '), retrying...');
-        // Escape to clear any half-state, then wait before retry
+        console.log('[MODE] Dropdown did not open, retrying...');
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         await sleep(TIMING.MEDIUM);
       }
     }
 
     if (!menuOpened) {
-      console.log('[MODE] Config menu did not open after ' + MAX_RETRIES + ' attempts, skipping');
+      console.log('[MODE] Settings dropdown did not open after ' + MAX_RETRIES + ' attempts');
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(TIMING.SHORT);
       return false;
     }
 
-    // Click media tab (Video or Image) - simple click for tabs too
-    const mediaTabSelector = targetMedia === 'IMAGE'
-      ? window.veo3Selectors.tabImage
-      : window.veo3Selectors.tabVideo;
-    const mediaTabTarget = document.querySelector(mediaTabSelector);
-
-    if (mediaTabTarget) {
-      mediaTabTarget.click();
-      if (window.veo3Highlight) window.veo3Highlight(mediaTabTarget);
+    // Step 3: Find and click the correct mode tab (IMAGE or VIDEO)
+    const modeTab = window.veo3Selectors.getModeTab(targetMode);
+    if (!modeTab) {
+      console.log('[MODE] Mode tab not found for "' + targetMode + '"');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(TIMING.SHORT);
+      return false;
+    }
+
+    if (modeTab.getAttribute('data-state') !== 'active') {
+      const tabLabel = modeTab.textContent.trim();
+      window.veo3ClickLogger?.logNativeClick(modeTab, 'MODE_SWITCH', targetMode + ' tab: "' + tabLabel + '"');
+      modeTab.click();
+      if (window.veo3Highlight) window.veo3Highlight(modeTab);
+      await sleep(TIMING.MEDIUM);
+      console.log('[MODE] Clicked ' + (targetIsImage ? 'IMAGE' : 'VIDEO') + ' tab: "' + tabLabel + '"');
     } else {
-      console.log('[MODE] ' + targetMedia + ' tab not found in menu');
+      console.log('[MODE] Tab already active, no click needed');
     }
 
-    // Click sub-tab if needed (Ingredients for elementos mode)
-    if (targetMode === 'elementos') {
-      await sleep(TIMING.SHORT);
-      const subTabEl = document.querySelector(window.veo3Selectors.tabIngredients);
-
-      if (subTabEl) {
-        subTabEl.click();
-        if (window.veo3Highlight) window.veo3Highlight(subTabEl);
-        await sleep(TIMING.SHORT);
-      } else {
-        console.log('[MODE] Ingredients sub-tab not found');
-      }
-    }
-
-    // Close menu
+    // Step 4: Close settings dropdown
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(TIMING.MEDIUM);
 
-    console.log('[MODE] Switched to ' + targetMedia);
-    return true;
+    // Step 5: Verify mode changed by re-reading settings button text
+    const newMode = window.veo3Selectors.detectCurrentMode();
+    const success = (targetIsImage && newMode === 'imagem') || (!targetIsImage && newMode !== 'imagem');
+
+    if (success) {
+      console.log('[MODE] Mode switched successfully to "' + targetMode + '" (verified: ' + newMode + ')');
+    } else {
+      console.log('[MODE] Mode switch FAILED. Current: ' + (newMode || 'unknown') + ', Target: ' + targetMode);
+    }
+
+    return success;
   }
 
-  // Detect current mode from config button text (for batch pause timing)
+  // Detect current mode from settings button text (for batch pause timing)
   function detectCurrentMode() {
-    const settingsBtn = window.veo3Selectors.settingsButton();
-    if (settingsBtn) {
-      const text = settingsBtn.textContent.trim().toLowerCase();
-      if (text.includes('image') || text.includes('imagem')) return 'imagem';
-    }
+    const mode = window.veo3Selectors.detectCurrentMode();
+    if (mode === 'imagem') return 'imagem';
     return 'texto';
   }
 
@@ -573,9 +607,11 @@
 
         // Wait for crop dialogs (one per image) and confirm each
         console.log('[PRE_UPLOAD] Waiting for crop dialogs...');
+        let cropsFound = 0;
         for (let i = 0; i < fileEntries.length; i++) {
           const confirmed = await window.waitAndConfirmCrop(15000);
           if (confirmed) {
+            cropsFound++;
             console.log('[PRE_UPLOAD] Crop ' + (i + 1) + '/' + fileEntries.length + ' confirmed');
           } else {
             console.log('[PRE_UPLOAD] Crop ' + (i + 1) + '/' + fileEntries.length + ' not found (may not be needed)');
@@ -584,10 +620,17 @@
           await sleep(500);
         }
 
-        // Wait for all uploads to complete
-        console.log('[PRE_UPLOAD] Waiting for uploads to complete...');
-        const uploadTimeout = Math.max(45000, fileEntries.length * 15000);
-        await window.waitForImageUpload(uploadTimeout);
+        // Wait for uploads to complete - but only if crop dialogs were found
+        // If no crop dialogs appeared, images went directly into the prompt (no server upload needed)
+        if (cropsFound > 0) {
+          console.log('[PRE_UPLOAD] Waiting for uploads to complete...');
+          const uploadTimeout = Math.max(45000, fileEntries.length * 15000);
+          await window.waitForImageUpload(uploadTimeout);
+        } else {
+          // No crop dialogs = images pasted directly into prompt, short wait is enough
+          console.log('[PRE_UPLOAD] No crop dialogs found, images loaded directly into prompt');
+          await sleep(3000);
+        }
       } else {
         console.log('[PRE_UPLOAD] Batch upload failed, trying individual pastes...');
 
@@ -685,6 +728,7 @@
     // Click Landscape tab (simple click for tabs)
     const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
     if (landscapeTab) {
+      window.veo3ClickLogger?.logNativeClick(landscapeTab, 'SETTINGS', 'Landscape tab');
       landscapeTab.click();
       if (window.veo3Highlight) window.veo3Highlight(landscapeTab);
       await sleep(TIMING.SHORT);
@@ -694,6 +738,7 @@
     // Click x1 tab
     const count1Tab = document.querySelector(window.veo3Selectors.tabCount(1));
     if (count1Tab) {
+      window.veo3ClickLogger?.logNativeClick(count1Tab, 'SETTINGS', 'x1 tab');
       count1Tab.click();
       if (window.veo3Highlight) window.veo3Highlight(count1Tab);
       await sleep(TIMING.SHORT);

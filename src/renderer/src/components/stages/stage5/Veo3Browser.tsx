@@ -15,6 +15,7 @@ const INJECTOR_SCRIPTS = [
   'constants/selectors.js',
   'utils/timing.js',
   'utils/click-feedback.js',
+  'utils/click-logger.js',
   'automation/image-automator.js',
   'automation/gallery-mapper.js',
   'automation/elements-mode-handler.js',

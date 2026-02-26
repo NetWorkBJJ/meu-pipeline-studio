@@ -9,9 +9,7 @@
 
   const imageCreationHandler = {
     async isImageCreationModeActive() {
-      const modeText = window.veo3Selectors.getCurrentModeText();
-      if (!modeText) return false;
-      return modeText.includes('image') || modeText.includes('imagem') || modeText.includes('criar');
+      return window.veo3Selectors.detectCurrentMode() === 'imagem';
     },
 
     async processPromptWithImageCreation(promptIndex, commandData) {

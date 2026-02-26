@@ -123,7 +123,23 @@
     slateEditor: '[data-slate-editor="true"][contenteditable="true"]',
     textAreaFallback: '#PINHOLE_TEXT_AREA_ELEMENT_ID',
     submitButton: findSubmitButton,
-    clearButton: () => findButtonByIcon('close'),
+    clearButton: () => {
+      // Find the "Apagar comando" / "Delete command" button specifically
+      // It has a visually-hidden span with that text + a google-symbols "close" icon
+      const buttons = document.querySelectorAll('button');
+      for (const btn of buttons) {
+        if (btn.offsetParent === null || btn.disabled) continue;
+        const hiddenSpan = btn.querySelector('span');
+        if (hiddenSpan) {
+          const spanText = hiddenSpan.textContent.trim().toLowerCase();
+          if (spanText.includes('apagar comando') || spanText.includes('delete command') || spanText.includes('clear command')) {
+            return btn;
+          }
+        }
+      }
+      // Fallback: any visible button with close icon
+      return findButtonByIcon('close');
+    },
 
     // --- Settings button (aspect ratio + count: "Video crop_16_9 x1") ---
     // MUST contain BOTH an aspect ratio icon (crop_16_9 or crop_9_16) AND count text (x1..x4).
@@ -144,104 +160,32 @@
       return null;
     },
 
-    // --- Mode combobox (multi-strategy) ---
-    modeCombobox: 'button[role="combobox"]',
+    // --- Mode detection (via settings button text) ---
+    // Google Flow (Feb 2026): mode (Image/Video) is a TAB inside the settings dropdown,
+    // NOT a standalone combobox. The settings button text reveals the active model:
+    //   "Nano Banana Pro" = IMAGE mode, "Veo 3.1" = VIDEO mode
 
-    getModeCombobox: () => {
-      // Mode-related keywords for filtering comboboxes
-      const modeKeywords = [
-        'video', 'image', 'element', 'texto', 'text', 'imagem',
-        'elemento', 'criar', 'create', 'ingredients', 'frames', 'frame'
-      ];
-
-      // Strategy 1: role="combobox" with mode-related text
-      const comboboxes = document.querySelectorAll('button[role="combobox"]');
-      for (const cb of comboboxes) {
-        if (cb.offsetParent === null) continue;
-        const text = cb.textContent.trim().toLowerCase();
-        if (modeKeywords.some(kw => text.includes(kw))) {
-          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 1 (text match)', { text });
-          return cb;
-        }
-      }
-
-      // Strategy 2: Radix combobox with aria-controls (used by Google Flow)
-      const radixComboboxes = document.querySelectorAll('button[role="combobox"][aria-controls*="radix"]');
-      for (const cb of radixComboboxes) {
-        if (cb.offsetParent !== null) {
-          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 2 (radix)');
-          return cb;
-        }
-      }
-
-      // Strategy 3: aria-haspopup="listbox"
-      const listboxTriggers = document.querySelectorAll('[aria-haspopup="listbox"]');
-      for (const trigger of listboxTriggers) {
-        if (trigger.offsetParent === null) continue;
-        window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 3 (listbox)');
-        return trigger;
-      }
-
-      // Strategy 4: Any visible dropdown-like button near the prompt area
-      const promptArea = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID, [data-slate-editor="true"]');
-      if (promptArea) {
-        const container = promptArea.closest('[class]')?.parentElement?.parentElement;
-        if (container) {
-          const nearbyBtns = container.querySelectorAll('button[role="combobox"], button[aria-haspopup]');
-          for (const btn of nearbyBtns) {
-            if (btn.offsetParent !== null) {
-              window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 4 (near prompt area)');
-              return btn;
-            }
-          }
-        }
-      }
-
-      // Strategy 5: First visible combobox (last resort)
-      for (const cb of comboboxes) {
-        if (cb.offsetParent !== null) {
-          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 5 (first visible)');
-          return cb;
-        }
-      }
-
-      window.veo3Debug?.warn('DOM', 'Mode combobox NOT found after 5 strategies');
+    detectCurrentMode: () => {
+      const btn = window.veo3Selectors.settingsButton();
+      if (!btn) return null;
+      const text = btn.textContent.trim().toLowerCase();
+      if (text.includes('nano banana') || text.includes('imagen')) return 'imagem';
+      if (text.includes('veo')) return 'video';
+      if (text.includes('image') || text.includes('imagem')) return 'imagem';
+      if (text.includes('video') || text.includes('vídeo')) return 'video';
+      window.veo3Debug?.warn('DOM', 'Cannot detect mode from settings button text: "' + text + '"');
       return null;
     },
 
-    getModeComboboxes: () => findAllElements([
-      'button[role="combobox"]',
-      'button[role="combobox"][aria-controls*="radix"]',
-      '[aria-haspopup="listbox"]'
-    ]),
-
-    // Selectors for dropdown options (Radix UI / native)
-    getModeOptions: () => findAllElements([
-      '[role="option"]',
-      '[role="menuitem"]',
-      '[data-radix-collection-item]',
-      '[role="listbox"] [role="option"]',
-      'li[role="option"]'
-    ]),
-
-    getCurrentModeText: () => {
-      const modeKeywords = [
-        'video', 'image', 'elemento', 'element', 'imagem', 'texto',
-        'text', 'criar', 'create', 'ingredients', 'frames', 'frame'
-      ];
-      const comboboxes = findAllElements([
-        'button[role="combobox"]',
-        'button[role="combobox"][aria-controls*="radix"]',
-        '[aria-haspopup="listbox"]'
-      ]);
-      for (const cb of comboboxes) {
-        if (cb.offsetParent === null) continue;
-        const text = cb.textContent.trim().toLowerCase();
-        if (modeKeywords.some(kw => text.includes(kw))) {
-          return text;
-        }
+    // Find mode tab inside the OPEN settings dropdown.
+    // Must be called AFTER opening the settings dropdown via settingsButton.
+    // Mode mapping: imagem -> IMAGE tab, texto/elementos -> VIDEO tab
+    getModeTab: (mode) => {
+      if (mode === 'imagem') {
+        return document.querySelector('[role="tab"][aria-controls*="-content-IMAGE"]');
       }
-      return null;
+      // texto and elementos both use VIDEO mode
+      return document.querySelector('[role="tab"][aria-controls*="-content-VIDEO"]');
     },
 
     // --- Settings tabs (Radix UI with semantic aria-controls) ---

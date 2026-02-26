@@ -220,30 +220,66 @@
       document.execCommand('delete', false, null);
       await sleep(200);
 
-      // Try clipboard paste first (less intrusive for Slate.js)
-      try {
-        const clipboardData = new DataTransfer();
-        clipboardData.setData('text/plain', text);
-        const pasteEvent = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: clipboardData
-        });
-        editor.dispatchEvent(pasteEvent);
-        await sleep(TIMING.AFTER_FILL);
+      let filled = false;
 
-        if (editor.textContent.trim().length > 0) {
-          console.log('[fillSlateEditor] Text inserted via Slate clipboard paste');
-          return;
-        }
-      } catch (e) {
-        console.warn('[fillSlateEditor] Clipboard paste failed:', e.message);
-      }
-
-      // execCommand fallback
+      // Strategy 2a: execCommand('insertText') - triggers beforeinput event that Slate handles natively.
+      // More reliable than clipboard paste because it goes through the browser's standard input path.
       document.execCommand('insertText', false, text);
       await sleep(TIMING.AFTER_FILL);
-      console.log('[fillSlateEditor] Text inserted via Slate execCommand');
+
+      if (editor.textContent.trim().length > 0) {
+        console.log('[fillSlateEditor] Text inserted via execCommand insertText');
+        filled = true;
+      }
+
+      // Strategy 2b: Clipboard paste fallback (if execCommand didn't work)
+      if (!filled) {
+        try {
+          const clipboardData = new DataTransfer();
+          clipboardData.setData('text/plain', text);
+          const pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: clipboardData
+          });
+          editor.dispatchEvent(pasteEvent);
+          await sleep(TIMING.AFTER_FILL);
+
+          if (editor.textContent.trim().length > 0) {
+            console.log('[fillSlateEditor] Text inserted via clipboard paste');
+            filled = true;
+          }
+        } catch (e) {
+          console.warn('[fillSlateEditor] Clipboard paste failed:', e.message);
+        }
+      }
+
+      // Strategy 2c: Direct textContent + InputEvent (last resort, nardoto-flow pattern)
+      if (!filled) {
+        editor.textContent = text;
+        editor.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: text
+        }));
+        await sleep(TIMING.AFTER_FILL);
+        console.log('[fillSlateEditor] Text inserted via direct textContent + InputEvent');
+        filled = true;
+      }
+
+      // Reinforce: dispatch InputEvent to ensure React state recognizes content.
+      // Pattern from nardoto-flow: "Simula um espaco para ativar o botao de envio"
+      // Simulates space + backspace to trigger React state update that enables submit button.
+      editor.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: true, inputType: 'insertText', data: ' '
+      }));
+      await sleep(50);
+      editor.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: true, inputType: 'deleteContentBackward'
+      }));
+      await sleep(100);
+
       return;
     }
 
@@ -306,6 +342,21 @@
         }
       }
 
+      // Signal 5: Submit button disappeared (removed from DOM after successful submission)
+      if (!submitBtn) {
+        console.log('[checkSubmissionSuccess] Submit button disappeared - submission confirmed');
+        return true;
+      }
+
+      // Signal 6: Google Flow progress_activity icon appeared (generation spinner)
+      const allIcons = document.querySelectorAll('i.google-symbols, i.material-icons');
+      for (const icon of allIcons) {
+        if (icon.textContent.trim() === 'progress_activity') {
+          console.log('[checkSubmissionSuccess] progress_activity icon detected - submission confirmed');
+          return true;
+        }
+      }
+
       await sleep(TIMING.POLL_NORMAL);
     }
 
@@ -318,6 +369,19 @@
 
   async function submitWithRetry() {
     window.veo3Debug?.info('SUBMIT', 'Starting retry chain');
+
+    // Level 0: Radix/Pointer click (pointerdown/pointerup/click)
+    // Google Flow uses React/Radix - the settings button only works with pointerdown,
+    // and the submit button may have the same requirement.
+    const submitBtn0 = window.veo3Selectors?.submitButton?.();
+    window.veo3Debug?.debug('SUBMIT', 'Level 0: radixClick (pointerdown)', { found: !!submitBtn0 });
+    if (submitBtn0 && window.veo3RadixClick) {
+      await window.veo3RadixClick(submitBtn0);
+      await sleep(TIMING.AFTER_SUBMIT);
+
+      if (await checkSubmissionSuccess(5000)) return true;
+      window.veo3Debug?.debug('SUBMIT', 'Level 0 failed, trying robust click');
+    }
 
     // Level 1: Robust click (click + mousedown/mouseup/click triple)
     const submitBtn = window.veo3Selectors?.submitButton?.();
