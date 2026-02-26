@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Play, Pause, Square, AlertTriangle } from 'lucide-react'
-import { useVeo3AutomationStore } from '@/stores/useVeo3AutomationStore'
-import type { WebviewElement } from '@/types/veo3'
+import { Play, Pause, Square, AlertTriangle, Loader2 } from 'lucide-react'
+import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
+import type { WebviewElement, FlowCommand } from '@/types/veo3'
 
 interface SidepanelControlsTabProps {
   webviewRef: React.RefObject<WebviewElement | null>
+  tabId: string | null
 }
 
 function formatElapsed(startedAt: number | null): string {
@@ -16,25 +17,25 @@ function formatElapsed(startedAt: number | null): string {
 }
 
 export function SidepanelControlsTab({
-  webviewRef
+  webviewRef,
+  tabId
 }: SidepanelControlsTabProps): React.JSX.Element {
   const {
     commands,
-    isRunning,
-    isPaused,
-    currentCommandIndex,
-    startedAt,
-    error,
-    chapterFilter,
-    setChapterFilter,
-    getProgress,
-    getFilteredCommands,
+    tabStates,
     loadFromProject,
-    start,
-    pause,
-    resume,
-    stop
+    startTab,
+    pauseTab,
+    resumeTab,
+    stopTab,
+    assignCommandsToTab,
+    setChapterFilter,
+    getFilteredCommands,
+    getProgress
   } = useVeo3AutomationStore()
+
+  const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
+  const { isRunning, isPaused, currentCommandIndex, startedAt, error, chapterFilter } = tabState
 
   const [elapsed, setElapsed] = useState('0s')
 
@@ -44,46 +45,93 @@ export function SidepanelControlsTab({
     return () => clearInterval(timer)
   }, [isRunning, startedAt])
 
-  const progress = getProgress()
-  const filteredCommands = getFilteredCommands()
+  const progress = getProgress(tabId)
+  const filteredCommands = getFilteredCommands(tabId)
 
   const chapters = [...new Set(commands.map((c) => c.chapter))].sort((a, b) => a - b)
 
-  const handleStart = (): void => {
+  const [isPreparingImages, setIsPreparingImages] = useState(false)
+
+  const handleStart = async (): Promise<void> => {
+    if (!tabId) {
+      console.error('[SidepanelControls] No tabId available')
+      useVeo3AutomationStore.setState({
+        tabStates: {
+          ...useVeo3AutomationStore.getState().tabStates,
+          __global: { ...DEFAULT_TAB_AUTOMATION, error: 'Nenhuma aba ativa. Abra uma aba primeiro.' }
+        }
+      })
+      return
+    }
+
     const wv = webviewRef.current
-    if (!wv) return
+    if (!wv) {
+      console.error('[SidepanelControls] webviewRef.current is null for tab:', tabId)
+      stopTab(tabId, 'Webview nao disponivel. Aguarde a pagina carregar.')
+      return
+    }
 
     // Auto-load if commands are empty but scenes exist
-    let cmds = getFilteredCommands()
+    let cmds = getFilteredCommands(tabId)
     if (cmds.length === 0) {
       loadFromProject()
-      cmds = useVeo3AutomationStore.getState().getFilteredCommands()
+      cmds = useVeo3AutomationStore.getState().getFilteredCommands(tabId)
       if (cmds.length === 0) {
-        useVeo3AutomationStore.setState({
-          error: 'Nenhuma cena com prompt disponivel. Verifique o Stage 4.'
-        })
+        stopTab(tabId, 'Nenhuma cena com prompt disponivel. Verifique o Stage 4.')
         return
       }
     }
 
-    start()
+    // Assign unassigned commands to this tab
+    assignCommandsToTab(tabId)
+    const tabCmds = useVeo3AutomationStore
+      .getState()
+      .commands.filter((c) => c.tabId === tabId)
+
+    if (tabCmds.length === 0) {
+      stopTab(tabId, 'Nenhum comando atribuido a esta aba.')
+      return
+    }
+
+    console.log(`[SidepanelControls] Starting automation: ${tabCmds.length} commands for tab ${tabId}`)
+
+    // Enrich character images with data URLs before sending to webview
+    setIsPreparingImages(true)
+    let enrichedCmds: FlowCommand[]
+    try {
+      enrichedCmds = await enrichCommandsWithImageData(tabCmds)
+    } catch (err) {
+      console.error('[SidepanelControls] Failed to enrich images:', err)
+      enrichedCmds = tabCmds
+    } finally {
+      setIsPreparingImages(false)
+    }
+
+    startTab(tabId)
 
     const payload = JSON.stringify({
       type: 'SIDEPANEL_TO_CONTENT',
       action: 'START_AUTOMATION',
-      data: { commands: cmds }
+      data: { commands: enrichedCmds }
     })
-    wv.executeJavaScript(`window.postMessage(${payload}, '*')`)
+
+    try {
+      await wv.executeJavaScript(`window.postMessage(${payload}, '*')`)
+      console.log('[SidepanelControls] START_AUTOMATION sent to webview')
+    } catch (err) {
+      console.error('[SidepanelControls] executeJavaScript failed:', err)
+      stopTab(tabId, 'Falha ao enviar comandos para o webview.')
+    }
   }
 
   const handlePauseResume = (): void => {
     const wv = webviewRef.current
-    if (!wv) return
+    if (!wv || !tabId) return
 
     if (isPaused) {
-      resume()
+      resumeTab(tabId)
     } else {
-      pause()
+      pauseTab(tabId)
     }
 
     const payload = JSON.stringify({
@@ -96,9 +144,9 @@ export function SidepanelControlsTab({
 
   const handleStop = (): void => {
     const wv = webviewRef.current
-    if (!wv) return
+    if (!wv || !tabId) return
 
-    stop()
+    stopTab(tabId)
 
     const payload = JSON.stringify({
       type: 'SIDEPANEL_TO_CONTENT',
@@ -109,19 +157,25 @@ export function SidepanelControlsTab({
   }
 
   const toggleChapter = (ch: number): void => {
+    if (!tabId) return
     if (!chapterFilter) {
-      setChapterFilter([ch])
+      setChapterFilter(tabId, [ch])
       return
     }
     if (chapterFilter.includes(ch)) {
       const next = chapterFilter.filter((c) => c !== ch)
-      setChapterFilter(next.length === 0 ? null : next)
+      setChapterFilter(tabId, next.length === 0 ? null : next)
     } else {
-      setChapterFilter([...chapterFilter, ch])
+      setChapterFilter(tabId, [...chapterFilter, ch])
     }
   }
 
-  const failedCommands = commands.filter((c) => c.status === 'failed')
+  const isStartDisabled = commands.length === 0 || isPreparingImages
+
+  const tabCommands = tabId
+    ? commands.filter((c) => c.tabId === tabId)
+    : commands
+  const failedCommands = tabCommands.filter((c) => c.status === 'failed')
 
   return (
     <div className="flex flex-col gap-4 p-3">
@@ -131,7 +185,7 @@ export function SidepanelControlsTab({
           <span className="text-[11px] font-medium text-text-muted">Distribuicao</span>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             <button
-              onClick={() => setChapterFilter(null)}
+              onClick={() => tabId && setChapterFilter(tabId, null)}
               className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
                 !chapterFilter
                   ? 'bg-primary text-white'
@@ -165,11 +219,20 @@ export function SidepanelControlsTab({
         {!isRunning ? (
           <button
             onClick={handleStart}
-            disabled={commands.length === 0}
+            disabled={isStartDisabled}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
           >
-            <Play className="h-3.5 w-3.5" />
-            Iniciar
+            {isPreparingImages ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Carregando imagens...
+              </>
+            ) : (
+              <>
+                <Play className="h-3.5 w-3.5" />
+                Iniciar
+              </>
+            )}
           </button>
         ) : (
           <>
@@ -214,9 +277,9 @@ export function SidepanelControlsTab({
           )}
           <div className="mt-2 flex items-center justify-between text-[10px] text-text-muted">
             <span>Tempo: {elapsed}</span>
-            {isRunning && currentCommandIndex < commands.length && (
+            {isRunning && currentCommandIndex < tabCommands.length && (
               <span className="truncate ml-2 max-w-[150px]">
-                #{currentCommandIndex + 1}: {commands[currentCommandIndex]?.prompt.slice(0, 40)}...
+                #{currentCommandIndex + 1}: {tabCommands[currentCommandIndex]?.prompt.slice(0, 40)}...
               </span>
             )}
           </div>
@@ -253,4 +316,36 @@ export function SidepanelControlsTab({
       )}
     </div>
   )
+}
+
+async function enrichCommandsWithImageData(cmds: FlowCommand[]): Promise<FlowCommand[]> {
+  const imageCache = new Map<string, string>()
+
+  for (const cmd of cmds) {
+    for (const img of cmd.characterImages) {
+      if (img.imagePath && !imageCache.has(img.imagePath)) {
+        try {
+          const dataUrl = await window.api.veo3ReadImageAsDataUrl(img.imagePath)
+          if (dataUrl) {
+            imageCache.set(img.imagePath, dataUrl)
+          }
+        } catch (err) {
+          console.warn(`[enrichImages] Failed to read: ${img.imagePath}`, err)
+        }
+      }
+    }
+  }
+
+  if (imageCache.size === 0) return cmds
+
+  return cmds.map((cmd) => ({
+    ...cmd,
+    characterImages: cmd.characterImages.map((img) => ({
+      ...img,
+      image:
+        img.imagePath && imageCache.has(img.imagePath)
+          ? { dataUrl: imageCache.get(img.imagePath)!, name: `${img.name}.png` }
+          : undefined
+    }))
+  }))
 }

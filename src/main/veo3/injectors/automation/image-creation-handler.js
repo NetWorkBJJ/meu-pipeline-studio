@@ -66,10 +66,23 @@
         return;
       }
 
-      // simulateImageDragDrop auto-detects target if not provided
+      // Step 1: Drag & drop (simulateImageDragDrop handles #PINHOLE targeting + feedback)
       await window.simulateImageDragDrop(file);
-      await sleep(700);
-      await window.waitAndConfirmCrop();
+      await sleep(800);
+
+      // Step 2: Wait for and confirm crop dialog (15s timeout, exact selectors)
+      try {
+        await window.waitAndConfirmCrop(15000);
+      } catch (cropError) {
+        console.warn('[ImageCreation] Crop error, continuing:', cropError.message);
+      }
+
+      // Step 3: Wait for upload to complete (30s timeout, 6 signals)
+      try {
+        await window.waitForImageUpload(30000);
+      } catch (uploadError) {
+        console.warn('[ImageCreation] Upload timeout, checking state...');
+      }
     }
   };
 

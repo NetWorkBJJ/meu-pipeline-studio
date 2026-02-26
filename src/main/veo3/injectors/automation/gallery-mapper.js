@@ -12,21 +12,35 @@
   };
 
   async function openMediaLibrary() {
-    const { sleep } = window.veo3Timing;
+    const { sleep, waitForElement } = window.veo3Timing;
     const addBtn = window.veo3Selectors.addMediaButton();
     if (!addBtn) {
       console.warn('[GalleryMapper] Add media button not found');
       return false;
     }
 
-    addBtn.scrollIntoView({ block: 'center' });
-    await sleep(200);
-    addBtn.click();
+    // Use robustClick for visual feedback (red circle)
+    if (window.veo3RobustClick) {
+      await window.veo3RobustClick(addBtn);
+    } else {
+      addBtn.scrollIntoView({ block: 'center' });
+      await sleep(200);
+      addBtn.click();
+    }
     await sleep(1000);
 
-    // Verify menu actually opened by polling for list items
+    // Verify dialog opened by checking for search input or list items
+    const searchInput = await waitForElement(
+      window.veo3Selectors.searchInput, 6000
+    );
+    if (searchInput) {
+      console.log('[GalleryMapper] Media library opened (search input found)');
+      return true;
+    }
+
+    // Fallback: check for list items
     const startTime = Date.now();
-    while (Date.now() - startTime < 6000) {
+    while (Date.now() - startTime < 3000) {
       const items = document.querySelectorAll(window.veo3Selectors.mediaListItem);
       if (items.length > 0) {
         console.log('[GalleryMapper] Media library opened, found', items.length, 'visible items');
@@ -118,53 +132,115 @@
   }
 
   async function selectMediaByName(targetName) {
+    const { sleep, TIMING, waitForElement, setReactValue } = window.veo3Timing;
+    window.veo3Debug?.info('GALLERY', 'Selecting media by search: ' + targetName);
+
+    // Step 1: Click '+' button to open resource dialog (with red circle feedback)
+    const addBtn = window.veo3Selectors.addMediaButton();
+    if (!addBtn) {
+      window.veo3Debug?.warn('GALLERY', 'Add media button not found');
+      return false;
+    }
+    await window.veo3RobustClick(addBtn);
+    await sleep(TIMING.STANDARD);
+
+    // Step 2: Wait for search input to appear in the dialog
+    const searchInput = await waitForElement(
+      window.veo3Selectors.searchInput, 6000
+    );
+    if (!searchInput) {
+      window.veo3Debug?.warn('GALLERY', 'Search input not found in dialog');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(300);
+      // Fallback to legacy scroll-based selection
+      return await selectMediaByNameLegacy(targetName);
+    }
+
+    // Step 3: Type character name in search field (React-compatible value setter)
+    await setReactValue(searchInput, targetName, { clear: true, focus: true, blur: false, delay: 50 });
+    await sleep(TIMING.NETWORK); // Wait for search results to filter
+
+    // Step 4: Wait for Virtuoso to render results
+    await sleep(500);
+
+    // Step 5: Find and click the best matching item from filtered results
+    const items = document.querySelectorAll('[data-item-index]');
+    const targetLower = targetName.toLowerCase();
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const item of items) {
+      if (item.offsetParent === null) continue;
+      const text = item.textContent.trim().toLowerCase();
+
+      // Exact match gets highest score
+      if (text === targetLower) {
+        bestMatch = item;
+        bestScore = 1000;
+        break;
+      }
+      // Contains match
+      if (text.includes(targetLower) || targetLower.includes(text)) {
+        const score = Math.min(text.length, targetLower.length);
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = item;
+        }
+      }
+    }
+
+    if (bestMatch) {
+      window.veo3Debug?.info('GALLERY', 'Found match, clicking: ' + bestMatch.textContent.trim());
+      await window.veo3RobustClick(bestMatch); // Red circle feedback
+      await sleep(TIMING.MEDIUM);
+      // Dialog may auto-close after selection
+      return true;
+    }
+
+    // No match found - close dialog
+    window.veo3Debug?.warn('GALLERY', 'No search results matched: ' + targetName);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(300);
+    return false;
+  }
+
+  // Legacy fallback: scroll-and-scan approach (used if search input not found)
+  async function selectMediaByNameLegacy(targetName) {
     const { sleep } = window.veo3Timing;
     const targetLower = targetName.toLowerCase();
 
-    // Open media library if not already open
     const existingItems = document.querySelectorAll(window.veo3Selectors.mediaListItem);
     if (existingItems.length === 0) {
       const opened = await openMediaLibrary();
       if (!opened) return false;
     }
 
-    // Search through visible items
     const items = readMediaListItems();
     for (const item of items) {
       if (item.name.toLowerCase().includes(targetLower)) {
-        if (window.veo3ClickFeedback) {
-          await window.veo3ClickFeedback.clickWithFeedback(item.element);
-        } else {
-          item.element.click();
-        }
+        await window.veo3RobustClick(item.element);
         await sleep(500);
-        console.log(`[GalleryMapper] Selected media: "${item.name}"`);
+        console.log(`[GalleryMapper] Selected media (legacy): "${item.name}"`);
         return true;
       }
     }
 
-    // If not found in visible items, try scrolling to find it
     const allItems = await scrollAndCollectAll(10);
     for (const item of allItems) {
       if (item.name.toLowerCase().includes(targetLower)) {
-        // Re-query since scrolling changed the DOM
         const freshItems = readMediaListItems();
         for (const fresh of freshItems) {
           if (fresh.index === item.index) {
-            if (window.veo3ClickFeedback) {
-              await window.veo3ClickFeedback.clickWithFeedback(fresh.element);
-            } else {
-              fresh.element.click();
-            }
+            await window.veo3RobustClick(fresh.element);
             await sleep(500);
-            console.log(`[GalleryMapper] Selected media (after scroll): "${item.name}"`);
+            console.log(`[GalleryMapper] Selected media (legacy scroll): "${item.name}"`);
             return true;
           }
         }
       }
     }
 
-    console.warn(`[GalleryMapper] Media "${targetName}" not found`);
+    console.warn(`[GalleryMapper] Media "${targetName}" not found (legacy)`);
     return false;
   }
 
@@ -204,6 +280,7 @@
     galleryState,
     mapGallery,
     selectMediaByName,
+    selectMediaByNameLegacy,
     readMediaListItems,
     matchCharacterToMedia,
     openMediaLibrary

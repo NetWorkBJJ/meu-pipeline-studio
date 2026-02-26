@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useVeo3AutomationStore } from '@/stores/useVeo3AutomationStore'
+import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { SidepanelPlanTab } from './sidepanel/SidepanelPlanTab'
 import { SidepanelCharactersTab } from './sidepanel/SidepanelCharactersTab'
 import { SidepanelControlsTab } from './sidepanel/SidepanelControlsTab'
@@ -15,14 +15,19 @@ const TABS: { id: SidepanelTab; label: string }[] = [
 
 interface Veo3SidepanelProps {
   webviewRef: React.RefObject<WebviewElement | null>
+  tabId: string | null
   compact?: boolean
 }
 
-export function Veo3Sidepanel({ webviewRef, compact }: Veo3SidepanelProps): React.JSX.Element {
+export function Veo3Sidepanel({ webviewRef, tabId, compact }: Veo3SidepanelProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<SidepanelTab>('plan')
-  const { isRunning, isPaused, getProgress } = useVeo3AutomationStore()
+  const tabStates = useVeo3AutomationStore((s) => s.tabStates)
+  const getProgress = useVeo3AutomationStore((s) => s.getProgress)
 
-  const progress = getProgress()
+  const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
+  const progress = getProgress(tabId)
+
+  const { isRunning, isPaused } = tabState
 
   const statusLabel = isRunning
     ? isPaused
@@ -72,12 +77,12 @@ export function Veo3Sidepanel({ webviewRef, compact }: Veo3SidepanelProps): Reac
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {activeTab === 'plan' && <SidepanelPlanTab />}
+        {activeTab === 'plan' && <SidepanelPlanTab tabId={tabId} />}
         {activeTab === 'characters' && (
           <SidepanelCharactersTab webviewRef={webviewRef} />
         )}
         {activeTab === 'controls' && (
-          <SidepanelControlsTab webviewRef={webviewRef} />
+          <SidepanelControlsTab webviewRef={webviewRef} tabId={tabId} />
         )}
       </div>
 

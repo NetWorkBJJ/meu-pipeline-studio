@@ -97,9 +97,47 @@
 
     notifySidepanel('AUTOMATION_STARTED', { total: commandQueue.length });
 
+    // Wait for Google Flow to fully load (prompt field must exist before any clicks)
+    // Try #PINHOLE first (legacy), then Slate editor (current Google Flow UI)
+    const promptField = await window.veo3Timing.waitForAnyElement([
+      '#PINHOLE_TEXT_AREA_ELEMENT_ID',
+      '[data-slate-editor="true"][contenteditable="true"]',
+      '[contenteditable="true"]'
+    ], 15000);
+    if (!promptField) {
+      window.veo3Debug?.error('AUTO', 'No prompt field found - page may not be loaded');
+      notifySidepanel('AUTOMATION_ERROR', { message: 'Google Flow page not ready (no prompt field found)' });
+      automationState.running = false;
+      return;
+    }
+    console.log('[ContentBridge] Page ready - prompt field found:', promptField.id || promptField.tagName);
+
     // Apply fixed settings before starting
     await applyFixedSettings();
     await sleep(TIMING.STANDARD);
+
+    // Pre-upload all unique character images before processing prompts
+    if (automationState.running) {
+      const preUploadResults = await preUploadCharacterImages(commandQueue);
+
+      // Update command queue with gallery names from pre-upload
+      if (preUploadResults.size > 0) {
+        for (const cmd of commandQueue) {
+          if (!cmd.characterImages) continue;
+          for (const img of cmd.characterImages) {
+            const galleryName = preUploadResults.get(img.characterId);
+            if (galleryName) {
+              img.galleryItemName = galleryName;
+            }
+          }
+        }
+        window.veo3Debug?.info('PRE_UPLOAD', 'Updated gallery names for ' + preUploadResults.size + ' characters');
+      }
+    }
+
+    if (!automationState.running) {
+      return;
+    }
 
     // Process in batches of BATCH_SIZE
     const totalBatches = Math.ceil(commandQueue.length / BATCH_SIZE);
@@ -290,38 +328,47 @@
     return null;
   }
 
-  async function ensureModeWithRetry(targetMode, maxAttempts = 3) {
+  async function ensureModeWithRetry(targetMode, maxAttempts = 2) {
     const { sleep, TIMING } = window.veo3Timing;
     window.veo3Debug?.info('MODE', 'Ensuring mode: ' + targetMode);
 
+    // Quick check: if current mode already matches, return immediately
+    const currentMode = detectCurrentMode();
+    if (currentMode === targetMode) {
+      window.veo3Debug?.debug('MODE', 'Already in target mode: ' + targetMode);
+      return true;
+    }
+
+    // If no combobox exists in the UI, skip mode switching entirely
+    // Google Flow may not always have a mode combobox visible
+    const combobox = window.veo3Selectors.getModeCombobox();
+    if (!combobox) {
+      console.log(`[ContentBridge] Mode combobox not found in UI, skipping mode switch to "${targetMode}" and proceeding`);
+      return false;
+    }
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const currentMode = detectCurrentMode();
-
-      if (currentMode === targetMode) {
-        if (attempt > 1) window.veo3Debug?.info('MODE', 'Confirmed on attempt ' + attempt);
-        return true;
-      }
-
       window.veo3Debug?.debug('MODE', 'Switch attempt ' + attempt + '/' + maxAttempts, { from: currentMode, to: targetMode });
 
       // Click the combobox to open dropdown
-      const combobox = window.veo3Selectors.getModeCombobox();
-      if (!combobox) {
-        console.warn(`[ContentBridge] Mode combobox not found (attempt ${attempt})`);
-        if (attempt < maxAttempts) {
-          await sleep(TIMING.STANDARD);
-          continue;
-        }
-        console.warn('[ContentBridge] All mode switch attempts failed (no combobox), proceeding anyway');
+      const cb = window.veo3Selectors.getModeCombobox();
+      if (!cb) {
+        console.log('[ContentBridge] Mode combobox disappeared, skipping');
         return false;
       }
 
-      combobox.click();
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(cb);
+      } else {
+        cb.click();
+      }
       await sleep(TIMING.MEDIUM);
 
       // Find and click the target option in the dropdown
       const targetKeywords = MODE_KEYWORDS[targetMode] || [targetMode];
-      const options = document.querySelectorAll('[role="option"], [role="menuitem"], [data-value]');
+      const options = window.veo3Selectors.getModeOptions
+        ? window.veo3Selectors.getModeOptions()
+        : document.querySelectorAll('[role="option"], [role="menuitem"], [data-value], [data-radix-collection-item]');
 
       let found = false;
       for (const option of options) {
@@ -329,7 +376,11 @@
         const optionText = option.textContent.trim().toLowerCase();
         for (const kw of targetKeywords) {
           if (optionText.includes(kw)) {
-            option.click();
+            if (window.veo3RobustClick) {
+              await window.veo3RobustClick(option);
+            } else {
+              option.click();
+            }
             found = true;
             break;
           }
@@ -338,14 +389,18 @@
       }
 
       if (!found) {
-        // Try listbox items
-        const listItems = document.querySelectorAll('[role="listbox"] [role="option"]');
+        // Try listbox items as fallback
+        const listItems = document.querySelectorAll('[role="listbox"] [role="option"], li[role="option"]');
         for (const item of listItems) {
           if (item.offsetParent === null) continue;
           const itemText = item.textContent.trim().toLowerCase();
           for (const kw of targetKeywords) {
             if (itemText.includes(kw)) {
-              item.click();
+              if (window.veo3RobustClick) {
+                await window.veo3RobustClick(item);
+              } else {
+                item.click();
+              }
               found = true;
               break;
             }
@@ -370,13 +425,88 @@
       }
     }
 
-    // After all attempts failed, fall back to 'texto' if that's not what we wanted
-    if (targetMode !== 'texto') {
-      console.warn(`[ContentBridge] Failed to switch to "${targetMode}" after ${maxAttempts} attempts, falling back to texto`);
-      notifySidepanel('MODE_SWITCH_FAILED', { targetMode, fallback: 'texto' });
+    console.log(`[ContentBridge] Mode switch to "${targetMode}" not confirmed, proceeding anyway`);
+    return false;
+  }
+
+  // === PRE-UPLOAD CHARACTER IMAGES ===
+
+  async function preUploadCharacterImages(commands) {
+    const { sleep, TIMING } = window.veo3Timing;
+    const results = new Map(); // characterId -> galleryItemName
+
+    // Collect unique characters that need upload
+    const uniqueChars = new Map(); // characterId -> { name, dataUrl, fileName }
+    for (const cmd of commands) {
+      if (!cmd.characterImages) continue;
+      for (const img of cmd.characterImages) {
+        if (img.image?.dataUrl && !uniqueChars.has(img.characterId)) {
+          uniqueChars.set(img.characterId, {
+            name: img.name,
+            dataUrl: img.image.dataUrl,
+            fileName: img.image.name || (img.name + '.png')
+          });
+        }
+      }
     }
 
-    return false;
+    if (uniqueChars.size === 0) {
+      window.veo3Debug?.debug('PRE_UPLOAD', 'No character images to upload');
+      return results;
+    }
+
+    window.veo3Debug?.info('PRE_UPLOAD', 'Uploading ' + uniqueChars.size + ' character images (individual)');
+    notifySidepanel('PRE_UPLOAD_START', { count: uniqueChars.size });
+
+    // Upload images one-by-one (batch drag & drop does not reliably trigger
+    // file processing in Google Flow's React app - reference project also uses individual uploads)
+    let uploadedCount = 0;
+    for (const [charId, charData] of uniqueChars) {
+      if (!automationState.running) break;
+
+      const file = window.dataUrlToFile(charData.dataUrl, charData.fileName);
+      if (!file) {
+        window.veo3Debug?.warn('PRE_UPLOAD', 'dataUrlToFile returned null for: ' + charData.name);
+        continue;
+      }
+
+      try {
+        window.veo3Debug?.debug('PRE_UPLOAD', 'Uploading: ' + charData.name);
+
+        // Drag & drop single file (simulateImageDragDrop handles targeting + feedback)
+        await window.simulateImageDragDrop(file);
+        await sleep(800);
+
+        // Wait for and confirm crop dialog (15s timeout, exact selectors)
+        await window.waitAndConfirmCrop(15000);
+
+        // Wait for upload to complete (30s timeout, 6 signals)
+        const uploaded = await window.waitForImageUpload(30000);
+        if (uploaded) {
+          uploadedCount++;
+          const galleryName = charData.fileName.replace(/\.\w+$/, '');
+          results.set(charId, galleryName);
+          window.veo3Debug?.debug('PRE_UPLOAD', 'Uploaded: ' + charData.name);
+        } else {
+          window.veo3Debug?.warn('PRE_UPLOAD', 'Upload verification timed out for: ' + charData.name);
+          // Still map the gallery name - it may have uploaded without visual confirmation
+          const galleryName = charData.fileName.replace(/\.\w+$/, '');
+          results.set(charId, galleryName);
+        }
+      } catch (err) {
+        window.veo3Debug?.warn('PRE_UPLOAD', 'Upload failed for ' + charData.name + ': ' + err.message);
+      }
+
+      await sleep(TIMING.STANDARD);
+    }
+
+    notifySidepanel('PRE_UPLOAD_COMPLETE', {
+      uploaded: uploadedCount,
+      total: uniqueChars.size
+    });
+
+    window.veo3Debug?.info('PRE_UPLOAD', 'Upload complete: ' + uploadedCount + '/' + uniqueChars.size);
+    return results;
   }
 
   // === SETTINGS ===
@@ -391,20 +521,32 @@
       return;
     }
 
-    settingsBtn.click();
+    if (window.veo3RobustClick) {
+      await window.veo3RobustClick(settingsBtn);
+    } else {
+      settingsBtn.click();
+    }
     await sleep(TIMING.MEDIUM);
 
     // Click Landscape tab
     const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
     if (landscapeTab) {
-      landscapeTab.click();
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(landscapeTab);
+      } else {
+        landscapeTab.click();
+      }
       await sleep(TIMING.SHORT);
     }
 
     // Click x1 tab
     const count1Tab = document.querySelector(window.veo3Selectors.tabCount(1));
     if (count1Tab) {
-      count1Tab.click();
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(count1Tab);
+      } else {
+        count1Tab.click();
+      }
       await sleep(TIMING.SHORT);
     }
 

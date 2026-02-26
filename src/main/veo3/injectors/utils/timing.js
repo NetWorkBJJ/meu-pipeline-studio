@@ -185,63 +185,70 @@
     }
   }
 
-  // === SHARED SLATE.JS EDITOR FILL ===
+  // === PROMPT FIELD FILL ===
   // Used by content-bridge, elements-handler, and image-creation-handler
-  // Strategy 1: ClipboardEvent paste (less intrusive for Slate)
-  // Strategy 2: execCommand insertText fallback
+  // Strategy 1: #PINHOLE_TEXT_AREA_ELEMENT_ID (primary - React textarea used by Google Flow)
+  // Strategy 2: Slate.js contenteditable editor (fallback)
+  // Based on nardoto-flow reference which uses #PINHOLE_TEXT_AREA_ELEMENT_ID as the main target
 
   async function fillSlateEditor(text) {
-    window.veo3Debug?.debug('DOM', 'Filling Slate editor', { textLength: text.length });
+    window.veo3Debug?.debug('DOM', 'Filling prompt field', { textLength: text.length });
 
-    const editor = await waitForElement(
-      window.veo3Selectors?.slateEditor || '[data-slate-editor="true"][contenteditable="true"]'
-    );
-    if (!editor) {
-      // Fallback: try legacy textarea
-      const textArea = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID');
-      if (textArea) {
-        window.veo3Debug?.debug('DOM', 'Using legacy textarea fallback');
-        await setReactValue(textArea, text, { clear: true, focus: true, delay: 50 });
-        return;
-      }
-      window.veo3Debug?.error('DOM', 'Slate editor not found');
-      throw new Error('Slate editor not found');
-    }
-
-    editor.focus();
-    await sleep(200);
-
-    // Clear existing content
-    document.execCommand('selectAll', false, null);
-    await sleep(100);
-    document.execCommand('delete', false, null);
-    await sleep(200);
-
-    // Strategy 1: Clipboard API (less intrusive for Slate.js)
-    try {
-      const clipboardData = new DataTransfer();
-      clipboardData.setData('text/plain', text);
-      const pasteEvent = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: clipboardData
-      });
-      editor.dispatchEvent(pasteEvent);
+    // Strategy 1: Use #PINHOLE_TEXT_AREA_ELEMENT_ID (primary target in Google Flow)
+    const textArea = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID');
+    if (textArea) {
+      window.veo3Debug?.debug('DOM', 'Using #PINHOLE_TEXT_AREA_ELEMENT_ID (primary)');
+      await setReactValue(textArea, text, { clear: true, focus: true, blur: true, delay: 30 });
       await sleep(TIMING.AFTER_FILL);
-
-      // Verify text was inserted
-      if (editor.textContent.trim().length > 0) {
-        console.log('[fillSlateEditor] Text inserted via clipboard paste');
-        return;
-      }
-    } catch (e) {
-      console.warn('[fillSlateEditor] Clipboard paste failed, trying execCommand:', e.message);
+      console.log('[fillSlateEditor] Text inserted via #PINHOLE_TEXT_AREA_ELEMENT_ID');
+      return;
     }
 
-    // Strategy 2: execCommand fallback (works but may cause Slate warning)
-    document.execCommand('insertText', false, text);
-    await sleep(TIMING.AFTER_FILL);
-    console.log('[fillSlateEditor] Text inserted via execCommand');
+    // Strategy 2: Slate.js contenteditable editor (fallback)
+    const editor = await waitForElement(
+      window.veo3Selectors?.slateEditor || '[data-slate-editor="true"][contenteditable="true"]',
+      5000
+    );
+    if (editor) {
+      window.veo3Debug?.debug('DOM', 'Using Slate editor (fallback)');
+      editor.focus();
+      await sleep(200);
+
+      // Clear existing content
+      document.execCommand('selectAll', false, null);
+      await sleep(100);
+      document.execCommand('delete', false, null);
+      await sleep(200);
+
+      // Try clipboard paste first (less intrusive for Slate.js)
+      try {
+        const clipboardData = new DataTransfer();
+        clipboardData.setData('text/plain', text);
+        const pasteEvent = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: clipboardData
+        });
+        editor.dispatchEvent(pasteEvent);
+        await sleep(TIMING.AFTER_FILL);
+
+        if (editor.textContent.trim().length > 0) {
+          console.log('[fillSlateEditor] Text inserted via Slate clipboard paste');
+          return;
+        }
+      } catch (e) {
+        console.warn('[fillSlateEditor] Clipboard paste failed:', e.message);
+      }
+
+      // execCommand fallback
+      document.execCommand('insertText', false, text);
+      await sleep(TIMING.AFTER_FILL);
+      console.log('[fillSlateEditor] Text inserted via Slate execCommand');
+      return;
+    }
+
+    window.veo3Debug?.error('DOM', 'No prompt field found (#PINHOLE or Slate)');
+    throw new Error('No prompt field found');
   }
 
   // === MULTI-SIGNAL SUBMISSION VERIFICATION ===
@@ -252,7 +259,14 @@
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
-      // Signal 1: Editor cleared (Flow clears editor after accepting prompt)
+      // Signal 1a: Textarea cleared (primary - Flow uses #PINHOLE_TEXT_AREA_ELEMENT_ID)
+      const textArea = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID');
+      if (textArea && textArea.value.trim() === '') {
+        window.veo3Debug?.info('SUBMIT', 'Textarea cleared - submission confirmed');
+        return true;
+      }
+
+      // Signal 1b: Slate editor cleared (fallback)
       const editorSelector = window.veo3Selectors?.slateEditor || '[data-slate-editor="true"][contenteditable="true"]';
       const editor = document.querySelector(editorSelector);
       if (editor) {
@@ -280,16 +294,15 @@
       }
 
       // Signal 4: Success text indicators
-      const successTexts = ['success', 'sucesso', 'created', 'criado', 'generated', 'gerado', 'processing'];
-      const allText = document.body.innerText?.toLowerCase() || '';
-      for (const st of successTexts) {
-        // Only check in recent DOM changes (rough heuristic: check small areas)
-        const alerts = document.querySelectorAll('[role="alert"], [class*="toast"], [class*="notification"]');
-        for (const alert of alerts) {
-          if (alert.textContent.toLowerCase().includes(st)) {
-            console.log('[checkSubmissionSuccess] Success indicator found:', st);
-            return true;
-          }
+      const alerts = document.querySelectorAll('[role="alert"], [class*="toast"], [class*="notification"]');
+      for (const alertEl of alerts) {
+        const alertText = alertEl.textContent.toLowerCase();
+        if (alertText.includes('success') || alertText.includes('sucesso') ||
+            alertText.includes('created') || alertText.includes('criado') ||
+            alertText.includes('generated') || alertText.includes('gerado') ||
+            alertText.includes('processing')) {
+          console.log('[checkSubmissionSuccess] Success indicator found');
+          return true;
         }
       }
 
@@ -301,16 +314,18 @@
   }
 
   // === SUBMIT WITH RETRY CHAIN ===
-  // 4-level: button click -> form submit -> Enter key -> retry
+  // 5-level: robustClick -> mousedown triple -> form submit -> Enter key -> final robust retry
 
   async function submitWithRetry() {
     window.veo3Debug?.info('SUBMIT', 'Starting retry chain');
 
-    // Level 1: Click submit button
+    // Level 1: Robust click (click + mousedown/mouseup/click triple)
     const submitBtn = window.veo3Selectors?.submitButton?.();
-    window.veo3Debug?.debug('SUBMIT', 'Level 1: button click', { found: !!submitBtn });
+    window.veo3Debug?.debug('SUBMIT', 'Level 1: robust click', { found: !!submitBtn });
     if (submitBtn) {
-      if (window.veo3ClickFeedback) {
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(submitBtn, { sendEnter: false });
+      } else if (window.veo3ClickFeedback) {
         await window.veo3ClickFeedback.clickWithFeedback(submitBtn);
       } else {
         submitBtn.click();
@@ -318,12 +333,32 @@
       await sleep(TIMING.AFTER_SUBMIT);
 
       if (await checkSubmissionSuccess(5000)) return true;
-      window.veo3Debug?.debug('SUBMIT', 'Level 1 failed, trying form submit');
+      window.veo3Debug?.debug('SUBMIT', 'Level 1 failed, trying robust click with Enter');
     }
 
-    // Level 2: Try form submit
+    // Level 2: Robust click + focus + Enter key on the submit button
+    const submitBtn2 = window.veo3Selectors?.submitButton?.();
+    window.veo3Debug?.debug('SUBMIT', 'Level 2: robust click + Enter', { found: !!submitBtn2 });
+    if (submitBtn2) {
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(submitBtn2, { sendEnter: true, focusFirst: true });
+      } else {
+        submitBtn2.focus();
+        submitBtn2.click();
+        await sleep(50);
+        submitBtn2.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+        }));
+      }
+      await sleep(TIMING.AFTER_SUBMIT);
+
+      if (await checkSubmissionSuccess(5000)) return true;
+      window.veo3Debug?.debug('SUBMIT', 'Level 2 failed, trying form submit');
+    }
+
+    // Level 3: Try form submit
     const form = document.querySelector('form');
-    window.veo3Debug?.debug('SUBMIT', 'Level 2: form submit', { found: !!form });
+    window.veo3Debug?.debug('SUBMIT', 'Level 3: form submit', { found: !!form });
     if (form) {
       try {
         form.requestSubmit?.() || form.submit();
@@ -332,13 +367,14 @@
       } catch (e) {
         window.veo3Debug?.warn('SUBMIT', 'Form submit error: ' + e.message);
       }
-      window.veo3Debug?.debug('SUBMIT', 'Level 2 failed, trying Enter key');
+      window.veo3Debug?.debug('SUBMIT', 'Level 3 failed, trying Enter key on editor');
     }
 
-    // Level 3: Enter key dispatch
+    // Level 4: Enter key dispatch on textarea/editor/active element
+    const textAreaTarget = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID');
     const editorSelector = window.veo3Selectors?.slateEditor || '[data-slate-editor="true"][contenteditable="true"]';
     const editor = document.querySelector(editorSelector);
-    const target = editor || document.activeElement || document.body;
+    const target = textAreaTarget || editor || document.activeElement || document.body;
 
     const enterEvents = [
       new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }),
@@ -353,13 +389,17 @@
     await sleep(TIMING.AFTER_SUBMIT);
 
     if (await checkSubmissionSuccess(5000)) return true;
-    window.veo3Debug?.debug('SUBMIT', 'Level 3 failed, final retry');
+    window.veo3Debug?.debug('SUBMIT', 'Level 4 failed, final retry');
 
-    // Level 4: Final retry - click submit button again
+    // Level 5: Final retry - robust click submit button one more time
     const retryBtn = window.veo3Selectors?.submitButton?.();
-    window.veo3Debug?.debug('SUBMIT', 'Level 4: final button retry', { found: !!retryBtn });
+    window.veo3Debug?.debug('SUBMIT', 'Level 5: final robust retry', { found: !!retryBtn });
     if (retryBtn) {
-      retryBtn.click();
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(retryBtn, { sendEnter: true, focusFirst: true });
+      } else {
+        retryBtn.click();
+      }
       await sleep(TIMING.AFTER_SUBMIT);
       return await checkSubmissionSuccess(8000);
     }

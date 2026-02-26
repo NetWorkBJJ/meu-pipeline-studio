@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { ListOrdered, Loader2 } from 'lucide-react'
-import { useVeo3AutomationStore } from '@/stores/useVeo3AutomationStore'
+import { ListOrdered } from 'lucide-react'
+import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import type { FlowCommand, FlowCreationMode } from '@/types/veo3'
 
 const MODE_LABELS: Record<FlowCreationMode, string> = {
@@ -76,9 +76,16 @@ function CommandCard({
   )
 }
 
-export function SidepanelPlanTab(): React.JSX.Element {
-  const { commands, currentCommandIndex, isRunning, loadFromProject } =
-    useVeo3AutomationStore()
+interface SidepanelPlanTabProps {
+  tabId: string | null
+}
+
+export function SidepanelPlanTab({ tabId }: SidepanelPlanTabProps): React.JSX.Element {
+  const { tabStates, loadFromProject, getFilteredCommands } = useVeo3AutomationStore()
+  const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
+  const { currentCommandIndex, isRunning } = tabState
+  const commands = getFilteredCommands(tabId)
+
   const activeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

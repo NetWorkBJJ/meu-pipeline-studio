@@ -78,12 +78,78 @@
         return;
       }
 
-      // simulateImageDragDrop auto-detects target if not provided
+      // Step 1: Drag & drop (simulateImageDragDrop handles #PINHOLE targeting + feedback)
       await window.simulateImageDragDrop(file);
-      await sleep(700);
-      await window.waitAndConfirmCrop();
+      await sleep(800);
+
+      // Step 2: Wait for and confirm crop dialog
+      try {
+        await window.waitAndConfirmCrop(15000);
+      } catch (cropError) {
+        console.warn('[ElementsHandler] Crop error, continuing:', cropError.message);
+      }
+
+      // Step 3: Wait for upload to complete (30s timeout, 6 signals)
+      try {
+        await window.waitForImageUpload(30000);
+      } catch (uploadError) {
+        console.warn('[ElementsHandler] Upload timeout, checking state...');
+      }
+
+      // Step 4: Check and correct video mode after upload (reference pattern)
+      await checkAndSetVideoMode();
     }
   };
+
+  // Verify and fix creation mode after image upload (ported from nardoto-flow reference).
+  // After uploading an image, Google Flow may switch back to "Text to Video" mode.
+  // This function detects that and switches to "Frame to Video" / "Elements" mode.
+  async function checkAndSetVideoMode() {
+    const { sleep } = window.veo3Timing;
+    await sleep(1000);
+
+    const modeBtn = document.querySelector('button[role="combobox"][aria-controls*="radix"]');
+    if (!modeBtn) {
+      console.log('[ElementsHandler] Mode combobox not found, skipping mode check');
+      return;
+    }
+
+    const text = modeBtn.textContent || '';
+    console.log('[ElementsHandler] Current mode after upload:', text.trim());
+
+    // Already in correct mode
+    if (text.includes('Frame') || text.includes('Elemento') || text.includes('Element') ||
+        text.includes('Ingredients')) {
+      console.log('[ElementsHandler] Already in correct mode');
+      return;
+    }
+
+    // Need to switch from text mode to frames/elements
+    if (text.includes('Texto') || text.includes('Text')) {
+      console.log('[ElementsHandler] Switching from text mode to frames/elements...');
+
+      if (window.veo3RobustClick) await window.veo3RobustClick(modeBtn);
+      else modeBtn.click();
+      await sleep(500);
+
+      const options = document.querySelectorAll('[role="option"], [data-radix-collection-item]');
+      for (const opt of options) {
+        const optText = opt.textContent || '';
+        if (optText.includes('Frame') || optText.includes('Elemento') ||
+            optText.includes('Element') || optText.includes('Ingredients')) {
+          if (window.veo3RobustClick) await window.veo3RobustClick(opt);
+          else opt.click();
+          await sleep(800);
+          console.log('[ElementsHandler] Mode switched to:', optText.trim());
+          return;
+        }
+      }
+
+      // Close dropdown if target option not found
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      console.warn('[ElementsHandler] Target mode option not found in dropdown');
+    }
+  }
 
   window.elementsHandler = elementsHandler;
 

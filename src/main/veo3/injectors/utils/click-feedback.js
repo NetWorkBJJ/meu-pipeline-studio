@@ -53,6 +53,20 @@
         50% { opacity: 0.8; transform: scale(1.02); }
         100% { opacity: 0; transform: scale(1); }
       }
+      .veo3-click-circle {
+        position: fixed;
+        pointer-events: none;
+        border: 3px solid #ff0000;
+        border-radius: 50%;
+        z-index: ${CLICK_FEEDBACK_CONFIG.zIndexBoost};
+        box-sizing: border-box;
+        animation: veo3-circle-fade 600ms ease-out forwards;
+      }
+      @keyframes veo3-circle-fade {
+        0% { opacity: 1; transform: scale(0.8); }
+        50% { opacity: 0.7; transform: scale(1.3); }
+        100% { opacity: 0; transform: scale(1.6); }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -71,6 +85,23 @@
     return overlay;
   }
 
+  function createCircleOverlay(rect) {
+    const circle = document.createElement('div');
+    circle.className = 'veo3-click-circle';
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const radius = Math.max(rect.width, rect.height, 40);
+    circle.style.cssText = `
+      left: ${cx - radius / 2}px;
+      top: ${cy - radius / 2}px;
+      width: ${radius}px;
+      height: ${radius}px;
+    `;
+    document.body.appendChild(circle);
+    setTimeout(() => { if (circle.parentElement) circle.remove(); }, 650);
+    return circle;
+  }
+
   async function highlightElement(element, options = {}) {
     if (!CLICK_FEEDBACK_CONFIG.enabled || !element) return;
     const config = { ...CLICK_FEEDBACK_CONFIG, ...options };
@@ -78,6 +109,7 @@
     if (rect.width <= 0 || rect.height <= 0) return;
 
     createOverlay(rect);
+    createCircleOverlay(rect);
     element.classList.add(HIGHLIGHT_CLASS);
     if (config.useAnimation) element.classList.add('veo3-animate');
 
@@ -105,6 +137,62 @@
     return true;
   }
 
+  /**
+   * Robust click: .click() + full mousedown/mouseup/click event sequence.
+   * Google Flow (React/Angular) needs the full event chain to register clicks.
+   * After triple dispatch, optionally focuses element and sends Enter key.
+   */
+  async function robustClick(element, options = {}) {
+    if (!element) return false;
+    const { sendEnter = false, focusFirst = false } = options;
+
+    if (CLICK_FEEDBACK_CONFIG.enabled) highlightElement(element);
+
+    // Ensure element is visible and scrolled into view
+    if (element.scrollIntoView) {
+      element.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+
+    // Step 1: Native .click()
+    element.click();
+
+    // Step 2: Full mousedown -> mouseup -> click event sequence with coordinates
+    const rect = element.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: cx,
+      clientY: cy,
+      screenX: cx,
+      screenY: cy
+    };
+
+    element.dispatchEvent(new MouseEvent('mousedown', eventInit));
+    element.dispatchEvent(new MouseEvent('mouseup', eventInit));
+    element.dispatchEvent(new MouseEvent('click', eventInit));
+
+    // Step 3: Optional focus + Enter (for buttons that need keyboard confirmation)
+    if (focusFirst || sendEnter) {
+      element.focus();
+    }
+
+    if (sendEnter) {
+      await new Promise(r => setTimeout(r, 50));
+      element.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+      }));
+      element.dispatchEvent(new KeyboardEvent('keyup', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+      }));
+    }
+
+    return true;
+  }
+
   async function dispatchWithFeedback(element, events) {
     if (!element) return false;
     if (CLICK_FEEDBACK_CONFIG.enabled) highlightElement(element);
@@ -127,6 +215,7 @@
     CLICK_FEEDBACK_CONFIG,
     highlightElement,
     clickWithFeedback,
+    robustClick,
     dispatchWithFeedback,
     setClickFeedbackEnabled,
     configureClickFeedback,
@@ -134,6 +223,7 @@
   };
 
   window.veo3Click = clickWithFeedback;
+  window.veo3RobustClick = robustClick;
   window.veo3Highlight = highlightElement;
 
   console.log('[Flow] Click feedback loaded');

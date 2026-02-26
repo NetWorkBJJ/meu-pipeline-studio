@@ -51,6 +51,7 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
     const webviewRef = useRef<WebviewElement | null>(null)
     const wasOnAuthDomain = useRef(false)
     const listenersAttached = useRef(false)
+    const domReady = useRef(false)
     const { zoomFactor } = useVeo3Store()
 
     // Latest-ref pattern: store callbacks in refs so event handlers always read latest values
@@ -86,6 +87,7 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
       listenersAttached.current = true
 
       const handleDomReady = async (): Promise<void> => {
+        domReady.current = true
         wv.setZoomFactor(zoomFactorRef.current)
         onStateChangeRef.current?.({
           isLoading: false,
@@ -170,13 +172,17 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
     }, [])
 
     // Sync zoom factor changes without re-registering listeners
+    // Guard: only call setZoomFactor after dom-ready has fired
     useEffect(() => {
-      webviewRef.current?.setZoomFactor(zoomFactor)
+      if (domReady.current) {
+        webviewRef.current?.setZoomFactor(zoomFactor)
+      }
     }, [zoomFactor])
 
     useEffect(() => {
       return () => {
         webviewRef.current = null
+        domReady.current = false
       }
     }, [])
 

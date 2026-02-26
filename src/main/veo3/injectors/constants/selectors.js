@@ -85,23 +85,24 @@
       return sendBtn;
     }
 
-    // PRIORITY 3: By semantic attributes
+    // PRIORITY 3: By semantic attributes (excluding dialog-opening '+' button)
     const attrBtns = document.querySelectorAll(
       'button[type="submit"], button[aria-label*="send"], button[aria-label*="Send"], ' +
       'button[aria-label*="Criar"], button[aria-label*="Create"], ' +
       'button[aria-label*="Enviar"], button[aria-label*="Gerar"], button[aria-label*="Generate"]'
     );
     for (const btn of attrBtns) {
-      if (btn.offsetParent !== null && !btn.disabled) {
-        window.veo3Debug?.debug('DOM', 'Submit button found: semantic attribute');
-        return btn;
-      }
+      if (btn.offsetParent === null || btn.disabled) continue;
+      if (btn.getAttribute('aria-haspopup') === 'dialog') continue; // Skip '+' button
+      window.veo3Debug?.debug('DOM', 'Submit button found: semantic attribute');
+      return btn;
     }
 
-    // PRIORITY 4: By text content
+    // PRIORITY 4: By text content (excluding dialog-opening '+' button)
     const allBtns = document.querySelectorAll('button');
     for (const btn of allBtns) {
       if (btn.offsetParent === null || btn.disabled) continue;
+      if (btn.getAttribute('aria-haspopup') === 'dialog') continue; // Skip '+' button
       const text = btn.textContent.trim().toLowerCase();
       if (text.includes('criar') || text.includes('create') ||
           text.includes('enviar') || text.includes('send') ||
@@ -124,62 +125,133 @@
     submitButton: findSubmitButton,
     clearButton: () => findButtonByIcon('close'),
 
-    // --- Settings button (multi-fallback) ---
+    // --- Settings button (model selector: "Nano Banana Pro" etc) ---
     settingsButton: () => {
-      const tuneBtn = findButtonByIcon('tune');
-      if (tuneBtn) return tuneBtn;
-      const settingsBtn = findButtonByIcon('settings');
-      if (settingsBtn) return settingsBtn;
-      return findButtonByLabel('config') || findButtonByLabel('settings') || findButtonByLabel('tune');
+      // Strategy 1: Button with aria-haspopup="menu" containing model/aspect text
+      const menuBtns = document.querySelectorAll('button[aria-haspopup="menu"]');
+      for (const btn of menuBtns) {
+        if (btn.offsetParent === null || btn.disabled) continue;
+        const text = btn.textContent.trim();
+        if (text.includes('crop_16_9') || text.includes('crop_9_16') ||
+            /x[1-4]/.test(text) ||
+            text.includes('Nano') || text.includes('Banana') || text.includes('Pro') ||
+            text.includes('Flash') || text.includes('Veo')) {
+          window.veo3Debug?.debug('DOM', 'Settings button found: model selector', { text });
+          return btn;
+        }
+      }
+      // Strategy 2: Button near prompt area with aria-haspopup="menu"
+      const promptArea = document.querySelector('[data-slate-editor="true"]');
+      if (promptArea) {
+        const container = promptArea.closest('form') || promptArea.parentElement?.parentElement?.parentElement;
+        if (container) {
+          const nearby = container.querySelectorAll('button[aria-haspopup="menu"]');
+          for (const btn of nearby) {
+            if (btn.offsetParent !== null && !btn.disabled) {
+              window.veo3Debug?.debug('DOM', 'Settings button found: near prompt area');
+              return btn;
+            }
+          }
+        }
+      }
+      // Strategy 3: Fallback to icon-based search
+      return findButtonByIcon('tune') || findButtonByLabel('config') || findButtonByLabel('settings');
     },
 
     // --- Mode combobox (multi-strategy) ---
     modeCombobox: 'button[role="combobox"]',
 
     getModeCombobox: () => {
+      // Mode-related keywords for filtering comboboxes
+      const modeKeywords = [
+        'video', 'image', 'element', 'texto', 'text', 'imagem',
+        'elemento', 'criar', 'create', 'ingredients', 'frames', 'frame'
+      ];
+
       // Strategy 1: role="combobox" with mode-related text
       const comboboxes = document.querySelectorAll('button[role="combobox"]');
       for (const cb of comboboxes) {
         if (cb.offsetParent === null) continue;
         const text = cb.textContent.trim().toLowerCase();
-        if (text.includes('video') || text.includes('image') || text.includes('element') ||
-            text.includes('texto') || text.includes('text') || text.includes('imagem') ||
-            text.includes('elemento') || text.includes('criar')) {
-          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 1', { text });
+        if (modeKeywords.some(kw => text.includes(kw))) {
+          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 1 (text match)', { text });
           return cb;
         }
       }
 
-      // Strategy 2: aria-haspopup="listbox"
+      // Strategy 2: Radix combobox with aria-controls (used by Google Flow)
+      const radixComboboxes = document.querySelectorAll('button[role="combobox"][aria-controls*="radix"]');
+      for (const cb of radixComboboxes) {
+        if (cb.offsetParent !== null) {
+          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 2 (radix)');
+          return cb;
+        }
+      }
+
+      // Strategy 3: aria-haspopup="listbox"
       const listboxTriggers = document.querySelectorAll('[aria-haspopup="listbox"]');
       for (const trigger of listboxTriggers) {
         if (trigger.offsetParent === null) continue;
-        window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 2 (listbox)');
+        window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 3 (listbox)');
         return trigger;
       }
 
-      // Strategy 3: First visible combobox
+      // Strategy 4: Any visible dropdown-like button near the prompt area
+      const promptArea = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID, [data-slate-editor="true"]');
+      if (promptArea) {
+        const container = promptArea.closest('[class]')?.parentElement?.parentElement;
+        if (container) {
+          const nearbyBtns = container.querySelectorAll('button[role="combobox"], button[aria-haspopup]');
+          for (const btn of nearbyBtns) {
+            if (btn.offsetParent !== null) {
+              window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 4 (near prompt area)');
+              return btn;
+            }
+          }
+        }
+      }
+
+      // Strategy 5: First visible combobox (last resort)
       for (const cb of comboboxes) {
         if (cb.offsetParent !== null) {
-          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 3 (first visible)');
+          window.veo3Debug?.debug('DOM', 'Mode combobox found: strategy 5 (first visible)');
           return cb;
         }
       }
 
-      window.veo3Debug?.warn('DOM', 'Mode combobox NOT found');
+      window.veo3Debug?.warn('DOM', 'Mode combobox NOT found after 5 strategies');
       return null;
     },
 
-    getModeComboboxes: () => findAllElements(['button[role="combobox"]', '[aria-haspopup="listbox"]']),
+    getModeComboboxes: () => findAllElements([
+      'button[role="combobox"]',
+      'button[role="combobox"][aria-controls*="radix"]',
+      '[aria-haspopup="listbox"]'
+    ]),
+
+    // Selectors for dropdown options (Radix UI / native)
+    getModeOptions: () => findAllElements([
+      '[role="option"]',
+      '[role="menuitem"]',
+      '[data-radix-collection-item]',
+      '[role="listbox"] [role="option"]',
+      'li[role="option"]'
+    ]),
 
     getCurrentModeText: () => {
-      const comboboxes = findAllElements(['button[role="combobox"]', '[aria-haspopup="listbox"]']);
+      const modeKeywords = [
+        'video', 'image', 'elemento', 'element', 'imagem', 'texto',
+        'text', 'criar', 'create', 'ingredients', 'frames', 'frame'
+      ];
+      const comboboxes = findAllElements([
+        'button[role="combobox"]',
+        'button[role="combobox"][aria-controls*="radix"]',
+        '[aria-haspopup="listbox"]'
+      ]);
       for (const cb of comboboxes) {
         if (cb.offsetParent === null) continue;
         const text = cb.textContent.trim().toLowerCase();
-        if (text.includes('video') || text.includes('image') || text.includes('elemento') ||
-            text.includes('element') || text.includes('imagem') || text.includes('texto') ||
-            text.includes('text') || text.includes('criar')) {
+        if (modeKeywords.some(kw => text.includes(kw))) {
           return text;
         }
       }
@@ -195,6 +267,17 @@
 
     // --- Media library (Virtuoso virtual scroll) ---
     addMediaButton: () => {
+      // Strategy 1: Button with aria-haspopup="dialog" containing add_2 icon (specific '+' button)
+      const dialogBtns = document.querySelectorAll('button[aria-haspopup="dialog"]');
+      for (const btn of dialogBtns) {
+        if (btn.offsetParent === null || btn.disabled) continue;
+        const icon = btn.querySelector('i.google-symbols');
+        if (icon && icon.textContent.trim() === 'add_2') {
+          window.veo3Debug?.debug('DOM', 'Add media button found: aria-haspopup="dialog" + add_2');
+          return btn;
+        }
+      }
+      // Strategy 2: Fallback to icon search
       let btn = findButtonByIcon('add_2');
       if (btn) return btn;
       btn = findButtonByIcon('add');
@@ -203,6 +286,11 @@
     },
     mediaListItem: '[data-item-index]',
     getMediaItems: () => findAllElements(['[data-item-index]']),
+
+    // --- Resource dialog (opened by '+' button) ---
+    searchInput: 'input[placeholder="Pesquisar recursos"], input[placeholder="Search resources"]',
+    dialogScroller: '[data-testid="virtuoso-scroller"][data-virtuoso-scroller="true"]',
+    dialogContainer: '[role="dialog"][id^="radix-"]',
 
     // --- Reference image cards in prompt area ---
     referenceCards: '.reference-image-card, [class*="reference"] img, [class*="ingredient"] img',

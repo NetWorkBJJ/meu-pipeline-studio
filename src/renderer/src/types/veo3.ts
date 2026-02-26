@@ -63,6 +63,7 @@ export interface FlowCharacterImageRef {
   keywords: string[]
   imagePath: string | null
   galleryItemName: string | null
+  image?: { dataUrl: string; name: string }
 }
 
 export interface FlowCommand {

@@ -2,9 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Users } from 'lucide-react'
 import { Veo3Toolbar } from './Veo3Toolbar'
-import { Veo3Browser } from './Veo3Browser'
 import { Veo3TabBar } from './Veo3TabBar'
-import { Veo3GridCell } from './Veo3GridCell'
+import { Veo3TabCell } from './Veo3TabCell'
 import { Veo3AccountManager } from './Veo3AccountManager'
 import { Veo3AccountSelector } from './Veo3AccountSelector'
 import { Veo3Sidepanel } from './Veo3Sidepanel'
@@ -61,6 +60,15 @@ export function Stage5Veo3(): React.JSX.Element {
   const [tabStates, setTabStates] = useState<Map<string, WebviewState>>(new Map())
   const [tabPanelStates, setTabPanelStates] = useState<Map<string, TabPanelState>>(new Map())
 
+  // Stable callback for browser ref updates (avoids inline function re-creation)
+  const handleBrowserRef = useCallback((tabId: string, handle: Veo3BrowserHandle | null) => {
+    if (handle) {
+      browserRefs.current.set(tabId, handle)
+    } else {
+      browserRefs.current.delete(tabId)
+    }
+  }, [])
+
   // Active tab's webview ref for toolbar
   const activeWebviewRef = useRef<WebviewElement | null>(null)
 
@@ -116,7 +124,7 @@ export function Stage5Veo3(): React.JSX.Element {
           const d = data as { commandId?: string } | undefined
           if (d?.commandId) {
             automationStore.updateCommandStatus(d.commandId, 'done')
-            automationStore.advanceToNext()
+            automationStore.advanceToNext(tabId)
           }
           break
         }
@@ -127,10 +135,7 @@ export function Stage5Veo3(): React.JSX.Element {
         }
         case 'AUTOMATION_ERROR': {
           const d = data as { message?: string } | undefined
-          automationStore.stop()
-          if (d?.message) {
-            useVeo3AutomationStore.setState({ error: d.message })
-          }
+          automationStore.stopTab(tabId, d?.message)
           break
         }
         case 'MEDIA_LIBRARY_MAPPED': {
@@ -148,7 +153,7 @@ export function Stage5Veo3(): React.JSX.Element {
           const d = data as { commandId?: string; reason?: string } | undefined
           if (d?.commandId) {
             automationStore.updateCommandStatus(d.commandId, 'skipped', d.reason)
-            automationStore.advanceToNext()
+            automationStore.advanceToNext(tabId)
           }
           break
         }
@@ -343,76 +348,34 @@ export function Stage5Veo3(): React.JSX.Element {
       {!splitView && <Veo3TabBar onOpenAccountSelector={handleOpenSelector} />}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Webview area */}
-        {splitView ? (
-          // Split view: all tabs visible in a grid, each with its own inline panel
-          <div
-            className="flex-1 grid gap-px bg-border"
-            style={{
-              gridTemplateColumns: getGridCols(tabs.length),
-              gridAutoRows: '1fr'
-            }}
-          >
-            {tabs.map((tab) => {
-              const account = accounts.find((a) => a.id === tab.accountId)
-              if (!account) return null
+        {/* Unified webview container - CSS-driven layout, no unmount on mode switch */}
+        <div
+          className={splitView ? 'flex-1 grid gap-px bg-border' : 'relative flex-1 bg-bg'}
+          style={splitView ? { gridTemplateColumns: getGridCols(tabs.length), gridAutoRows: '1fr' } : undefined}
+        >
+          {tabs.map((tab) => {
+            const account = accounts.find((a) => a.id === tab.accountId)
+            if (!account) return null
 
-              return (
-                <Veo3GridCell
-                  key={tab.id}
-                  account={account}
-                  isActive={tab.id === activeTabId}
-                  panelState={tabPanelStates.get(tab.id) || DEFAULT_PANEL_STATE}
-                  panelWidth={tabs.length >= 3 ? 220 : 260}
-                  browserRef={(handle) => {
-                    if (handle) {
-                      browserRefs.current.set(tab.id, handle)
-                    } else {
-                      browserRefs.current.delete(tab.id)
-                    }
-                  }}
-                  onSelect={() => setActiveTab(tab.id)}
-                  onBrowserReady={() => handleBrowserReady(tab.id)}
-                  onStateChange={(partial) => handleStateChange(tab.id, partial)}
-                  onContentMessage={(msg) => handleContentMessage(tab.id, msg)}
-                  onTogglePanel={() => handleToggleSidepanelForTab(tab.id)}
-                />
-              )
-            })}
-          </div>
-        ) : (
-          // Tab view: stacked, only active visible
-          <div className="relative flex-1 bg-bg">
-            {tabs.map((tab) => {
-              const account = accounts.find((a) => a.id === tab.accountId)
-              if (!account) return null
-
-              return (
-                <div
-                  key={tab.id}
-                  className="absolute inset-0"
-                  style={{ display: tab.id === activeTabId ? 'block' : 'none' }}
-                >
-                  <Veo3Browser
-                    ref={(handle) => {
-                      if (handle) {
-                        browserRefs.current.set(tab.id, handle)
-                      } else {
-                        browserRefs.current.delete(tab.id)
-                      }
-                    }}
-                    partition={account.partition}
-                    visible={tab.id === activeTabId}
-                    onReady={() => handleBrowserReady(tab.id)}
-                    onStateChange={(partial) => handleStateChange(tab.id, partial)}
-                    onContentMessage={(msg) => handleContentMessage(tab.id, msg)}
-                    onLoginDetected={() => {}}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
+            return (
+              <Veo3TabCell
+                key={tab.id}
+                tabId={tab.id}
+                account={account}
+                isActive={tab.id === activeTabId}
+                splitView={splitView}
+                panelState={tabPanelStates.get(tab.id) || DEFAULT_PANEL_STATE}
+                panelWidth={tabs.length >= 3 ? 220 : 260}
+                onBrowserRef={handleBrowserRef}
+                onSelect={() => setActiveTab(tab.id)}
+                onBrowserReady={() => handleBrowserReady(tab.id)}
+                onStateChange={(partial) => handleStateChange(tab.id, partial)}
+                onContentMessage={(msg) => handleContentMessage(tab.id, msg)}
+                onTogglePanel={() => handleToggleSidepanelForTab(tab.id)}
+              />
+            )
+          })}
+        </div>
 
         {/* Sidepanel - Flow Studio (only in tab mode) */}
         {!splitView && (
@@ -425,7 +388,7 @@ export function Stage5Veo3(): React.JSX.Element {
                 transition={{ duration: 0.2, ease: 'easeInOut' }}
                 className="shrink-0 overflow-hidden border-l border-border bg-surface"
               >
-                <Veo3Sidepanel webviewRef={activeWebviewRef} />
+                <Veo3Sidepanel webviewRef={activeWebviewRef} tabId={activeTabId} />
               </motion.div>
             )}
           </AnimatePresence>
