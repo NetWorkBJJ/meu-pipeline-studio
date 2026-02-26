@@ -17,7 +17,6 @@ const INJECTOR_SCRIPTS = [
   'utils/click-feedback.js',
   'automation/image-automator.js',
   'automation/gallery-mapper.js',
-  'automation/image-ref-manager.js',
   'automation/elements-mode-handler.js',
   'automation/image-creation-handler.js',
   'content-bridge.js'

@@ -11,12 +11,6 @@
 
   const BATCH_SIZE = 4;
 
-  const MODE_KEYWORDS = {
-    texto: ['text to video', 'texto', 'text'],
-    elementos: ['elements', 'elementos', 'element', 'ingredients'],
-    imagem: ['create image', 'imagem', 'image', 'criar imagem', 'criar imagens']
-  };
-
   // === STATE ===
 
   const automationState = {
@@ -97,12 +91,10 @@
 
     notifySidepanel('AUTOMATION_STARTED', { total: commandQueue.length });
 
-    // Wait for Google Flow to fully load (prompt field must exist before any clicks)
-    // Try #PINHOLE first (legacy), then Slate editor (current Google Flow UI)
+    // Wait for Google Flow to fully load (Slate editor must exist before any interaction)
     const promptField = await window.veo3Timing.waitForAnyElement([
-      '#PINHOLE_TEXT_AREA_ELEMENT_ID',
       '[data-slate-editor="true"][contenteditable="true"]',
-      '[contenteditable="true"]'
+      '#PINHOLE_TEXT_AREA_ELEMENT_ID'
     ], 15000);
     if (!promptField) {
       window.veo3Debug?.error('AUTO', 'No prompt field found - page may not be loaded');
@@ -110,13 +102,13 @@
       automationState.running = false;
       return;
     }
-    console.log('[ContentBridge] Page ready - prompt field found:', promptField.id || promptField.tagName);
+    console.log('[ContentBridge] Page ready - prompt field found:', promptField.tagName);
 
-    // Apply fixed settings before starting
+    // Apply fixed settings (Landscape, x1) - uses exact selector, skips if not found
     await applyFixedSettings();
     await sleep(TIMING.STANDARD);
 
-    // Pre-upload all unique character images before processing prompts
+    // Phase 1: Pre-upload all unique character images
     if (automationState.running) {
       const preUploadResults = await preUploadCharacterImages(commandQueue);
 
@@ -139,7 +131,7 @@
       return;
     }
 
-    // Process in batches of BATCH_SIZE
+    // Phase 2: Process prompts in batches of BATCH_SIZE
     const totalBatches = Math.ceil(commandQueue.length / BATCH_SIZE);
 
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
@@ -279,154 +271,178 @@
       characters: cmd.characterImages?.length || 0
     });
 
-    // Ensure correct mode is selected (with retry)
-    await ensureModeWithRetry(cmd.mode);
-
-    // Dispatch to appropriate handler
-    if (cmd.mode === 'elementos' && cmd.characterImages && cmd.characterImages.length > 0) {
-      window.veo3Debug?.debug('AUTO', 'Dispatching to elements handler', { characters: cmd.characterImages.length });
-      return await window.elementsHandler.processPromptWithElements(globalIndex, cmd);
-    } else if (cmd.mode === 'imagem') {
-      window.veo3Debug?.debug('AUTO', 'Dispatching to image creation handler');
-      await window.imageCreationHandler.processPromptWithImageCreation(globalIndex, cmd);
-      return { skipped: false };
-    } else {
-      window.veo3Debug?.debug('AUTO', 'Dispatching to text mode');
-      await processTextMode(cmd);
-      return { skipped: false };
+    // Ensure correct mode (Video/Image) via config menu tabs
+    const modeOk = await ensureModeViaConfigMenu(cmd.mode);
+    if (!modeOk) {
+      window.veo3Debug?.warn('MODE', 'Mode switch to "' + cmd.mode + '" not confirmed, proceeding anyway');
     }
-  }
 
-  async function processTextMode(cmd) {
-    window.veo3Debug?.debug('AUTO', 'Text mode: filling editor', { promptLength: cmd.prompt.length });
+    // Select character references from gallery if needed
+    if (cmd.characterImages && cmd.characterImages.length > 0) {
+      await selectCharactersFromGallery(cmd.characterImages, globalIndex);
+    }
 
-    // Fill the Slate.js editor (shared function)
+    // Fill prompt text in Slate editor
+    window.veo3Debug?.debug('AUTO', 'Filling prompt', { length: cmd.prompt.length });
     await window.veo3Timing.fillSlateEditor(cmd.prompt);
-    window.veo3Debug?.debug('AUTO', 'Prompt filled, submitting...');
 
-    // Submit with retry chain (shared function)
+    // Submit with retry chain
+    window.veo3Debug?.debug('AUTO', 'Submitting prompt...');
     const submitted = await window.veo3Timing.submitWithRetry();
     if (!submitted) {
-      window.veo3Debug?.error('SUBMIT', 'All submission strategies failed for text mode');
-      throw new Error('All submission strategies failed for text mode');
+      throw new Error('All submission strategies failed');
     }
 
-    window.veo3Debug?.info('AUTO', 'Text mode submission confirmed');
+    window.veo3Debug?.info('AUTO', 'Submission confirmed for command #' + globalIndex);
+    return { skipped: false };
   }
 
-  // === MODE SWITCHING WITH RETRY (3 attempts) ===
+  // === CHARACTER SELECTION FROM GALLERY ===
+  // For each character in the command, click "+" to open gallery, search by name, click to select
 
-  function detectCurrentMode() {
-    const modeText = window.veo3Selectors.getCurrentModeText();
-    if (!modeText) return null;
+  async function selectCharactersFromGallery(characterImages, promptIndex) {
+    const { sleep, TIMING } = window.veo3Timing;
 
-    for (const [mode, keywords] of Object.entries(MODE_KEYWORDS)) {
-      for (const kw of keywords) {
-        if (modeText.includes(kw)) return mode;
+    for (const charImg of characterImages) {
+      if (!automationState.running) break;
+
+      const searchName = charImg.galleryItemName || charImg.name;
+      if (!searchName) continue;
+
+      window.veo3Debug?.debug('GALLERY', 'Selecting character: ' + searchName);
+
+      const selected = await window.veo3GalleryMapper.selectMediaByName(searchName);
+      if (selected) {
+        window.veo3Debug?.info('GALLERY', 'Character selected: ' + searchName);
+      } else {
+        window.veo3Debug?.warn('GALLERY', 'Character not found in gallery: ' + searchName);
       }
+
+      await sleep(TIMING.MEDIUM);
     }
-    return null;
   }
 
-  async function ensureModeWithRetry(targetMode, maxAttempts = 2) {
+  // === MODE SWITCHING VIA CONFIG MENU ===
+  // Opens the settings menu (button with crop_16_9 + x1) and clicks the correct tab.
+  // For 'elementos': ensure Video + Ingredients
+  // For 'texto': ensure Video
+  // For 'imagem': ensure Image
+
+  async function ensureModeViaConfigMenu(targetMode) {
     const { sleep, TIMING } = window.veo3Timing;
     window.veo3Debug?.info('MODE', 'Ensuring mode: ' + targetMode);
 
-    // Quick check: if current mode already matches, return immediately
-    const currentMode = detectCurrentMode();
-    if (currentMode === targetMode) {
-      window.veo3Debug?.debug('MODE', 'Already in target mode: ' + targetMode);
-      return true;
+    // Determine which tabs to activate
+    let mediaTab = null;  // 'VIDEO' or 'IMAGE'
+    let subTab = null;    // 'VIDEO_REFERENCES' (Ingredients) or null
+
+    if (targetMode === 'imagem') {
+      mediaTab = 'IMAGE';
+    } else if (targetMode === 'elementos') {
+      mediaTab = 'VIDEO';
+      subTab = 'VIDEO_REFERENCES'; // Ingredients
+    } else {
+      mediaTab = 'VIDEO';
     }
 
-    // If no combobox exists in the UI, skip mode switching entirely
-    // Google Flow may not always have a mode combobox visible
-    const combobox = window.veo3Selectors.getModeCombobox();
-    if (!combobox) {
-      console.log(`[ContentBridge] Mode combobox not found in UI, skipping mode switch to "${targetMode}" and proceeding`);
-      return false;
-    }
+    // Quick check: are the correct tabs already active? (check without opening menu)
+    const videoTabEl = document.querySelector(window.veo3Selectors.tabVideo);
+    const imageTabEl = document.querySelector(window.veo3Selectors.tabImage);
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      window.veo3Debug?.debug('MODE', 'Switch attempt ' + attempt + '/' + maxAttempts, { from: currentMode, to: targetMode });
+    // If tabs are visible (menu already open or persisted state), check them
+    if (videoTabEl && imageTabEl) {
+      const videoActive = videoTabEl.getAttribute('data-state') === 'active';
+      const imageActive = imageTabEl.getAttribute('data-state') === 'active';
 
-      // Click the combobox to open dropdown
-      const cb = window.veo3Selectors.getModeCombobox();
-      if (!cb) {
-        console.log('[ContentBridge] Mode combobox disappeared, skipping');
-        return false;
+      if (mediaTab === 'VIDEO' && videoActive && !subTab) {
+        window.veo3Debug?.debug('MODE', 'Already in Video mode');
+        return true;
       }
-
-      if (window.veo3RobustClick) {
-        await window.veo3RobustClick(cb);
-      } else {
-        cb.click();
-      }
-      await sleep(TIMING.MEDIUM);
-
-      // Find and click the target option in the dropdown
-      const targetKeywords = MODE_KEYWORDS[targetMode] || [targetMode];
-      const options = window.veo3Selectors.getModeOptions
-        ? window.veo3Selectors.getModeOptions()
-        : document.querySelectorAll('[role="option"], [role="menuitem"], [data-value], [data-radix-collection-item]');
-
-      let found = false;
-      for (const option of options) {
-        if (option.offsetParent === null) continue;
-        const optionText = option.textContent.trim().toLowerCase();
-        for (const kw of targetKeywords) {
-          if (optionText.includes(kw)) {
-            if (window.veo3RobustClick) {
-              await window.veo3RobustClick(option);
-            } else {
-              option.click();
-            }
-            found = true;
-            break;
-          }
-        }
-        if (found) break;
-      }
-
-      if (!found) {
-        // Try listbox items as fallback
-        const listItems = document.querySelectorAll('[role="listbox"] [role="option"], li[role="option"]');
-        for (const item of listItems) {
-          if (item.offsetParent === null) continue;
-          const itemText = item.textContent.trim().toLowerCase();
-          for (const kw of targetKeywords) {
-            if (itemText.includes(kw)) {
-              if (window.veo3RobustClick) {
-                await window.veo3RobustClick(item);
-              } else {
-                item.click();
-              }
-              found = true;
-              break;
-            }
-          }
-          if (found) break;
-        }
-      }
-
-      if (!found) {
-        // Close dropdown
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        console.warn(`[ContentBridge] Could not find mode option for "${targetMode}" (attempt ${attempt})`);
-      }
-
-      await sleep(TIMING.AFTER_MODE_SWITCH);
-
-      // Verify mode actually changed
-      const verifiedMode = detectCurrentMode();
-      if (verifiedMode === targetMode) {
-        notifySidepanel('MODE_CHANGED', { from: currentMode, to: targetMode, attempt });
+      if (mediaTab === 'IMAGE' && imageActive) {
+        window.veo3Debug?.debug('MODE', 'Already in Image mode');
         return true;
       }
     }
 
-    console.log(`[ContentBridge] Mode switch to "${targetMode}" not confirmed, proceeding anyway`);
-    return false;
+    // Need to open config menu and switch tabs
+    const settingsBtn = window.veo3Selectors.settingsButton();
+    if (!settingsBtn) {
+      window.veo3Debug?.warn('MODE', 'Settings button not found, cannot switch mode');
+      return false;
+    }
+
+    // Open settings menu
+    if (window.veo3RobustClick) {
+      await window.veo3RobustClick(settingsBtn);
+    } else {
+      settingsBtn.click();
+    }
+    await sleep(TIMING.MEDIUM);
+
+    // Verify menu opened
+    const menuCheck = document.querySelector('[role="tab"][aria-controls*="-content-VIDEO"]') ||
+                      document.querySelector('[role="tab"][aria-controls*="-content-IMAGE"]');
+    if (!menuCheck) {
+      window.veo3Debug?.warn('MODE', 'Config menu did not open');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(TIMING.SHORT);
+      return false;
+    }
+
+    // Click media tab (Video or Image)
+    const mediaTabSelector = mediaTab === 'IMAGE'
+      ? window.veo3Selectors.tabImage
+      : window.veo3Selectors.tabVideo;
+    const mediaTabTarget = document.querySelector(mediaTabSelector);
+
+    if (mediaTabTarget) {
+      if (window.veo3RobustClick) {
+        await window.veo3RobustClick(mediaTabTarget);
+      } else {
+        mediaTabTarget.click();
+      }
+      await sleep(TIMING.SHORT);
+      window.veo3Debug?.debug('MODE', 'Clicked ' + mediaTab + ' tab');
+    } else {
+      window.veo3Debug?.warn('MODE', mediaTab + ' tab not found in menu');
+    }
+
+    // Click sub-tab if needed (Ingredients for elementos mode)
+    if (subTab) {
+      await sleep(TIMING.SHORT);
+      const subTabSelector = window.veo3Selectors.tabIngredients;
+      const subTabEl = document.querySelector(subTabSelector);
+
+      if (subTabEl) {
+        if (window.veo3RobustClick) {
+          await window.veo3RobustClick(subTabEl);
+        } else {
+          subTabEl.click();
+        }
+        await sleep(TIMING.SHORT);
+        window.veo3Debug?.debug('MODE', 'Clicked Ingredients sub-tab');
+      } else {
+        window.veo3Debug?.warn('MODE', 'Ingredients sub-tab not found');
+      }
+    }
+
+    // Close menu
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(TIMING.MEDIUM);
+
+    window.veo3Debug?.info('MODE', 'Mode switch to ' + targetMode + ' completed');
+    return true;
+  }
+
+  // Detect current mode from config button text (for batch pause timing)
+  function detectCurrentMode() {
+    // Check config button text for hints
+    const settingsBtn = window.veo3Selectors.settingsButton();
+    if (settingsBtn) {
+      const text = settingsBtn.textContent.trim().toLowerCase();
+      if (text.includes('image') || text.includes('imagem')) return 'imagem';
+    }
+    return 'texto'; // Default to video-based mode for timing
   }
 
   // === PRE-UPLOAD CHARACTER IMAGES ===
@@ -455,11 +471,9 @@
       return results;
     }
 
-    window.veo3Debug?.info('PRE_UPLOAD', 'Uploading ' + uniqueChars.size + ' character images (individual)');
+    window.veo3Debug?.info('PRE_UPLOAD', 'Uploading ' + uniqueChars.size + ' character images');
     notifySidepanel('PRE_UPLOAD_START', { count: uniqueChars.size });
 
-    // Upload images one-by-one (batch drag & drop does not reliably trigger
-    // file processing in Google Flow's React app - reference project also uses individual uploads)
     let uploadedCount = 0;
     for (const [charId, charData] of uniqueChars) {
       if (!automationState.running) break;
@@ -473,14 +487,19 @@
       try {
         window.veo3Debug?.debug('PRE_UPLOAD', 'Uploading: ' + charData.name);
 
-        // Drag & drop single file (simulateImageDragDrop handles targeting + feedback)
-        await window.simulateImageDragDrop(file);
+        // Upload via multi-strategy (clipboard paste -> drag on body -> etc)
+        const dispatched = await window.simulateImageDragDrop(file);
+        if (!dispatched) {
+          window.veo3Debug?.warn('PRE_UPLOAD', 'All upload strategies failed for: ' + charData.name);
+          continue;
+        }
+
         await sleep(800);
 
-        // Wait for and confirm crop dialog (15s timeout, exact selectors)
+        // Wait for and confirm crop dialog (15s timeout)
         await window.waitAndConfirmCrop(15000);
 
-        // Wait for upload to complete (30s timeout, 6 signals)
+        // Wait for upload to complete (30s timeout, corrected signal detection)
         const uploaded = await window.waitForImageUpload(30000);
         if (uploaded) {
           uploadedCount++;
@@ -514,10 +533,10 @@
   async function applyFixedSettings() {
     const { sleep, TIMING } = window.veo3Timing;
 
-    // Open settings panel
+    // Open settings panel (exact selector: must have BOTH crop icon AND count text)
     const settingsBtn = window.veo3Selectors.settingsButton();
     if (!settingsBtn) {
-      console.log('[ContentBridge] Settings button not found, skipping settings');
+      console.log('[ContentBridge] Settings button not found (no button has both aspect icon + count), skipping');
       return;
     }
 
@@ -527,6 +546,15 @@
       settingsBtn.click();
     }
     await sleep(TIMING.MEDIUM);
+
+    // Verify menu actually opened (look for tab elements)
+    const menuOpened = document.querySelector('[role="tab"][aria-controls*="LANDSCAPE"]');
+    if (!menuOpened) {
+      console.log('[ContentBridge] Settings menu did not open, skipping settings');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(TIMING.SHORT);
+      return;
+    }
 
     // Click Landscape tab
     const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);

@@ -1,7 +1,6 @@
-// image-automator.js - Drag & drop simulation and image upload for Google Flow
+// image-automator.js - Image upload for Google Flow via clipboard paste / drag & drop
 // IIFE-wrapped to prevent re-injection errors on SPA navigation
-// Aligned with nardoto-flow reference: targets #PINHOLE_TEXT_AREA_ELEMENT_ID,
-// uses array-based createDataTransfer, exact crop button detection, 6-signal upload check
+// Strategies: (1) Clipboard paste, (2) Drag on document.body, (3) Drag on Slate editor
 
 (function () {
   if (window.__veo3_imgauto_loaded) return;
@@ -50,7 +49,7 @@
     }
   }
 
-  // Create DataTransfer - accepts array or single file (reference uses array)
+  // Create DataTransfer - accepts array or single file
   function createDataTransfer(files) {
     const dt = new DataTransfer();
     if (Array.isArray(files)) {
@@ -61,85 +60,101 @@
     return dt;
   }
 
-  // Batch drag & drop - all files at once in a single DataTransfer
-  async function batchDragDrop(files, targetElement) {
+  // === UPLOAD STRATEGIES ===
+
+  // Strategy 1: Clipboard paste (most reliable in Electron webviews)
+  // Focuses the Slate editor, writes file to clipboard, dispatches paste event
+  async function tryClipboardPaste(imageFile) {
     const { sleep } = window.veo3Timing;
-    if (!files || files.length === 0) {
-      console.warn('[ImageAutomator] batchDragDrop: no files provided');
+
+    try {
+      // Find the Slate editor (primary paste target)
+      const editor = document.querySelector('[data-slate-editor="true"][contenteditable="true"]');
+      if (!editor) {
+        console.log('[ImageAutomator] Clipboard: no Slate editor found');
+        return false;
+      }
+
+      editor.focus();
+      await sleep(200);
+
+      // Try native clipboard API first
+      try {
+        const clipboardItem = new ClipboardItem({
+          [imageFile.type]: imageFile
+        });
+        await navigator.clipboard.write([clipboardItem]);
+        await sleep(100);
+      } catch (clipErr) {
+        console.log('[ImageAutomator] Clipboard API write failed:', clipErr.message);
+        // Continue anyway - we'll dispatch the paste event manually
+      }
+
+      // Dispatch paste event with the file in clipboardData
+      const dt = createDataTransfer(imageFile);
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt
+      });
+
+      editor.dispatchEvent(pasteEvent);
+      await sleep(500);
+      console.log('[ImageAutomator] Strategy 1 (clipboard paste): dispatched on Slate editor');
+      return true;
+    } catch (e) {
+      console.log('[ImageAutomator] Strategy 1 (clipboard paste) failed:', e.message);
       return false;
     }
-
-    console.log('[ImageAutomator] Batch drag & drop: ' + files.length + ' files');
-
-    // Wait for prompt field: #PINHOLE (legacy) or Slate editor (current)
-    const target = targetElement
-      || document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID')
-      || await window.veo3Timing.waitForAnyElement([
-          '#PINHOLE_TEXT_AREA_ELEMENT_ID',
-          '[data-slate-editor="true"][contenteditable="true"]',
-          '[contenteditable="true"]'
-        ], 5000);
-
-    if (!target) {
-      console.error('[ImageAutomator] batchDragDrop: no prompt field found');
-      return false;
-    }
-
-    if (window.veo3Highlight) await window.veo3Highlight(target);
-
-    const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-
-    target.dispatchEvent(new DragEvent('dragenter', {
-      bubbles: true, cancelable: true, dataTransfer: dt
-    }));
-    await sleep(150);
-
-    target.dispatchEvent(new DragEvent('dragover', {
-      bubbles: true, cancelable: true, dataTransfer: dt
-    }));
-    await sleep(150);
-
-    target.dispatchEvent(new DragEvent('drop', {
-      bubbles: true, cancelable: true, dataTransfer: dt
-    }));
-    await sleep(500);
-
-    console.log('[ImageAutomator] Batch drop dispatched: ' + files.length + ' files');
-    return true;
   }
 
-  // Main drag & drop simulation - aligned with nardoto-flow reference.
-  // Target priority: #PINHOLE_TEXT_AREA_ELEMENT_ID (legacy) > Slate editor (current Flow UI).
-  // 3 strategies: (1) drag events on target, (2) file input change, (3) VEO3 drop areas
-  async function simulateImageDragDrop(imageFile, targetElement) {
+  // Strategy 2: Drag & drop on document.body (wide target area)
+  // User reports that dropping anywhere on the page works manually
+  async function tryDragOnBody(imageFile) {
     const { sleep } = window.veo3Timing;
-    if (!imageFile) {
-      console.warn('[ImageAutomator] Missing image file');
-      return false;
-    }
 
-    // Wait for prompt field: #PINHOLE (legacy) or Slate editor (current)
-    const target = targetElement
-      || document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID')
-      || await window.veo3Timing.waitForAnyElement([
-          '#PINHOLE_TEXT_AREA_ELEMENT_ID',
-          '[data-slate-editor="true"][contenteditable="true"]',
-          '[contenteditable="true"]'
-        ], 5000);
-
-    if (!target) {
-      console.error('[ImageAutomator] No prompt field found for drag & drop');
-      return false;
-    }
-
-    console.log('[ImageAutomator] Target:', target.id || target.tagName);
-    if (window.veo3Highlight) await window.veo3Highlight(target);
-    await sleep(500);
-
-    // Strategy 1: Full drag sequence on #PINHOLE (reference pattern)
     try {
-      const dragEvents = [
+      const target = document.body;
+
+      const dt = createDataTransfer([imageFile]);
+
+      target.dispatchEvent(new DragEvent('dragenter', {
+        bubbles: true, cancelable: true, dataTransfer: dt
+      }));
+      await sleep(100);
+
+      target.dispatchEvent(new DragEvent('dragover', {
+        bubbles: true, cancelable: true, dataTransfer: dt
+      }));
+      await sleep(100);
+
+      target.dispatchEvent(new DragEvent('drop', {
+        bubbles: true, cancelable: true, dataTransfer: dt
+      }));
+      await sleep(500);
+
+      console.log('[ImageAutomator] Strategy 2 (drag on body): dispatched');
+      return true;
+    } catch (e) {
+      console.log('[ImageAutomator] Strategy 2 (drag on body) failed:', e.message);
+      return false;
+    }
+  }
+
+  // Strategy 3: Drag & drop on Slate editor
+  async function tryDragOnEditor(imageFile) {
+    const { sleep } = window.veo3Timing;
+
+    try {
+      const editor = document.querySelector('[data-slate-editor="true"][contenteditable="true"]');
+      if (!editor) {
+        console.log('[ImageAutomator] Strategy 3: no Slate editor found');
+        return false;
+      }
+
+      if (window.veo3Highlight) await window.veo3Highlight(editor);
+
+      const events = [
         new DragEvent('dragenter', {
           bubbles: true, cancelable: true, dataTransfer: createDataTransfer([imageFile])
         }),
@@ -151,16 +166,23 @@
         })
       ];
 
-      for (const event of dragEvents) {
-        target.dispatchEvent(event);
+      for (const event of events) {
+        editor.dispatchEvent(event);
         await sleep(50);
       }
-      console.log('[ImageAutomator] Strategy 1: drag events dispatched on', target.id || target.tagName);
-    } catch (e) {
-      console.warn('[ImageAutomator] Strategy 1 failed:', e.message);
-    }
 
-    // Strategy 2: Simulated file input change (some React frameworks listen for this)
+      console.log('[ImageAutomator] Strategy 3 (drag on Slate editor): dispatched');
+      return true;
+    } catch (e) {
+      console.log('[ImageAutomator] Strategy 3 (drag on Slate editor) failed:', e.message);
+      return false;
+    }
+  }
+
+  // Strategy 4: Hidden file input (some React apps listen for this)
+  async function tryFileInput(imageFile) {
+    const { sleep } = window.veo3Timing;
+
     try {
       const tempInput = document.createElement('input');
       tempInput.type = 'file';
@@ -175,12 +197,18 @@
       tempInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
       await sleep(300);
       document.body.removeChild(tempInput);
-      console.log('[ImageAutomator] Strategy 2: file input dispatched');
+      console.log('[ImageAutomator] Strategy 4 (file input): dispatched');
+      return true;
     } catch (e) {
-      console.warn('[ImageAutomator] Strategy 2 failed:', e.message);
+      console.log('[ImageAutomator] Strategy 4 (file input) failed:', e.message);
+      return false;
     }
+  }
 
-    // Strategy 3: VEO3-specific drop areas (from reference, excluding sidebar)
+  // Strategy 5: Drag on VEO3-specific drop areas (excluding sidebar)
+  async function tryDropAreas(imageFile) {
+    const { sleep } = window.veo3Timing;
+
     try {
       const mainArea = document.querySelector('main, [role="main"], .veo3-content, #main-content');
       const searchArea = mainArea || document.body;
@@ -190,6 +218,8 @@
         const inSidebar = el.closest('#veo3-automator-sidebar, .song-card, [id^="drop-zone-"]');
         return !inSidebar && el.offsetParent !== null;
       });
+
+      if (dropAreas.length === 0) return false;
 
       for (const area of dropAreas) {
         const events = [
@@ -202,21 +232,93 @@
           await sleep(100);
         }
       }
-      if (dropAreas.length > 0) {
-        console.log('[ImageAutomator] Strategy 3: drop on ' + dropAreas.length + ' VEO3 areas');
-      }
+
+      console.log('[ImageAutomator] Strategy 5 (drop areas): dispatched on ' + dropAreas.length + ' areas');
+      return true;
     } catch (e) {
-      console.warn('[ImageAutomator] Strategy 3 failed:', e.message);
+      console.log('[ImageAutomator] Strategy 5 (drop areas) failed:', e.message);
+      return false;
+    }
+  }
+
+  // === MAIN UPLOAD FUNCTION ===
+  // Tries all strategies in sequence with retry.
+  // Returns true if any strategy dispatched events (actual upload confirmed by waitForImageUpload).
+
+  async function simulateImageDragDrop(imageFile, _targetElement) {
+    const { sleep } = window.veo3Timing;
+    if (!imageFile) {
+      console.warn('[ImageAutomator] Missing image file');
+      return false;
     }
 
-    await sleep(1000);
-    console.log('[ImageAutomator] Drag & drop simulation complete for:', imageFile.name);
+    console.log('[ImageAutomator] Uploading:', imageFile.name, '(' + Math.round(imageFile.size / 1024) + 'KB)');
+
+    const MAX_ATTEMPTS = 2;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        console.log('[ImageAutomator] Retry attempt ' + attempt + '/' + MAX_ATTEMPTS);
+        await sleep(2000);
+      }
+
+      // Try all strategies in order of reliability
+      const strategies = [
+        tryClipboardPaste,
+        tryDragOnBody,
+        tryDragOnEditor,
+        tryFileInput,
+        tryDropAreas
+      ];
+
+      for (const strategy of strategies) {
+        const dispatched = await strategy(imageFile);
+        if (dispatched) {
+          await sleep(500);
+          console.log('[ImageAutomator] Upload events dispatched for:', imageFile.name);
+          return true;
+        }
+      }
+    }
+
+    console.error('[ImageAutomator] All upload strategies failed after ' + MAX_ATTEMPTS + ' attempts for:', imageFile.name);
+    return false;
+  }
+
+  // Batch drag & drop - all files at once in a single DataTransfer on document.body
+  async function batchDragDrop(files, _targetElement) {
+    const { sleep } = window.veo3Timing;
+    if (!files || files.length === 0) {
+      console.warn('[ImageAutomator] batchDragDrop: no files provided');
+      return false;
+    }
+
+    console.log('[ImageAutomator] Batch upload: ' + files.length + ' files');
+
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+
+    document.body.dispatchEvent(new DragEvent('dragenter', {
+      bubbles: true, cancelable: true, dataTransfer: dt
+    }));
+    await sleep(150);
+
+    document.body.dispatchEvent(new DragEvent('dragover', {
+      bubbles: true, cancelable: true, dataTransfer: dt
+    }));
+    await sleep(150);
+
+    document.body.dispatchEvent(new DragEvent('drop', {
+      bubbles: true, cancelable: true, dataTransfer: dt
+    }));
+    await sleep(500);
+
+    console.log('[ImageAutomator] Batch drop dispatched: ' + files.length + ' files');
     return true;
   }
 
-  // Wait for and confirm crop dialog - ported from nardoto-flow reference.
-  // Uses exact class selectors, crop icon check (NOT crop_16_9), 800ms post-click wait.
-  // Polls every 100ms for up to 15s (reference uses 15s timeout).
+  // === CROP DIALOG CONFIRMATION ===
+
   async function waitAndConfirmCrop(timeout = 15000) {
     const { sleep } = window.veo3Timing;
     const startTime = Date.now();
@@ -268,27 +370,31 @@
       }
 
       // Strategy 3: Generic labels (fallback)
-      const { findButtonByLabel } = window.veo3Selectors;
-      const fallback = findButtonByLabel('done') || findButtonByLabel('confirm') || findButtonByLabel('apply');
-      if (fallback) {
-        if (window.veo3RobustClick) await window.veo3RobustClick(fallback);
-        else fallback.click();
-        await sleep(800);
-        console.log('[ImageAutomator] Crop confirmed (label fallback)');
-        return true;
+      if (window.veo3Selectors) {
+        const { findButtonByLabel } = window.veo3Selectors;
+        const fallback = findButtonByLabel('done') || findButtonByLabel('confirm') || findButtonByLabel('apply');
+        if (fallback) {
+          if (window.veo3RobustClick) await window.veo3RobustClick(fallback);
+          else fallback.click();
+          await sleep(800);
+          console.log('[ImageAutomator] Crop confirmed (label fallback)');
+          return true;
+        }
       }
 
-      await sleep(100); // Poll every 100ms (reference pattern)
+      await sleep(100);
     }
 
     console.log('[ImageAutomator] No crop dialog found (might not be needed)');
     return false;
   }
 
-  // Wait for image upload to complete - ported from nardoto-flow reference.
-  // 6 signals checked: progress_activity icon, "Fazer upload" text, data-state="closed",
-  // close icon in button, "Primeiro frame" text, reference image cards.
-  // 30s timeout (reference default), 800ms stabilization delay after detection.
+  // === UPLOAD COMPLETION DETECTION ===
+  // Checks signals for upload completion with FIXED false-positive protection.
+  // Signal 3 now EXCLUDES the "+" gallery button (which always has data-state="closed")
+  // and the settings button (which also has data-state="closed").
+  // Requires either a STRONG signal or progress-then-completion pattern.
+
   async function waitForImageUpload(timeout = 30000) {
     const { sleep } = window.veo3Timing;
     const startTime = Date.now();
@@ -316,16 +422,27 @@
         foundProgress = true;
       }
 
-      // Signal 3: button[data-state="closed"] (upload complete)
-      const closedBtn = document.querySelector('button[data-state="closed"]');
+      // Signal 3: button[data-state="closed"] that is NOT the "+" or settings button
+      const closedBtns = document.querySelectorAll('button[data-state="closed"]');
+      let validClosedBtn = null;
+      for (const btn of closedBtns) {
+        if (btn.getAttribute('aria-haspopup') === 'dialog') continue; // Skip "+" button
+        if (btn.getAttribute('aria-haspopup') === 'menu') continue;   // Skip settings button
+        if (btn.offsetParent === null) continue;
+        validClosedBtn = btn;
+        break;
+      }
 
       // Signal 4: Close icon in button (image loaded, can be removed)
       let closeIconBtn = null;
       const btnIcons = document.querySelectorAll('button i.google-symbols, button i.material-icons');
       for (const icon of btnIcons) {
         if (icon.textContent.trim() === 'close') {
-          closeIconBtn = icon.closest('button');
-          break;
+          const parentBtn = icon.closest('button');
+          if (parentBtn && parentBtn.offsetParent !== null) {
+            closeIconBtn = parentBtn;
+            break;
+          }
         }
       }
 
@@ -334,16 +451,20 @@
         span.textContent.includes('Primeiro frame') || span.textContent.includes('First frame')
       );
 
-      // Signal 6: Reference image cards (original check)
+      // Signal 6: Reference image cards
       const refCards = document.querySelectorAll(
         window.veo3Selectors?.referenceCards ||
         '.reference-image-card, [class*="reference"] img, [class*="ingredient"] img'
       );
 
-      // Any completion signal found
-      if (closedBtn || closeIconBtn || frameText || refCards.length > 0) {
+      // Only accept completion if we saw progress first OR a strong signal exists
+      // This prevents false positives from pre-existing UI elements
+      const hasStrongSignal = frameText || refCards.length > 0;
+      const hasProgressThenClosed = foundProgress && (validClosedBtn || closeIconBtn);
+
+      if (hasStrongSignal || hasProgressThenClosed) {
         console.log('[ImageAutomator] Upload complete! Stabilizing...');
-        await sleep(800); // Stabilization delay (reference uses 800ms)
+        await sleep(800);
         return true;
       }
 

@@ -1,6 +1,7 @@
-// image-creation-handler.js - Handles "Create Images" mode (Nano Banana Pro)
+// image-creation-handler.js - Handles "Create Images" mode
 // IIFE-wrapped to prevent re-injection errors on SPA navigation
-// Uses shared fillSlateEditor + submitWithRetry from timing.js
+// Character selection is now handled by content-bridge (gallery-based).
+// This handler only fills the prompt and submits.
 
 (function () {
   if (window.__veo3_imgcreation_loaded) return;
@@ -15,32 +16,17 @@
 
     async processPromptWithImageCreation(promptIndex, commandData) {
       const { sleep, TIMING } = window.veo3Timing;
-      const images = this.getAllImagesForPrompt(commandData);
 
-      console.log(`[ImageCreation] Processing prompt #${promptIndex} with ${images.length} ref images`);
+      console.log(`[ImageCreation] Processing prompt #${promptIndex}`);
 
-      // Step 1: Add reference images (if any)
-      const galleryImages = images.filter(img => img.galleryItemName);
-      const uploadImages = images.filter(img => !img.galleryItemName && (img.image?.dataUrl || img.imagePath));
+      // Character/reference images are already selected from gallery by content-bridge.
+      // We only need to fill the prompt and submit.
 
-      for (const img of galleryImages) {
-        const selected = await window.veo3GalleryMapper.selectMediaByName(img.galleryItemName);
-        if (!selected && (img.image?.dataUrl || img.imagePath)) {
-          await this.uploadFallback(img);
-        }
-        await sleep(TIMING.NETWORK);
-      }
-
-      for (const img of uploadImages) {
-        await this.uploadFallback(img);
-        await sleep(700);
-      }
-
-      // Step 2: Fill prompt (shared function)
+      // Step 1: Fill prompt (shared function)
       await window.veo3Timing.fillSlateEditor(commandData.prompt);
       console.log(`[ImageCreation] Prompt filled: "${commandData.prompt.substring(0, 60)}..."`);
 
-      // Step 3: Submit with retry chain (shared function)
+      // Step 2: Submit with retry chain (shared function)
       const submitted = await window.veo3Timing.submitWithRetry();
       if (!submitted) {
         throw new Error('All submission strategies failed');
@@ -51,38 +37,6 @@
 
     getAllImagesForPrompt(commandData) {
       return commandData.characterImages || [];
-    },
-
-    async uploadFallback(img) {
-      const { sleep } = window.veo3Timing;
-      let file = null;
-
-      if (img.image?.dataUrl) {
-        file = window.dataUrlToFile(img.image.dataUrl, img.image.name || `${img.name}.png`);
-      }
-
-      if (!file) {
-        console.warn(`[ImageCreation] No file data for "${img.name}"`);
-        return;
-      }
-
-      // Step 1: Drag & drop (simulateImageDragDrop handles #PINHOLE targeting + feedback)
-      await window.simulateImageDragDrop(file);
-      await sleep(800);
-
-      // Step 2: Wait for and confirm crop dialog (15s timeout, exact selectors)
-      try {
-        await window.waitAndConfirmCrop(15000);
-      } catch (cropError) {
-        console.warn('[ImageCreation] Crop error, continuing:', cropError.message);
-      }
-
-      // Step 3: Wait for upload to complete (30s timeout, 6 signals)
-      try {
-        await window.waitForImageUpload(30000);
-      } catch (uploadError) {
-        console.warn('[ImageCreation] Upload timeout, checking state...');
-      }
     }
   };
 

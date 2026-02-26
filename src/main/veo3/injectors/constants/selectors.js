@@ -125,37 +125,23 @@
     submitButton: findSubmitButton,
     clearButton: () => findButtonByIcon('close'),
 
-    // --- Settings button (model selector: "Nano Banana Pro" etc) ---
+    // --- Settings button (aspect ratio + count: "Video crop_16_9 x1") ---
+    // MUST contain BOTH an aspect ratio icon (crop_16_9 or crop_9_16) AND count text (x1..x4).
+    // This uniquely identifies the config button and NEVER matches the model selector ("Veo 3.1").
     settingsButton: () => {
-      // Strategy 1: Button with aria-haspopup="menu" containing model/aspect text
       const menuBtns = document.querySelectorAll('button[aria-haspopup="menu"]');
       for (const btn of menuBtns) {
         if (btn.offsetParent === null || btn.disabled) continue;
         const text = btn.textContent.trim();
-        if (text.includes('crop_16_9') || text.includes('crop_9_16') ||
-            /x[1-4]/.test(text) ||
-            text.includes('Nano') || text.includes('Banana') || text.includes('Pro') ||
-            text.includes('Flash') || text.includes('Veo')) {
-          window.veo3Debug?.debug('DOM', 'Settings button found: model selector', { text });
+        const hasAspectIcon = text.includes('crop_16_9') || text.includes('crop_9_16');
+        const hasCountText = /x[1-4]/.test(text);
+        if (hasAspectIcon && hasCountText) {
+          window.veo3Debug?.debug('DOM', 'Settings button found: aspect+count match', { text });
           return btn;
         }
       }
-      // Strategy 2: Button near prompt area with aria-haspopup="menu"
-      const promptArea = document.querySelector('[data-slate-editor="true"]');
-      if (promptArea) {
-        const container = promptArea.closest('form') || promptArea.parentElement?.parentElement?.parentElement;
-        if (container) {
-          const nearby = container.querySelectorAll('button[aria-haspopup="menu"]');
-          for (const btn of nearby) {
-            if (btn.offsetParent !== null && !btn.disabled) {
-              window.veo3Debug?.debug('DOM', 'Settings button found: near prompt area');
-              return btn;
-            }
-          }
-        }
-      }
-      // Strategy 3: Fallback to icon-based search
-      return findButtonByIcon('tune') || findButtonByLabel('config') || findButtonByLabel('settings');
+      window.veo3Debug?.warn('DOM', 'Settings button NOT found (no button has both aspect icon + count text)');
+      return null;
     },
 
     // --- Mode combobox (multi-strategy) ---
@@ -259,11 +245,14 @@
     },
 
     // --- Settings tabs (Radix UI with semantic aria-controls) ---
-    tabVideo: '[role="tab"][aria-controls*="VIDEO"]',
-    tabImage: '[role="tab"][aria-controls*="IMAGE"]',
-    tabLandscape: '[role="tab"][aria-controls*="LANDSCAPE"]',
-    tabPortrait: '[role="tab"][aria-controls*="PORTRAIT"]',
-    tabCount: (n) => `[role="tab"][aria-controls*="${n}"]`,
+    // These appear inside the dropdown menu opened by the settings button
+    tabVideo: '[role="tab"][aria-controls*="-content-VIDEO"]',
+    tabImage: '[role="tab"][aria-controls*="-content-IMAGE"]',
+    tabIngredients: '[role="tab"][aria-controls*="-content-VIDEO_REFERENCES"]',
+    tabFrames: '[role="tab"][aria-controls*="-content-VIDEO_FRAMES"]',
+    tabLandscape: '[role="tab"][aria-controls*="-content-LANDSCAPE"]',
+    tabPortrait: '[role="tab"][aria-controls*="-content-PORTRAIT"]',
+    tabCount: (n) => `[role="tab"][aria-controls*="-content-${n}"]`,
 
     // --- Media library (Virtuoso virtual scroll) ---
     addMediaButton: () => {
