@@ -10,6 +10,19 @@ const AUTH_DOMAINS = [
   'myaccount.google.com'
 ]
 
+const INJECTOR_SCRIPTS = [
+  'utils/debug-logger.js',
+  'constants/selectors.js',
+  'utils/timing.js',
+  'utils/click-feedback.js',
+  'automation/image-automator.js',
+  'automation/gallery-mapper.js',
+  'automation/image-ref-manager.js',
+  'automation/elements-mode-handler.js',
+  'automation/image-creation-handler.js',
+  'content-bridge.js'
+]
+
 export interface Veo3BrowserHandle {
   getWebview: () => WebviewElement | null
 }
@@ -37,110 +50,129 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
   ) {
     const webviewRef = useRef<WebviewElement | null>(null)
     const wasOnAuthDomain = useRef(false)
+    const listenersAttached = useRef(false)
     const { zoomFactor } = useVeo3Store()
+
+    // Latest-ref pattern: store callbacks in refs so event handlers always read latest values
+    const onReadyRef = useRef(onReady)
+    const onStateChangeRef = useRef(onStateChange)
+    const onLoginDetectedRef = useRef(onLoginDetected)
+    const onContentMessageRef = useRef(onContentMessage)
+    const zoomFactorRef = useRef(zoomFactor)
+
+    // Sync refs on every render (no useEffect needed, direct assignment is safe)
+    onReadyRef.current = onReady
+    onStateChangeRef.current = onStateChange
+    onLoginDetectedRef.current = onLoginDetected
+    onContentMessageRef.current = onContentMessage
+    zoomFactorRef.current = zoomFactor
 
     useImperativeHandle(ref, () => ({
       getWebview: () => webviewRef.current
     }))
 
-    const setWebviewElement = useCallback(
-      (el: HTMLElement | null) => {
-        if (!el) return
-        const wv = el as WebviewElement
-        webviewRef.current = wv
+    // Stable ref callback - registers event listeners exactly ONCE per mount
+    const setWebviewElement = useCallback((el: HTMLElement | null) => {
+      if (!el) {
+        webviewRef.current = null
+        return
+      }
 
-        const handleDomReady = async (): Promise<void> => {
-          wv.setZoomFactor(zoomFactor)
-          onStateChange?.({
-            isLoading: false,
-            currentUrl: wv.getURL(),
-            canGoBack: wv.canGoBack(),
-            canGoForward: wv.canGoForward()
-          })
+      const wv = el as WebviewElement
+      webviewRef.current = wv
 
-          // Inject automation scripts (only on Flow pages)
-          const currentUrl = wv.getURL()
-          if (currentUrl.includes('labs.google') && currentUrl.includes('flow')) {
-            const INJECTOR_SCRIPTS = [
-              'constants/selectors.js',
-              'utils/timing.js',
-              'utils/click-feedback.js',
-              'automation/image-automator.js',
-              'automation/gallery-mapper.js',
-              'automation/image-ref-manager.js',
-              'automation/elements-mode-handler.js',
-              'automation/image-creation-handler.js',
-              'content-bridge.js'
-            ]
+      // Guard: only attach listeners once
+      if (listenersAttached.current) return
+      listenersAttached.current = true
 
-            for (const script of INJECTOR_SCRIPTS) {
-              try {
-                const code = await window.api.veo3ReadScript(script)
-                if (code) await wv.executeJavaScript(code)
-              } catch (err) {
-                console.error(`[Veo3Browser] Failed to inject ${script}:`, err)
+      const handleDomReady = async (): Promise<void> => {
+        wv.setZoomFactor(zoomFactorRef.current)
+        onStateChangeRef.current?.({
+          isLoading: false,
+          currentUrl: wv.getURL(),
+          canGoBack: wv.canGoBack(),
+          canGoForward: wv.canGoForward()
+        })
+
+        // Inject automation scripts (only on Flow pages)
+        const currentUrl = wv.getURL()
+        if (currentUrl.includes('labs.google') && currentUrl.includes('flow')) {
+          for (const script of INJECTOR_SCRIPTS) {
+            try {
+              const code = await window.api.veo3ReadScript(script)
+              if (code) {
+                await wv.executeJavaScript(code)
+                await wv.executeJavaScript(
+                  `window.veo3Debug?.info('INJECT', 'Loaded: ${script}')`
+                )
               }
+            } catch (err) {
+              console.error(`[Veo3Browser] Failed to inject ${script}:`, err)
             }
           }
-
-          onReady?.()
         }
 
-        const handleDidStartLoading = (): void => {
-          onStateChange?.({ isLoading: true })
+        onReadyRef.current?.()
+      }
+
+      const handleDidStartLoading = (): void => {
+        onStateChangeRef.current?.({ isLoading: true })
+      }
+
+      const handleDidStopLoading = (): void => {
+        onStateChangeRef.current?.({
+          isLoading: false,
+          currentUrl: wv.getURL(),
+          canGoBack: wv.canGoBack(),
+          canGoForward: wv.canGoForward()
+        })
+      }
+
+      const handleDidNavigate = (): void => {
+        const navUrl = wv.getURL()
+        onStateChangeRef.current?.({
+          currentUrl: navUrl,
+          canGoBack: wv.canGoBack(),
+          canGoForward: wv.canGoForward()
+        })
+
+        const isAuthDomain = AUTH_DOMAINS.some((d) => navUrl.includes(d))
+        if (isAuthDomain) {
+          wasOnAuthDomain.current = true
         }
 
-        const handleDidStopLoading = (): void => {
-          onStateChange?.({
-            isLoading: false,
-            currentUrl: wv.getURL(),
-            canGoBack: wv.canGoBack(),
-            canGoForward: wv.canGoForward()
-          })
+        if (!isAuthDomain && navUrl.includes('labs.google') && wasOnAuthDomain.current) {
+          onLoginDetectedRef.current?.()
+          wasOnAuthDomain.current = false
         }
+      }
 
-        const handleDidNavigate = (_e: unknown): void => {
-          const navUrl = wv.getURL()
-          onStateChange?.({
-            currentUrl: navUrl,
-            canGoBack: wv.canGoBack(),
-            canGoForward: wv.canGoForward()
-          })
+      const handleConsoleMessage = (e: unknown): void => {
+        const event = e as { message: string }
+        if (!event.message || !event.message.startsWith('{')) return
 
-          const isAuthDomain = AUTH_DOMAINS.some((d) => navUrl.includes(d))
-          if (isAuthDomain) {
-            wasOnAuthDomain.current = true
+        try {
+          const data = JSON.parse(event.message)
+          if (data.type === 'CONTENT_TO_SIDEPANEL' || data.action) {
+            onContentMessageRef.current?.(data as Veo3ContentMessage)
           }
-
-          if (!isAuthDomain && navUrl.includes('labs.google') && wasOnAuthDomain.current) {
-            onLoginDetected?.()
-            wasOnAuthDomain.current = false
-          }
+        } catch {
+          // Not JSON, ignore
         }
+      }
 
-        const handleConsoleMessage = (e: unknown): void => {
-          const event = e as { message: string }
-          if (!event.message || !event.message.startsWith('{')) return
+      wv.addEventListener('dom-ready', handleDomReady)
+      wv.addEventListener('did-start-loading', handleDidStartLoading)
+      wv.addEventListener('did-stop-loading', handleDidStopLoading)
+      wv.addEventListener('did-navigate', handleDidNavigate)
+      wv.addEventListener('did-navigate-in-page', handleDidNavigate)
+      wv.addEventListener('console-message', handleConsoleMessage)
+    }, [])
 
-          try {
-            const data = JSON.parse(event.message)
-            if (data.type === 'CONTENT_TO_SIDEPANEL' || data.action) {
-              onContentMessage?.(data as Veo3ContentMessage)
-            }
-          } catch {
-            // Not JSON, ignore
-          }
-        }
-
-        wv.addEventListener('dom-ready', handleDomReady)
-        wv.addEventListener('did-start-loading', handleDidStartLoading)
-        wv.addEventListener('did-stop-loading', handleDidStopLoading)
-        wv.addEventListener('did-navigate', handleDidNavigate)
-        wv.addEventListener('did-navigate-in-page', handleDidNavigate)
-        wv.addEventListener('console-message', handleConsoleMessage)
-      },
-      [zoomFactor, onReady, onStateChange, onLoginDetected, onContentMessage]
-    )
+    // Sync zoom factor changes without re-registering listeners
+    useEffect(() => {
+      webviewRef.current?.setZoomFactor(zoomFactor)
+    }, [zoomFactor])
 
     useEffect(() => {
       return () => {

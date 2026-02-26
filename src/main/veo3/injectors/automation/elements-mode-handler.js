@@ -1,135 +1,91 @@
 // elements-mode-handler.js - Handles "Elements to Video" mode
-// Ported from nardoto-flow, adapted selectors for updated Flow UI
+// IIFE-wrapped to prevent re-injection errors on SPA navigation
+// Uses shared fillSlateEditor + submitWithRetry from timing.js
 
-const elementsHandler = {
-  async isElementsModeActive() {
-    const modeText = window.veo3Selectors.getCurrentModeText();
-    if (!modeText) return false;
-    return modeText.includes('element') || modeText.includes('elemento');
-  },
+(function () {
+  if (window.__veo3_elements_loaded) return;
+  window.__veo3_elements_loaded = true;
 
-  async processPromptWithElements(promptIndex, commandData) {
-    const { sleep } = window.veo3Timing;
-    const images = this.getAllImagesForPrompt(commandData);
+  const elementsHandler = {
+    async isElementsModeActive() {
+      const modeText = window.veo3Selectors.getCurrentModeText();
+      if (!modeText) return false;
+      return modeText.includes('element') || modeText.includes('elemento');
+    },
 
-    console.log(`[ElementsHandler] Processing prompt #${promptIndex} with ${images.length} images`);
+    async processPromptWithElements(promptIndex, commandData) {
+      const { sleep, TIMING } = window.veo3Timing;
+      const images = this.getAllImagesForPrompt(commandData);
 
-    // Step 1: Add reference images via media library selection
-    for (const img of images) {
-      if (img.galleryItemName) {
-        // Select from media library by filename
+      // Skip prompts without images in elements mode
+      if (images.length === 0) {
+        console.warn(`[ElementsHandler] Prompt #${promptIndex} has no images, skipping in elements mode`);
+        return { skipped: true, reason: 'No character images for elements mode' };
+      }
+
+      console.log(`[ElementsHandler] Processing prompt #${promptIndex} with ${images.length} images`);
+
+      // Separate gallery vs upload images
+      const galleryImages = images.filter(img => img.galleryItemName);
+      const uploadImages = images.filter(img => !img.galleryItemName && (img.image?.dataUrl || img.imagePath));
+
+      // Step 1: Add gallery images first (faster)
+      for (const img of galleryImages) {
         const selected = await window.veo3GalleryMapper.selectMediaByName(img.galleryItemName);
         if (!selected) {
-          console.warn(`[ElementsHandler] Could not select "${img.galleryItemName}" from library`);
-          // Fallback: try drag & drop if we have the image data
-          if (img.imagePath || img.image?.dataUrl) {
+          console.warn(`[ElementsHandler] Gallery select failed for "${img.galleryItemName}", trying upload`);
+          if (img.image?.dataUrl || img.imagePath) {
             await this.uploadFallback(img);
           }
         }
-        await sleep(500);
-      } else if (img.image?.dataUrl || img.imagePath) {
-        // No gallery mapping -- upload via drag & drop
-        await this.uploadFallback(img);
-        await sleep(500);
+        await sleep(TIMING.NETWORK);
       }
-    }
 
-    // Step 2: Fill prompt text
-    await this.fillPrompt(commandData.prompt);
+      // Step 2: Upload remaining images via drag & drop
+      for (const img of uploadImages) {
+        await this.uploadFallback(img);
+        await sleep(700);
+      }
 
-    // Step 3: Click submit
-    await this.clickSubmit();
+      // Step 3: Fill prompt text (shared function)
+      await window.veo3Timing.fillSlateEditor(commandData.prompt);
+      console.log(`[ElementsHandler] Prompt filled: "${commandData.prompt.substring(0, 60)}..."`);
 
-    // Step 4: Wait for submission confirmation
-    await this.waitForSubmission();
-  },
+      // Step 4: Submit with retry chain (shared function)
+      const submitted = await window.veo3Timing.submitWithRetry();
+      if (!submitted) {
+        throw new Error('All submission strategies failed');
+      }
 
-  getAllImagesForPrompt(commandData) {
-    return commandData.characterImages || [];
-  },
+      console.log('[ElementsHandler] Submission confirmed');
+      return { skipped: false };
+    },
 
-  async uploadFallback(img) {
-    const { sleep } = window.veo3Timing;
-    let file = null;
+    getAllImagesForPrompt(commandData) {
+      return commandData.characterImages || [];
+    },
 
-    if (img.image?.dataUrl) {
-      file = window.dataUrlToFile(img.image.dataUrl, img.image.name || `${img.name}.png`);
-    }
+    async uploadFallback(img) {
+      const { sleep } = window.veo3Timing;
+      let file = null;
 
-    if (!file) {
-      console.warn(`[ElementsHandler] No file data for "${img.name}"`);
-      return;
-    }
+      if (img.image?.dataUrl) {
+        file = window.dataUrlToFile(img.image.dataUrl, img.image.name || `${img.name}.png`);
+      }
 
-    // Find the prompt/editor area for drag target
-    const editor = document.querySelector(window.veo3Selectors.slateEditor);
-    if (editor) {
-      await window.simulateImageDragDrop(file, editor.closest('[class]') || editor);
+      if (!file) {
+        console.warn(`[ElementsHandler] No file data for "${img.name}"`);
+        return;
+      }
+
+      // simulateImageDragDrop auto-detects target if not provided
+      await window.simulateImageDragDrop(file);
       await sleep(700);
       await window.waitAndConfirmCrop();
     }
-  },
+  };
 
-  async fillPrompt(text) {
-    const { sleep, waitForElement } = window.veo3Timing;
-    const editor = await waitForElement(window.veo3Selectors.slateEditor);
-    if (!editor) {
-      throw new Error('Slate editor not found');
-    }
+  window.elementsHandler = elementsHandler;
 
-    editor.focus();
-    await sleep(100);
-
-    // Clear existing content
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    await sleep(100);
-
-    // Insert new text
-    document.execCommand('insertText', false, text);
-    await sleep(200);
-
-    console.log(`[ElementsHandler] Prompt filled: "${text.substring(0, 60)}..."`);
-  },
-
-  async clickSubmit() {
-    const { sleep } = window.veo3Timing;
-    const submitBtn = window.veo3Selectors.submitButton();
-    if (!submitBtn) {
-      throw new Error('Submit button (arrow_forward) not found');
-    }
-
-    if (window.veo3ClickFeedback) {
-      await window.veo3ClickFeedback.clickWithFeedback(submitBtn);
-    } else {
-      submitBtn.click();
-    }
-    await sleep(300);
-    console.log('[ElementsHandler] Submit clicked');
-  },
-
-  async waitForSubmission(timeout = 15000) {
-    const { sleep } = window.veo3Timing;
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeout) {
-      // Check if the editor was cleared (Flow clears it after accepting prompt)
-      const editor = document.querySelector(window.veo3Selectors.slateEditor);
-      if (editor) {
-        const text = editor.textContent.trim();
-        if (text === '' || text.length < 5) {
-          console.log('[ElementsHandler] Submission confirmed (editor cleared)');
-          return true;
-        }
-      }
-      await sleep(500);
-    }
-
-    console.warn('[ElementsHandler] Submission wait timed out');
-    return false;
-  }
-};
-
-window.elementsHandler = elementsHandler;
-
-console.log('[Flow] Elements mode handler loaded');
+  console.log('[Flow] Elements mode handler loaded');
+})();

@@ -708,6 +708,17 @@ Tipo: ${scene.mediaType}`
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {promptsGenerated > 0 && !progress.isGeneratingPrompts && (
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={onConfirm}
+                className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Confirmar prompts
+              </motion.button>
+            )}
             <button
               onClick={handleExport}
               disabled={promptsGenerated === 0}
@@ -1062,20 +1073,6 @@ Tipo: ${scene.mediaType}`
         })}
       </div>
 
-      {/* Confirm */}
-      {promptsGenerated > 0 && !progress.isGeneratingPrompts && (
-        <div className="flex justify-end pt-2 border-t border-border">
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={onConfirm}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Confirmar prompts
-          </motion.button>
-        </div>
-      )}
     </div>
   )
 }

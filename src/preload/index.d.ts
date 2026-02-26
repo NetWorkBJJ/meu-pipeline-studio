@@ -139,6 +139,104 @@ interface ElectronAppAPI {
   veo3GetDownloadPath: () => Promise<string>
   veo3ClearPartition: (partition: string) => Promise<{ success: boolean; error?: string }>
   onVeo3DownloadComplete: (callback: (data: unknown) => void) => () => void
+
+  // AI33.pro
+  ai33SaveApiKey: (apiKey: string) => Promise<unknown>
+  ai33HasApiKey: () => Promise<boolean>
+  ai33DeleteApiKey: () => Promise<unknown>
+
+  ai33GetCredits: () => Promise<unknown>
+  ai33HealthCheck: () => Promise<unknown>
+
+  ai33GetTask: (taskId: string) => Promise<unknown>
+  ai33ListTasks: (params: { page?: number; limit?: number; type?: string }) => Promise<unknown>
+  ai33DeleteTasks: (taskIds: string[]) => Promise<unknown>
+  ai33PollTask: (taskId: string) => Promise<unknown>
+  ai33DownloadFile: (params: { url: string; destDir?: string; fileName?: string }) => Promise<unknown>
+
+  ai33TtsElevenlabs: (params: {
+    voiceId: string
+    text: string
+    model_id?: string
+    with_transcript?: boolean
+    output_format?: string
+  }) => Promise<unknown>
+
+  ai33TtsMinimax: (params: {
+    text: string
+    model?: string
+    voice_setting: { voice_id: string; vol?: number; pitch?: number; speed?: number }
+    language_boost?: string
+    with_transcript?: boolean
+  }) => Promise<unknown>
+
+  ai33GetModels: () => Promise<unknown>
+  ai33GetVoices: () => Promise<unknown>
+  ai33GetSharedVoices: (params?: { pageSize?: number; page?: number }) => Promise<unknown>
+
+  ai33MinimaxVoiceList: (params?: { page?: number; page_size?: number; tag_list?: string[] }) => Promise<unknown>
+  ai33MinimaxClonedVoices: () => Promise<unknown>
+  ai33MinimaxVoiceClone: (params: {
+    filePath: string
+    voice_name: string
+    preview_text?: string
+    language_tag?: string
+    need_noise_reduction?: boolean
+    gender_tag?: string
+  }) => Promise<unknown>
+  ai33MinimaxDeleteClone: (voiceId: string) => Promise<unknown>
+  ai33MinimaxConfig: () => Promise<unknown>
+
+  ai33Dubbing: (params: {
+    filePath: string
+    num_speakers?: number
+    disable_voice_cloning?: boolean
+    source_lang?: string
+    target_lang?: string
+  }) => Promise<unknown>
+  ai33SpeechToText: (filePath: string) => Promise<unknown>
+  ai33SoundEffect: (params: {
+    text: string
+    duration_seconds?: number
+    prompt_influence?: number
+    loop?: boolean
+    model_id?: string
+  }) => Promise<unknown>
+  ai33VoiceChanger: (params: {
+    filePath: string
+    voice_id: string
+    model_id?: string
+    voice_settings?: Record<string, unknown>
+    remove_background_noise?: boolean
+  }) => Promise<unknown>
+  ai33VoiceIsolate: (filePath: string) => Promise<unknown>
+
+  ai33MusicGeneration: (params: {
+    title?: string
+    idea?: string
+    lyrics?: string
+    style_id?: string
+    mood_id?: string
+    scenario_id?: string
+    n?: number
+    rewrite_idea_switch?: boolean
+  }) => Promise<unknown>
+
+  ai33ImageModels: () => Promise<unknown>
+  ai33ImagePrice: (params: {
+    model_id: string
+    generations_count: number
+    model_parameters?: Record<string, unknown>
+  }) => Promise<unknown>
+  ai33GenerateImage: (params: {
+    prompt: string
+    model_id: string
+    generations_count?: number
+    model_parameters?: Record<string, unknown>
+    assetPaths?: string[]
+  }) => Promise<unknown>
+
+  onAi33TaskProgress: (callback: (data: unknown) => void) => () => void
 }
 
 declare global {

@@ -19,7 +19,8 @@ const VEO3_DOMAINS = [
 ]
 
 // Global download path for VEO3 (can be overridden via IPC)
-let veo3DownloadPath = join(app.getPath('downloads'), 'MeuPipeline', 'midias')
+// Initialized lazily in app.whenReady() because app.getPath() is not available at module load
+let veo3DownloadPath = ''
 
 export function getVeo3DownloadPath(): string {
   return veo3DownloadPath
@@ -119,6 +120,9 @@ app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.meupipeline.studio')
   }
+
+  // Initialize download path now that app is ready
+  veo3DownloadPath = join(app.getPath('downloads'), 'MeuPipeline', 'midias')
 
   setupWebviewSecurity()
   setupVeo3Downloads()

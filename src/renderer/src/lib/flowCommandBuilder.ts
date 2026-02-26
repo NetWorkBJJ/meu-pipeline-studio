@@ -3,10 +3,6 @@ import type { FlowCommand, FlowCreationMode, FlowCharacterImageRef } from '@/typ
 
 const MIN_MATCH_LENGTH = 3
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 function extractKeywords(name: string): string[] {
   const normalized = name.toLowerCase()
   const keywords = new Set<string>()
@@ -37,55 +33,83 @@ function extractKeywords(name: string): string[] {
   return Array.from(keywords)
 }
 
-function calculateConfidence(matchedName: string, prompt: string): number {
-  let confidence = matchedName.length * 10
+/**
+ * Parse the "Character Anchor:" line from a Stage 4 prompt.
+ * Returns character names (before the " - " description).
+ * Returns empty array if anchor is absent or is the em-dash placeholder.
+ */
+function parseCharacterAnchor(prompt: string): string[] {
+  const match = prompt.match(/Character Anchor:\s*(.+?)(?:\n|$)/i)
+  if (!match) return []
 
-  const regex = new RegExp(
-    `(^|[\\s.,;:!?])(${escapeRegex(matchedName)})([\\s.,;:!?]|$)`,
-    'i'
-  )
-  if (regex.test(prompt)) {
-    confidence += 50
+  const anchorText = match[1].trim()
+  if (anchorText === '\u2014' || anchorText === '-' || anchorText === '' || anchorText === '\u2014.') {
+    return []
   }
 
-  return confidence
+  const parts = anchorText
+    .split('|')
+    .map((p) => p.trim())
+    .filter(Boolean)
+
+  return parts.map((part) => {
+    const clean = part.replace(/\.$/, '').trim()
+    const dashIndex = clean.indexOf(' - ')
+    return (dashIndex > 0 ? clean.substring(0, dashIndex) : clean).trim()
+  })
 }
 
+/**
+ * Match characters from the prompt's Character Anchor line to CharacterRef entries.
+ * Each unique character name produces exactly ONE match (no duplicates).
+ */
 export function matchCharactersToPrompt(
   prompt: string,
   characters: CharacterRef[]
 ): FlowCharacterImageRef[] {
   if (!prompt || characters.length === 0) return []
 
-  const promptLower = prompt.toLowerCase()
-  const matches: { ref: FlowCharacterImageRef; confidence: number }[] = []
-  const matchedIds = new Set<string>()
+  const anchorNames = parseCharacterAnchor(prompt)
+  if (anchorNames.length === 0) return []
 
-  for (const char of characters) {
-    if (matchedIds.has(char.id)) continue
+  const result: FlowCharacterImageRef[] = []
+  const usedNames = new Set<string>()
 
-    const keywords = extractKeywords(char.name)
+  for (const anchorName of anchorNames) {
+    const normalized = anchorName.toLowerCase().trim()
+    if (usedNames.has(normalized)) continue
 
-    for (const keyword of keywords) {
-      if (promptLower.includes(keyword)) {
-        matches.push({
-          ref: {
-            characterId: char.id,
-            name: char.name,
-            keywords,
-            imagePath: char.imagePath || null,
-            galleryItemName: null
-          },
-          confidence: calculateConfidence(keyword, promptLower)
-        })
-        matchedIds.add(char.id)
+    let bestRef: CharacterRef | null = null
+    let bestScore = 0
+
+    for (const char of characters) {
+      const charLower = char.name.toLowerCase().trim()
+      if (charLower === normalized) {
+        bestRef = char
         break
       }
+      if (charLower.includes(normalized) || normalized.includes(charLower)) {
+        const score = Math.min(charLower.length, normalized.length)
+        if (score > bestScore) {
+          bestScore = score
+          bestRef = char
+        }
+      }
+    }
+
+    if (bestRef) {
+      result.push({
+        characterId: bestRef.id,
+        name: anchorName,
+        keywords: extractKeywords(anchorName),
+        imagePath: bestRef.imagePath || null,
+        galleryItemName: null
+      })
+      usedNames.add(normalized)
     }
   }
 
-  matches.sort((a, b) => b.confidence - a.confidence)
-  return matches.map((m) => m.ref)
+  return result
 }
 
 export function determineFlowMode(

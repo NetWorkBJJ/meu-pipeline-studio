@@ -15,9 +15,10 @@ const TABS: { id: SidepanelTab; label: string }[] = [
 
 interface Veo3SidepanelProps {
   webviewRef: React.RefObject<WebviewElement | null>
+  compact?: boolean
 }
 
-export function Veo3Sidepanel({ webviewRef }: Veo3SidepanelProps): React.JSX.Element {
+export function Veo3Sidepanel({ webviewRef, compact }: Veo3SidepanelProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<SidepanelTab>('plan')
   const { isRunning, isPaused, getProgress } = useVeo3AutomationStore()
 
@@ -41,10 +42,10 @@ export function Veo3Sidepanel({ webviewRef }: Veo3SidepanelProps): React.JSX.Ele
           : 'bg-white/5 text-text-muted'
 
   return (
-    <div className="flex h-full w-[360px] flex-col">
+    <div className={`flex h-full flex-col ${compact ? 'w-full' : 'w-[360px]'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <h3 className="text-sm font-semibold text-text">Flow Studio</h3>
+      <div className={`flex items-center justify-between border-b border-border ${compact ? 'px-2.5 py-2' : 'px-4 py-2.5'}`}>
+        <h3 className={`font-semibold text-text ${compact ? 'text-xs' : 'text-sm'}`}>Flow Studio</h3>
         {statusLabel !== 'idle' && (
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusColor}`}>
             {statusLabel}
@@ -82,7 +83,7 @@ export function Veo3Sidepanel({ webviewRef }: Veo3SidepanelProps): React.JSX.Ele
 
       {/* Footer */}
       {progress.total > 0 && (
-        <div className="flex items-center gap-3 border-t border-border px-4 py-2">
+        <div className={`flex items-center gap-3 border-t border-border py-2 ${compact ? 'px-2.5' : 'px-4'}`}>
           <div className="flex-1">
             <div className="h-1 overflow-hidden rounded-full bg-white/5">
               <div

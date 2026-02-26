@@ -1,6 +1,7 @@
 import { ipcMain, app, session } from 'electron'
 import { readFileSync, existsSync } from 'fs'
-import { join, normalize, resolve } from 'path'
+import { readFile } from 'fs/promises'
+import { join, normalize, resolve, extname } from 'path'
 import { getVeo3DownloadPath, setVeo3DownloadPath } from '../index'
 
 function getInjectorsBasePath(): string {
@@ -38,6 +39,28 @@ export function registerVeo3Handlers(): void {
 
   ipcMain.handle('veo3:get-download-path', async () => {
     return getVeo3DownloadPath()
+  })
+
+  ipcMain.handle('veo3:read-image-as-dataurl', async (_event, filePath: string) => {
+    if (!filePath || !existsSync(filePath)) {
+      return null
+    }
+
+    try {
+      const buf = await readFile(filePath)
+      const ext = extname(filePath).toLowerCase().slice(1)
+      const mimeMap: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+        bmp: 'image/bmp'
+      }
+      const mime = mimeMap[ext] || 'image/png'
+      return `data:${mime};base64,${buf.toString('base64')}`
+    } catch {
+      return null
+    }
   })
 
   ipcMain.handle('veo3:clear-partition', async (_event, partitionName: string) => {

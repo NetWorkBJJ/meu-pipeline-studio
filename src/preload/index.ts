@@ -192,12 +192,128 @@ const api = {
     ipcRenderer.invoke('veo3:set-download-path', folderPath),
   veo3GetDownloadPath: (): Promise<string> =>
     ipcRenderer.invoke('veo3:get-download-path'),
+  veo3ReadImageAsDataUrl: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('veo3:read-image-as-dataurl', filePath),
   veo3ClearPartition: (partition: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('veo3:clear-partition', partition),
   onVeo3DownloadComplete: (callback: (data: unknown) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('veo3:download-complete', handler)
     return () => ipcRenderer.removeListener('veo3:download-complete', handler)
+  },
+
+  // AI33.pro
+  ai33SaveApiKey: (apiKey: string): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:save-api-key', apiKey),
+  ai33HasApiKey: (): Promise<boolean> => ipcRenderer.invoke('ai33:has-api-key'),
+  ai33DeleteApiKey: (): Promise<unknown> => ipcRenderer.invoke('ai33:delete-api-key'),
+
+  ai33GetCredits: (): Promise<unknown> => ipcRenderer.invoke('ai33:get-credits'),
+  ai33HealthCheck: (): Promise<unknown> => ipcRenderer.invoke('ai33:health-check'),
+
+  ai33GetTask: (taskId: string): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:get-task', taskId),
+  ai33ListTasks: (params: { page?: number; limit?: number; type?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:list-tasks', params),
+  ai33DeleteTasks: (taskIds: string[]): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:delete-tasks', taskIds),
+  ai33PollTask: (taskId: string): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:poll-task', taskId),
+  ai33DownloadFile: (params: { url: string; destDir?: string; fileName?: string }): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:download-file', params),
+
+  ai33TtsElevenlabs: (params: {
+    voiceId: string
+    text: string
+    model_id?: string
+    with_transcript?: boolean
+    output_format?: string
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:tts-elevenlabs', params),
+
+  ai33TtsMinimax: (params: {
+    text: string
+    model?: string
+    voice_setting: { voice_id: string; vol?: number; pitch?: number; speed?: number }
+    language_boost?: string
+    with_transcript?: boolean
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:tts-minimax', params),
+
+  ai33GetModels: (): Promise<unknown> => ipcRenderer.invoke('ai33:get-models'),
+  ai33GetVoices: (): Promise<unknown> => ipcRenderer.invoke('ai33:get-voices'),
+  ai33GetSharedVoices: (params?: { pageSize?: number; page?: number }): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:get-shared-voices', params),
+
+  ai33MinimaxVoiceList: (params?: { page?: number; page_size?: number; tag_list?: string[] }): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:minimax-voice-list', params),
+  ai33MinimaxClonedVoices: (): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:minimax-cloned-voices'),
+  ai33MinimaxVoiceClone: (params: {
+    filePath: string
+    voice_name: string
+    preview_text?: string
+    language_tag?: string
+    need_noise_reduction?: boolean
+    gender_tag?: string
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:minimax-voice-clone', params),
+  ai33MinimaxDeleteClone: (voiceId: string): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:minimax-delete-clone', voiceId),
+  ai33MinimaxConfig: (): Promise<unknown> => ipcRenderer.invoke('ai33:minimax-config'),
+
+  ai33Dubbing: (params: {
+    filePath: string
+    num_speakers?: number
+    disable_voice_cloning?: boolean
+    source_lang?: string
+    target_lang?: string
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:dubbing', params),
+  ai33SpeechToText: (filePath: string): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:speech-to-text', filePath),
+  ai33SoundEffect: (params: {
+    text: string
+    duration_seconds?: number
+    prompt_influence?: number
+    loop?: boolean
+    model_id?: string
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:sound-effect', params),
+  ai33VoiceChanger: (params: {
+    filePath: string
+    voice_id: string
+    model_id?: string
+    voice_settings?: Record<string, unknown>
+    remove_background_noise?: boolean
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:voice-changer', params),
+  ai33VoiceIsolate: (filePath: string): Promise<unknown> =>
+    ipcRenderer.invoke('ai33:voice-isolate', filePath),
+
+  ai33MusicGeneration: (params: {
+    title?: string
+    idea?: string
+    lyrics?: string
+    style_id?: string
+    mood_id?: string
+    scenario_id?: string
+    n?: number
+    rewrite_idea_switch?: boolean
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:music-generation', params),
+
+  ai33ImageModels: (): Promise<unknown> => ipcRenderer.invoke('ai33:image-models'),
+  ai33ImagePrice: (params: {
+    model_id: string
+    generations_count: number
+    model_parameters?: Record<string, unknown>
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:image-price', params),
+  ai33GenerateImage: (params: {
+    prompt: string
+    model_id: string
+    generations_count?: number
+    model_parameters?: Record<string, unknown>
+    assetPaths?: string[]
+  }): Promise<unknown> => ipcRenderer.invoke('ai33:generate-image', params),
+
+  onAi33TaskProgress: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown): void => callback(data)
+    ipcRenderer.on('ai33:task-progress', handler)
+    return () => ipcRenderer.removeListener('ai33:task-progress', handler)
   }
 }
 

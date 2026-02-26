@@ -29,6 +29,7 @@ export function SidepanelControlsTab({
     setChapterFilter,
     getProgress,
     getFilteredCommands,
+    loadFromProject,
     start,
     pause,
     resume,
@@ -52,9 +53,21 @@ export function SidepanelControlsTab({
     const wv = webviewRef.current
     if (!wv) return
 
+    // Auto-load if commands are empty but scenes exist
+    let cmds = getFilteredCommands()
+    if (cmds.length === 0) {
+      loadFromProject()
+      cmds = useVeo3AutomationStore.getState().getFilteredCommands()
+      if (cmds.length === 0) {
+        useVeo3AutomationStore.setState({
+          error: 'Nenhuma cena com prompt disponivel. Verifique o Stage 4.'
+        })
+        return
+      }
+    }
+
     start()
 
-    const cmds = getFilteredCommands()
     const payload = JSON.stringify({
       type: 'SIDEPANEL_TO_CONTENT',
       action: 'START_AUTOMATION',

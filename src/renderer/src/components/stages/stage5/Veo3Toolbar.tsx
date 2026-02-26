@@ -8,6 +8,7 @@ import {
   ZoomIn,
   ZoomOut,
   Bug,
+  ClipboardCopy,
   Users,
   LayoutGrid,
   Square
@@ -83,6 +84,17 @@ export function Veo3Toolbar({
 
   const handleDevTools = (): void => {
     webviewRef.current?.openDevTools()
+  }
+
+  const handleCopyDebugLogs = async (): Promise<void> => {
+    const wv = webviewRef.current
+    if (!wv) return
+    try {
+      const logs = (await wv.executeJavaScript('window.veo3Debug?.dump() || "[]"')) as string
+      await navigator.clipboard.writeText(logs)
+    } catch {
+      // Silently fail if clipboard not available
+    }
   }
 
   const displayUrl = currentUrl
@@ -162,7 +174,14 @@ export function Veo3Toolbar({
 
       <div className="mx-1 h-4 w-px bg-border" />
 
-      {/* DevTools */}
+      {/* DevTools + Debug logs */}
+      <button
+        onClick={handleCopyDebugLogs}
+        className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-white/5 hover:text-text"
+        title="Copiar logs de debug"
+      >
+        <ClipboardCopy className="h-3.5 w-3.5" />
+      </button>
       <button
         onClick={handleDevTools}
         className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-white/5 hover:text-text"

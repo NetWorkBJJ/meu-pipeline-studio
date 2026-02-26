@@ -26,6 +26,13 @@ export function SettingsModal(): React.JSX.Element | null {
   const [ttsKeyInput, setTtsKeyInput] = useState('')
   const [ttsSaving, setTtsSaving] = useState(false)
 
+  // ai33.pro API key state
+  const [ai33HasKey, setAi33HasKey] = useState(false)
+  const [ai33KeyInput, setAi33KeyInput] = useState('')
+  const [ai33Saving, setAi33Saving] = useState(false)
+  const [ai33Credits, setAi33Credits] = useState<number | null>(null)
+  const [ai33Testing, setAi33Testing] = useState(false)
+
   useEffect(() => {
     if (settingsOpen) {
       if (activeWorkspace) {
@@ -33,6 +40,7 @@ export function SettingsModal(): React.JSX.Element | null {
         setWsDescription(activeWorkspace.description)
       }
       window.api.ttsHasApiKey().then(setTtsHasKey).catch(() => setTtsHasKey(false))
+      window.api.ai33HasApiKey().then(setAi33HasKey).catch(() => setAi33HasKey(false))
     }
   }, [settingsOpen, activeWorkspace])
 
@@ -95,6 +103,48 @@ export function SettingsModal(): React.JSX.Element | null {
     await window.api.ttsDeleteApiKey()
     setTtsHasKey(false)
     addToast({ type: 'success', message: 'API Key Google Gemini (TTS) removida.' })
+  }
+
+  const handleSaveAi33Key = async (): Promise<void> => {
+    if (!ai33KeyInput.trim()) return
+    setAi33Saving(true)
+    try {
+      await window.api.ai33SaveApiKey(ai33KeyInput.trim())
+      setAi33HasKey(true)
+      setAi33KeyInput('')
+      addToast({ type: 'success', message: 'API Key ai33.pro salva.' })
+    } catch {
+      addToast({ type: 'error', message: 'Erro ao salvar API Key ai33.pro.' })
+    } finally {
+      setAi33Saving(false)
+    }
+  }
+
+  const handleDeleteAi33Key = async (): Promise<void> => {
+    await window.api.ai33DeleteApiKey()
+    setAi33HasKey(false)
+    setAi33Credits(null)
+    addToast({ type: 'success', message: 'API Key ai33.pro removida.' })
+  }
+
+  const handleTestAi33 = async (): Promise<void> => {
+    setAi33Testing(true)
+    try {
+      const res = (await window.api.ai33GetCredits()) as { success: boolean; credits: number }
+      if (res.success) {
+        setAi33Credits(res.credits)
+        addToast({ type: 'success', message: `ai33.pro conectado. Creditos: ${res.credits}` })
+      } else {
+        addToast({ type: 'error', message: 'ai33.pro: falha ao verificar creditos.' })
+      }
+    } catch (err) {
+      addToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Erro ao testar ai33.pro.'
+      })
+    } finally {
+      setAi33Testing(false)
+    }
   }
 
   return (
@@ -317,6 +367,83 @@ export function SettingsModal(): React.JSX.Element | null {
                       <option value="pro">Gemini 2.5 Pro (qualidade)</option>
                     </select>
                   </div>
+                </div>
+              </div>
+
+              {/* ai33.pro API Key */}
+              <div className="flex flex-col gap-3">
+                <label className="text-xs font-medium uppercase tracking-wider text-text-muted">
+                  ai33.pro (ElevenLabs + MiniMax)
+                </label>
+                <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-bg p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`h-2 w-2 rounded-full ${ai33HasKey ? 'bg-success' : 'bg-error'}`}
+                      />
+                      <span className="text-xs font-medium text-text">API Key</span>
+                    </div>
+                    <a
+                      href="https://ai33.pro"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[10px] text-primary/70 transition-colors hover:text-primary"
+                    >
+                      ai33.pro
+                      <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="password"
+                      value={ai33KeyInput}
+                      onChange={(e) => setAi33KeyInput(e.target.value)}
+                      placeholder={ai33HasKey ? 'Alterar chave...' : 'Cole sua API Key ai33.pro'}
+                      className="flex-1 rounded-md border border-border bg-surface px-2.5 py-1 text-xs text-text outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      disabled={!ai33KeyInput.trim() || ai33Saving}
+                      onClick={handleSaveAi33Key}
+                      className="flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-40"
+                    >
+                      {ai33Saving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Check className="h-3 w-3" />
+                      )}
+                      Salvar
+                    </button>
+                    {ai33HasKey && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteAi33Key}
+                        className="flex h-7 items-center rounded-md border border-border bg-surface px-1.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-error"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  {ai33HasKey && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={ai33Testing}
+                        onClick={handleTestAi33}
+                        className="flex h-6 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[10px] font-medium text-text transition-colors hover:bg-surface-hover disabled:opacity-40"
+                      >
+                        {ai33Testing ? (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        ) : null}
+                        Testar conexao
+                      </button>
+                      {ai33Credits !== null && (
+                        <span className="text-[10px] text-text-muted">
+                          Creditos: {ai33Credits.toLocaleString('pt-BR')}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
