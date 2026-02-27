@@ -24,8 +24,24 @@ interface CdpTestResult {
   error?: string
 }
 
+type DownloadCompleteCallback = (suggestedFilename: string, downloadDir: string) => void
+
+interface AttachOptions {
+  downloadPath?: string
+  onDownloadComplete?: DownloadCompleteCallback
+}
+
 let attachedContents: WebContents | null = null
 let isAttached = false
+
+// Download tracking state
+let downloadTrackingEnabled = false
+let downloadCompleteCallback: DownloadCompleteCallback | null = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let downloadMessageHandler: ((...args: any[]) => void) | null = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let detachHandler: ((...args: any[]) => void) | null = null
+const activeDownloads = new Map<string, string>()
 
 function getDebugger(): WebContents['debugger'] {
   if (!attachedContents || !isAttached) {
@@ -41,10 +57,15 @@ async function sendCommand(method: string, params?: Record<string, unknown>): Pr
 
 // === LIFECYCLE ===
 
-async function attach(webContentsId: number): Promise<void> {
+async function attach(webContentsId: number, options?: AttachOptions): Promise<void> {
   if (isAttached && attachedContents) {
-    // Already attached to same target - skip
-    if (attachedContents.id === webContentsId) return
+    // Already attached to same target - skip (but enable download tracking if requested)
+    if (attachedContents.id === webContentsId) {
+      if (options?.downloadPath && !downloadTrackingEnabled) {
+        await enableDownloadTracking(options.downloadPath, options.onDownloadComplete)
+      }
+      return
+    }
     // Different target - detach first
     detach()
   }
@@ -67,24 +88,44 @@ async function attach(webContentsId: number): Promise<void> {
   attachedContents = wc
   isAttached = true
 
-  // Auto-detach when webContents is destroyed or navigates away
-  wc.debugger.on('detach', (_event, reason) => {
+  // Remove previous detach handler if any (prevents listener leak on re-attach)
+  if (detachHandler) {
+    wc.debugger.removeListener('detach', detachHandler)
+  }
+
+  // Auto-cleanup when debugger detaches (page crash, navigation, manual detach)
+  detachHandler = (_event, reason) => {
     console.log(`[CDP] Debugger detached: ${reason}`)
     if (attachedContents?.id === wc.id) {
+      cleanupDownloadTracking()
       attachedContents = null
       isAttached = false
+      detachHandler = null
     }
-  })
+  }
+  wc.debugger.on('detach', detachHandler)
 
   console.log(`[CDP] Attached to webContents ${webContentsId}`)
+
+  // Enable download tracking if requested
+  if (options?.downloadPath) {
+    await enableDownloadTracking(options.downloadPath, options.onDownloadComplete)
+  }
 }
 
 function detach(): void {
-  if (attachedContents && isAttached) {
-    try {
-      attachedContents.debugger.detach()
-    } catch {
-      // Already detached
+  if (attachedContents) {
+    cleanupDownloadTracking()
+    if (detachHandler) {
+      attachedContents.debugger.removeListener('detach', detachHandler)
+      detachHandler = null
+    }
+    if (isAttached) {
+      try {
+        attachedContents.debugger.detach()
+      } catch {
+        // Already detached
+      }
     }
   }
   attachedContents = null
@@ -93,6 +134,88 @@ function detach(): void {
 
 function getIsAttached(): boolean {
   return isAttached && attachedContents !== null
+}
+
+// === DOWNLOAD TRACKING ===
+
+async function enableDownloadTracking(
+  downloadPath: string,
+  onComplete?: DownloadCompleteCallback
+): Promise<void> {
+  const dbg = getDebugger()
+
+  downloadCompleteCallback = onComplete || null
+
+  // Force all downloads to our folder
+  await dbg.sendCommand('Browser.setDownloadBehavior', {
+    behavior: 'allow',
+    downloadPath
+  }).catch((err) => {
+    console.error('[CDP] setDownloadBehavior failed:', err)
+  })
+
+  // Enable Page events for download tracking
+  await dbg.sendCommand('Page.enable').catch(() => {
+    // May already be enabled
+  })
+
+  // Remove previous message handler if any (prevents listener stacking)
+  if (downloadMessageHandler && attachedContents) {
+    attachedContents.debugger.removeListener('message', downloadMessageHandler)
+  }
+
+  downloadMessageHandler = (_event, method, params) => {
+    if (method === 'Page.downloadWillBegin') {
+      const guid = params.guid as string
+      const suggestedFilename = (params.suggestedFilename as string) || ''
+      activeDownloads.set(guid, suggestedFilename)
+      console.log('[CDP] downloadWillBegin:', suggestedFilename)
+    }
+
+    if (method === 'Page.downloadProgress') {
+      const state = params.state as string
+      const guid = params.guid as string
+
+      if (state === 'completed') {
+        const suggestedFilename = activeDownloads.get(guid) || ''
+        activeDownloads.delete(guid)
+        console.log('[CDP] downloadCompleted:', suggestedFilename)
+        if (downloadCompleteCallback && suggestedFilename) {
+          downloadCompleteCallback(suggestedFilename, downloadPath)
+        }
+      } else if (state === 'canceled') {
+        activeDownloads.delete(guid)
+      }
+    }
+  }
+
+  attachedContents!.debugger.on('message', downloadMessageHandler)
+  downloadTrackingEnabled = true
+  console.log(`[CDP] Download tracking enabled -> ${downloadPath}`)
+}
+
+async function updateDownloadPath(newPath: string): Promise<void> {
+  if (!downloadTrackingEnabled || !isAttached) return
+  try {
+    const dbg = getDebugger()
+    await dbg.sendCommand('Browser.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: newPath
+    })
+    console.log(`[CDP] Download path updated -> ${newPath}`)
+  } catch (err) {
+    console.error('[CDP] updateDownloadPath failed:', err)
+  }
+}
+
+function cleanupDownloadTracking(): void {
+  if (downloadMessageHandler && attachedContents) {
+    attachedContents.debugger.removeListener('message', downloadMessageHandler)
+  }
+  downloadMessageHandler = null
+  downloadCompleteCallback = null
+  downloadTrackingEnabled = false
+  activeDownloads.clear()
 }
 
 // === INPUT PRIMITIVES ===
@@ -478,5 +601,7 @@ export const cdpCore = {
   typeIntoElement,
   runPocTest,
   fillPrompt,
-  clickSubmit
+  clickSubmit,
+  enableDownloadTracking,
+  updateDownloadPath
 }

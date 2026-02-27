@@ -57,6 +57,7 @@ export type FlowCommandStatus =
   | 'done'
   | 'failed'
   | 'skipped'
+  | 'retrying'
 
 export interface FlowCharacterImageRef {
   characterId: string

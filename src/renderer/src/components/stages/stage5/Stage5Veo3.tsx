@@ -239,6 +239,17 @@ export function Stage5Veo3(): React.JSX.Element {
           }
           break
         }
+        case 'PROMPT_RETRY': {
+          const d = data as { commandId?: string; attempt?: number; maxAttempts?: number; reason?: string } | undefined
+          if (d?.commandId) {
+            automationStore.updateCommandStatus(
+              d.commandId,
+              'retrying',
+              `Retry ${d.attempt || '?'}/${d.maxAttempts || '?'}: ${d.reason || 'gallery selection failed'}`
+            )
+          }
+          break
+        }
         case 'PROMPT_SKIPPED': {
           const d = data as { commandId?: string; reason?: string } | undefined
           if (d?.commandId) {

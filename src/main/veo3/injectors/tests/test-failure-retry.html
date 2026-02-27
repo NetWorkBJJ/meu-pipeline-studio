@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Veo3 Failure Retry - Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Google Sans', 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }
+    h1 { font-size: 20px; margin-bottom: 16px; color: #a5b4fc; }
+    h2 { font-size: 16px; margin: 24px 0 12px; color: #818cf8; }
+
+    /* Google Symbols mock */
+    .google-symbols { font-family: 'Google Material Symbols', 'Material Icons', sans-serif; font-style: normal; font-weight: 400; font-size: 1rem; display: inline-block; }
+
+    /* Tile styles (matching Google Flow) */
+    .sc-9a984650-0 { background: #2a2a3e; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #3a3a5e; }
+    .sc-9a984650-4 { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .sc-9a984650-1 { font-weight: 600; font-size: 14px; color: #f87171; }
+    .sc-9a984650-2 { font-size: 13px; color: #a0a0b0; margin-top: 4px; }
+    .sc-9a984650-3 { color: #818cf8; text-decoration: underline; }
+    .sc-9a984650-5 { display: flex; gap: 8px; }
+    .sc-16c4830a-1 { background: #3a3a5e; border: 1px solid #4a4a6e; border-radius: 8px; padding: 8px; cursor: pointer; color: #e0e0e0; display: flex; align-items: center; justify-content: center; position: relative; min-width: 36px; min-height: 36px; }
+    .sc-16c4830a-1:hover { background: #4a4a6e; }
+    .sc-16c4830a-1 .google-symbols { font-size: 1.25rem; }
+    .sr-only { position: absolute; border: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    .sc-16c4830a-0 { display: none; }
+
+    /* Success tile mock */
+    .tile-success { background: #1a2e1a; border-color: #2e5e2e; }
+    .tile-success .status { color: #4ade80; font-weight: 600; font-size: 14px; }
+
+    /* Progress tile mock */
+    .tile-progress { background: #2e2a1a; border-color: #5e4a2e; }
+    .tile-progress .status { color: #fbbf24; font-weight: 600; font-size: 14px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .spinning { animation: spin 1s linear infinite; display: inline-block; }
+
+    /* Controls */
+    .controls { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+    .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+    .btn-primary { background: #6366f1; color: white; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-success:hover { background: #16a34a; }
+    .btn-warning { background: #f59e0b; color: #1a1a2e; }
+    .btn-warning:hover { background: #d97706; }
+    .btn-secondary { background: #3a3a5e; color: #e0e0e0; }
+    .btn-secondary:hover { background: #4a4a6e; }
+
+    /* Log */
+    #log { background: #0d0d1a; border: 1px solid #2a2a3e; border-radius: 8px; padding: 16px; margin-top: 16px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; }
+    .log-info { color: #60a5fa; }
+    .log-warn { color: #fbbf24; }
+    .log-error { color: #f87171; }
+    .log-success { color: #4ade80; }
+    .log-dim { color: #6b7280; }
+
+    /* Stats */
+    .stats { display: flex; gap: 24px; margin: 12px 0; padding: 12px; background: #0d0d1a; border-radius: 8px; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #a5b4fc; }
+    .stat-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+    /* Highlight animation for clicked buttons */
+    @keyframes flash { 0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.7); } 100% { box-shadow: 0 0 0 12px rgba(99,102,241,0); } }
+    .flash { animation: flash 0.5s ease-out; }
+
+    .section { border: 1px solid #2a2a3e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+
+  <h1>Veo3 Failure Retry - Teste Isolado</h1>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-label">Total Tiles</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="stat-failed">0</div>
+      <div class="stat-label">Com Falha</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="stat-retries">0</div>
+      <div class="stat-label">Retries</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="stat-recovered">0</div>
+      <div class="stat-label">Recuperados</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" onclick="runDetect()">Detectar Falhas</button>
+    <button class="btn btn-danger" onclick="runRetryAll()">Retry All (com espera)</button>
+    <button class="btn btn-warning" onclick="runRetryInstant()">Retry All (instantaneo)</button>
+    <button class="btn btn-success" onclick="simulateBatchPause()">Simular Batch Pause</button>
+    <button class="btn btn-secondary" onclick="resetTiles()">Reset Tiles</button>
+    <button class="btn btn-secondary" onclick="clearLog()">Limpar Log</button>
+  </div>
+
+  <h2>Tiles Mockados (simula a galeria do Google Flow)</h2>
+
+  <div id="tiles-container">
+    <!-- TILE 1: Falha por politica (replica exata do HTML do usuario) -->
+    <div data-tile-id="fe_id_fail_001" class="sc-9a984650-0">
+      <div class="sc-9a984650-4">
+        <i class="google-symbols" style="font-size:1rem; color:#f87171;">warning</i>
+        <div>
+          <div class="sc-9a984650-1">Falha</div>
+          <div class="sc-9a984650-2">Esta geracao de video pode violar nossas <a href="/tools/flow/faq" class="sc-9a984650-3">politicas</a>. Por favor, tente usar outro comando ou envie feedback</div>
+        </div>
+      </div>
+      <div class="sc-9a984650-5">
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">refresh</i>
+          <span class="sr-only">Tentar novamente</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">undo</i>
+          <span class="sr-only">Reutilizar comando</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">delete_forever</i>
+          <span class="sr-only">Excluir</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- TILE 2: Sucesso (video gerado) - NAO deve ser detectado -->
+    <div data-tile-id="fe_id_success_001" class="sc-9a984650-0 tile-success">
+      <div class="sc-9a984650-4">
+        <i class="google-symbols" style="font-size:1rem; color:#4ade80;">check_circle</i>
+        <div>
+          <div class="status">Concluido</div>
+          <div class="sc-9a984650-2">Video gerado com sucesso - 8 segundos, 1080p</div>
+        </div>
+      </div>
+      <div class="sc-9a984650-5">
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">download</i>
+          <span class="sr-only">Baixar</span>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">delete_forever</i>
+          <span class="sr-only">Excluir</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- TILE 3: Em progresso (gerando) - NAO deve ser detectado -->
+    <div data-tile-id="fe_id_progress_001" class="sc-9a984650-0 tile-progress">
+      <div class="sc-9a984650-4">
+        <i class="google-symbols spinning" style="font-size:1rem; color:#fbbf24;">progress_activity</i>
+        <div>
+          <div class="status">Gerando...</div>
+          <div class="sc-9a984650-2">Criando video a partir do seu comando</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TILE 4: Outra falha por politica (para testar multiplos) -->
+    <div data-tile-id="fe_id_fail_002" class="sc-9a984650-0">
+      <div class="sc-9a984650-4">
+        <i class="google-symbols" style="font-size:1rem; color:#f87171;">warning</i>
+        <div>
+          <div class="sc-9a984650-1">Falha</div>
+          <div class="sc-9a984650-2">Esta geracao de video pode violar nossas <a href="/tools/flow/faq" class="sc-9a984650-3">politicas</a>. Por favor, tente usar outro comando ou envie feedback</div>
+        </div>
+      </div>
+      <div class="sc-9a984650-5">
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">refresh</i>
+          <span class="sr-only">Tentar novamente</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">undo</i>
+          <span class="sr-only">Reutilizar comando</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">delete_forever</i>
+          <span class="sr-only">Excluir</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- TILE 5: Falha em ingles (para testar i18n) -->
+    <div data-tile-id="fe_id_fail_003" class="sc-9a984650-0">
+      <div class="sc-9a984650-4">
+        <i class="google-symbols" style="font-size:1rem; color:#f87171;">warning</i>
+        <div>
+          <div class="sc-9a984650-1">Failed</div>
+          <div class="sc-9a984650-2">This video generation may violate our <a href="/tools/flow/faq" class="sc-9a984650-3">policies</a>. Please try another prompt or send feedback</div>
+        </div>
+      </div>
+      <div class="sc-9a984650-5">
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">refresh</i>
+          <span class="sr-only">Try again</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">undo</i>
+          <span class="sr-only">Reuse prompt</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+        <button data-state="closed" class="sc-16c4830a-1">
+          <i class="google-symbols" style="font-size:1.25rem;">delete_forever</i>
+          <span class="sr-only">Delete</span>
+          <div data-type="button-overlay" class="sc-16c4830a-0"></div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div id="log"></div>
+
+<script>
+  // ============================================================
+  // FAILURE DETECTION & RETRY LOGIC
+  // (This is the exact code that will be ported to selectors.js + content-bridge.js)
+  // ============================================================
+
+  /**
+   * Detect all tiles with generation failure (policy violation).
+   * Looks for tiles with `warning` icon + failure text.
+   * Returns array of tile DOM elements.
+   */
+  function detectFailedTiles() {
+    const tiles = document.querySelectorAll('[data-tile-id]');
+    const failed = [];
+
+    for (const tile of tiles) {
+      if (detectTileFailure(tile)) {
+        failed.push(tile);
+      }
+    }
+
+    return failed;
+  }
+
+  /**
+   * Check if a specific tile has a failure state.
+   * Two signals required: warning icon + failure text.
+   */
+  function detectTileFailure(tile) {
+    // Signal 1: warning icon
+    const icons = tile.querySelectorAll('i.google-symbols, i.material-icons, span.google-symbols');
+    let hasWarning = false;
+    for (const icon of icons) {
+      if (icon.textContent.trim() === 'warning') {
+        hasWarning = true;
+        break;
+      }
+    }
+    if (!hasWarning) return false;
+
+    // Signal 2: failure text (PT or EN)
+    const text = tile.textContent.toLowerCase();
+    return text.includes('falha') ||
+           text.includes('failed') ||
+           text.includes('violar') ||
+           text.includes('violate');
+  }
+
+  /**
+   * Find the retry button (refresh icon) inside a tile.
+   */
+  function findRetryButton(tile) {
+    const buttons = tile.querySelectorAll('button');
+    for (const btn of buttons) {
+      const icon = btn.querySelector('i.google-symbols, i.material-icons, span.google-symbols');
+      if (icon && icon.textContent.trim() === 'refresh') {
+        return btn;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Scan all tiles for failures and retry each one.
+   * This is the main function that will run during batch pause.
+   *
+   * @param {number} maxAttempts - Max retry attempts per tile (default: 3)
+   * @param {number} waitMs - Wait time after each retry to check result (default: 13000)
+   * @param {boolean} instant - If true, skip wait (for testing)
+   */
+  async function scanAndRetryFailedTiles(maxAttempts, waitMs, instant) {
+    if (maxAttempts === undefined) maxAttempts = 3;
+    if (waitMs === undefined) waitMs = 13000;
+    if (instant === undefined) instant = false;
+
+    const failedTiles = detectFailedTiles();
+    if (failedTiles.length === 0) {
+      log('info', '[RETRY] No failed tiles found');
+      return { retried: 0, recovered: 0, exhausted: 0 };
+    }
+
+    log('warn', '[RETRY] Found ' + failedTiles.length + ' failed tile(s), starting retry sub-batch...');
+    updateStats();
+
+    let totalRetried = 0;
+    let totalRecovered = 0;
+    let totalExhausted = 0;
+
+    for (const tile of failedTiles) {
+      const tileId = tile.getAttribute('data-tile-id');
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const retryBtn = findRetryButton(tile);
+        if (!retryBtn) {
+          log('error', '[RETRY] No retry button found in tile ' + tileId);
+          break;
+        }
+
+        log('info', '[RETRY] Tile ' + shortId(tileId) + ' attempt ' + attempt + '/' + maxAttempts);
+        totalRetried++;
+
+        // Click retry button
+        retryBtn.classList.add('flash');
+        retryBtn.click();
+        setTimeout(() => retryBtn.classList.remove('flash'), 500);
+
+        if (!instant) {
+          log('dim', '[RETRY] Waiting ' + (waitMs / 1000) + 's to check result...');
+          await sleep(waitMs);
+        } else {
+          await sleep(100);
+        }
+
+        // Re-check if this tile is still failed
+        const stillFailed = detectTileFailure(tile);
+        if (!stillFailed) {
+          log('success', '[RETRY] Tile ' + shortId(tileId) + ' RECOVERED after attempt ' + attempt);
+          totalRecovered++;
+          break;
+        }
+
+        if (attempt === maxAttempts) {
+          log('error', '[RETRY] Tile ' + shortId(tileId) + ' still FAILED after ' + maxAttempts + ' attempts');
+          totalExhausted++;
+        }
+      }
+    }
+
+    log('info', '[RETRY] Sub-batch complete: ' + totalRetried + ' retries, ' +
+        totalRecovered + ' recovered, ' + totalExhausted + ' exhausted');
+
+    updateStats();
+    return { retried: totalRetried, recovered: totalRecovered, exhausted: totalExhausted };
+  }
+
+  // ============================================================
+  // TEST UI FUNCTIONS
+  // ============================================================
+
+  function runDetect() {
+    const failed = detectFailedTiles();
+    const allTiles = document.querySelectorAll('[data-tile-id]');
+
+    log('info', '--- DETECTION RESULTS ---');
+    log('info', 'Total tiles: ' + allTiles.length);
+    log(failed.length > 0 ? 'warn' : 'success', 'Failed tiles: ' + failed.length);
+
+    for (const tile of allTiles) {
+      const tileId = tile.getAttribute('data-tile-id');
+      const isFailed = failed.includes(tile);
+      const retryBtn = findRetryButton(tile);
+
+      if (isFailed) {
+        log('error', '  [FAIL] ' + shortId(tileId) + ' | Retry button: ' + (retryBtn ? 'FOUND' : 'NOT FOUND'));
+        tile.style.outline = '2px solid #f87171';
+        setTimeout(() => { tile.style.outline = ''; }, 2000);
+      } else {
+        log('success', '  [ OK ] ' + shortId(tileId));
+      }
+    }
+
+    updateStats();
+  }
+
+  async function runRetryAll() {
+    log('warn', '--- RETRY ALL (with 13s wait) ---');
+    log('dim', '(In production this runs during batch pause)');
+    await scanAndRetryFailedTiles(3, 13000, false);
+  }
+
+  async function runRetryInstant() {
+    log('warn', '--- RETRY ALL (instant, no wait) ---');
+    await scanAndRetryFailedTiles(3, 100, true);
+  }
+
+  async function simulateBatchPause() {
+    log('success', '=== SIMULATING BATCH PAUSE (45s) ===');
+    log('dim', 'Step 1: Scan and retry failed tiles...');
+
+    const result = await scanAndRetryFailedTiles(3, 2000, false); // 2s wait for demo
+
+    log('dim', 'Step 2: Normal batch pause countdown would start here...');
+    log('success', '=== BATCH PAUSE SIMULATION DONE ===');
+    log('info', 'Result: ' + JSON.stringify(result));
+  }
+
+  function resetTiles() {
+    // Re-render the original tiles (simulate page refresh)
+    const container = document.getElementById('tiles-container');
+    const originalHTML = container.innerHTML;
+    container.innerHTML = originalHTML;
+    log('info', 'Tiles reset to original state');
+    updateStats();
+  }
+
+  // ============================================================
+  // UTILITIES
+  // ============================================================
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function shortId(tileId) {
+    if (!tileId) return '(null)';
+    // Show last part after last underscore
+    const parts = tileId.split('_');
+    return parts[parts.length - 1] || tileId;
+  }
+
+  function log(level, message) {
+    const el = document.getElementById('log');
+    const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+    const cls = 'log-' + level;
+    el.innerHTML += '<span class="log-dim">[' + time + ']</span> <span class="' + cls + '">' + escapeHtml(message) + '</span>\n';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function clearLog() {
+    document.getElementById('log').innerHTML = '';
+  }
+
+  function updateStats() {
+    const allTiles = document.querySelectorAll('[data-tile-id]');
+    const failed = detectFailedTiles();
+    document.getElementById('stat-total').textContent = allTiles.length;
+    document.getElementById('stat-failed').textContent = failed.length;
+  }
+
+  // Initial stats
+  updateStats();
+  log('info', 'Test page loaded. ' + document.querySelectorAll('[data-tile-id]').length + ' tiles rendered.');
+  log('dim', 'Click "Detectar Falhas" to start.');
+</script>
+
+</body>
+</html>

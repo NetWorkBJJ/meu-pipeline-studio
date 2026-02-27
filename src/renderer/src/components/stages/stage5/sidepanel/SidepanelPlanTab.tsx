@@ -1,8 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Film, ImageIcon, ListOrdered, Sparkles } from 'lucide-react'
+import {
+  CheckCircle2,
+  Circle,
+  Film,
+  ImageIcon,
+  ListOrdered,
+  Loader2,
+  MinusCircle,
+  RotateCw,
+  Sparkles,
+  XCircle
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
-import type { FlowCommand, FlowCreationMode, FlowCharacterImageRef } from '@/types/veo3'
+import type { FlowCommand, FlowCreationMode, FlowCommandStatus, FlowCharacterImageRef } from '@/types/veo3'
 
 const MODE_LABELS: Record<FlowCreationMode, string> = {
   texto: 'Text',
@@ -22,20 +34,88 @@ const MODE_ICONS: Record<FlowCreationMode, LucideIcon> = {
   imagem: ImageIcon
 }
 
-const MODE_BORDER: Record<FlowCreationMode, string> = {
-  texto: 'border-l-blue-500/40',
-  elementos: 'border-l-violet-500/40',
-  imagem: 'border-l-amber-500/40'
+const STATUS_LABELS: Record<FlowCommandStatus, string> = {
+  queued: 'Na fila',
+  sending: 'Enviando',
+  submitted: 'Enviado',
+  generating: 'Gerando',
+  done: 'Concluido',
+  failed: 'Falhou',
+  skipped: 'Pulado',
+  retrying: 'Tentando'
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  queued: 'bg-white/10 text-text-muted',
-  sending: 'bg-yellow-500/15 text-yellow-400',
-  submitted: 'bg-yellow-500/15 text-yellow-400',
-  generating: 'bg-blue-500/15 text-blue-400',
-  done: 'bg-green-500/15 text-green-400',
-  failed: 'bg-red-500/15 text-red-400',
-  skipped: 'bg-white/5 text-text-muted'
+const STATUS_COLORS: Record<FlowCommandStatus, string> = {
+  queued: 'text-text-muted',
+  sending: 'text-yellow-400',
+  submitted: 'text-yellow-400',
+  generating: 'text-blue-400',
+  done: 'text-green-400',
+  failed: 'text-red-400',
+  skipped: 'text-text-muted',
+  retrying: 'text-orange-400'
+}
+
+const STATUS_ICONS: Record<FlowCommandStatus, LucideIcon> = {
+  queued: Circle,
+  sending: Loader2,
+  submitted: Loader2,
+  generating: Loader2,
+  done: CheckCircle2,
+  failed: XCircle,
+  skipped: MinusCircle,
+  retrying: RotateCw
+}
+
+const STATUS_SPIN: Record<FlowCommandStatus, boolean> = {
+  queued: false,
+  sending: true,
+  submitted: true,
+  generating: true,
+  done: false,
+  failed: false,
+  skipped: false,
+  retrying: true
+}
+
+function getCardStyles(status: FlowCommandStatus, isActive: boolean): string {
+  if (isActive) {
+    return 'border-primary/50 bg-primary/5'
+  }
+  switch (status) {
+    case 'done':
+      return 'border-green-500/30 bg-green-500/3'
+    case 'failed':
+      return 'border-red-500/30 bg-red-500/3'
+    case 'sending':
+    case 'submitted':
+      return 'border-yellow-500/30 bg-yellow-500/3'
+    case 'generating':
+      return 'border-blue-500/30 bg-blue-500/3'
+    case 'retrying':
+      return 'border-orange-500/30 bg-orange-500/3'
+    default:
+      return 'border-border bg-bg hover:border-border/80'
+  }
+}
+
+function getLeftBorderColor(status: FlowCommandStatus, isActive: boolean): string {
+  if (isActive) return 'border-l-primary'
+  switch (status) {
+    case 'done':
+      return 'border-l-green-500/60'
+    case 'failed':
+      return 'border-l-red-500/60'
+    case 'sending':
+    case 'submitted':
+      return 'border-l-yellow-500/60'
+    case 'generating':
+      return 'border-l-blue-500/60'
+    case 'retrying':
+      return 'border-l-orange-500/60'
+    default:
+      return 'border-l-border'
+  }
 }
 
 function CharacterBadge({
@@ -59,6 +139,20 @@ function CharacterBadge({
   )
 }
 
+function StatusBadge({ status }: { status: FlowCommandStatus }): React.JSX.Element {
+  const Icon = STATUS_ICONS[status]
+  const spin = STATUS_SPIN[status]
+  const color = STATUS_COLORS[status]
+  const label = STATUS_LABELS[status]
+
+  return (
+    <span className={`flex items-center gap-1 shrink-0 text-[9px] font-medium ${color}`}>
+      <Icon className={`h-3 w-3 ${spin ? 'animate-spin' : ''}`} />
+      {label}
+    </span>
+  )
+}
+
 function CommandCard({
   command,
   isActive,
@@ -69,33 +163,33 @@ function CommandCard({
   thumbnails: Map<string, string>
 }): React.JSX.Element {
   const ModeIcon = MODE_ICONS[command.mode]
-  return (
+  const isDone = command.status === 'done'
+  const cardStyles = getCardStyles(command.status, isActive)
+  const leftBorder = getLeftBorderColor(command.status, isActive)
+
+  const card = (
     <div
-      className={`rounded-lg border border-l-2 p-2.5 transition-colors ${MODE_BORDER[command.mode]} ${
-        isActive
-          ? 'border-primary/40 bg-primary/5'
-          : 'border-border bg-bg hover:border-border/80'
-      }`}
+      className={`rounded-lg border border-l-2 p-2.5 transition-colors ${leftBorder} ${cardStyles}`}
     >
       <div className="flex items-center gap-2">
-        <span className="shrink-0 text-[10px] font-mono text-text-muted">
+        <span className={`shrink-0 text-[10px] font-mono ${isDone ? 'text-green-500/60' : 'text-text-muted'}`}>
           #{String(command.sceneIndex + 1).padStart(2, '0')}
         </span>
-        <span className={`flex items-center gap-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium ${MODE_COLORS[command.mode]}`}>
+        <span className={`flex items-center gap-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium ${MODE_COLORS[command.mode]} ${isDone ? 'opacity-50' : ''}`}>
           <ModeIcon className="h-2.5 w-2.5" />
           {MODE_LABELS[command.mode]}
         </span>
-        <span className={`ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium ${STATUS_COLORS[command.status]}`}>
-          {command.status}
+        <span className="ml-auto">
+          <StatusBadge status={command.status} />
         </span>
       </div>
 
-      <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-text-muted">
+      <p className={`mt-1.5 line-clamp-2 text-[11px] leading-relaxed ${isDone ? 'text-text-muted/50' : 'text-text-muted'}`}>
         {command.prompt}
       </p>
 
       {command.characterImages.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div className={`mt-1.5 flex flex-wrap gap-1 ${isDone ? 'opacity-50' : ''}`}>
           {command.characterImages.map((ci) => (
             <CharacterBadge
               key={ci.characterId}
@@ -111,6 +205,19 @@ function CommandCard({
       )}
     </div>
   )
+
+  if (isActive) {
+    return (
+      <motion.div
+        animate={{ opacity: [1, 0.8, 1] }}
+        transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+      >
+        {card}
+      </motion.div>
+    )
+  }
+
+  return card
 }
 
 function useCharacterThumbnails(commands: FlowCommand[]): Map<string, string> {
@@ -146,6 +253,42 @@ function useCharacterThumbnails(commands: FlowCommand[]): Map<string, string> {
   }, [commands.length])
 
   return thumbnails
+}
+
+function ProgressBar({ commands }: { commands: FlowCommand[] }): React.JSX.Element | null {
+  const done = commands.filter((c) => c.status === 'done').length
+  const failed = commands.filter((c) => c.status === 'failed').length
+  const inProgress = commands.filter((c) =>
+    c.status === 'sending' || c.status === 'submitted' || c.status === 'generating' || c.status === 'retrying'
+  ).length
+  const total = commands.length
+
+  if (done === 0 && failed === 0 && inProgress === 0) return null
+
+  const donePercent = total > 0 ? (done / total) * 100 : 0
+  const failedPercent = total > 0 ? (failed / total) * 100 : 0
+
+  return (
+    <div className="flex flex-col gap-1 pb-1">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+        <div className="flex h-full">
+          <div
+            className="h-full bg-green-500 transition-all duration-500"
+            style={{ width: `${donePercent}%` }}
+          />
+          <div
+            className="h-full bg-red-500 transition-all duration-500"
+            style={{ width: `${failedPercent}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-[10px]">
+        <span className="text-green-400">{done}/{total} concluidos</span>
+        {failed > 0 && <span className="text-red-400">{failed} {failed === 1 ? 'falha' : 'falhas'}</span>}
+        {inProgress > 0 && <span className="text-yellow-400">{inProgress} em andamento</span>}
+      </div>
+    </div>
+  )
 }
 
 interface SidepanelPlanTabProps {
@@ -209,6 +352,8 @@ export function SidepanelPlanTab({ tabId }: SidepanelPlanTabProps): React.JSX.El
           Recarregar
         </button>
       </div>
+
+      <ProgressBar commands={commands} />
 
       {commands.map((cmd, i) => (
         <div

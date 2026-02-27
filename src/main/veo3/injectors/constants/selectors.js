@@ -243,6 +243,53 @@
     // --- Status indicators (for multi-signal submission verification) ---
     loadingIndicators: '[class*="loading"], [class*="spinner"], [class*="progress"], [class*="generating"], [aria-busy="true"]',
 
+    // --- Generation failure detection (policy violation tiles) ---
+    // Tiles with data-tile-id that contain a warning icon + failure text.
+    // Used during batch pause to scan for failed generations and auto-retry.
+
+    // Detect if a specific tile has a failure state (warning icon + failure text)
+    detectTileFailure: (tile) => {
+      const icons = tile.querySelectorAll('i.google-symbols, i.material-icons, span.google-symbols');
+      let hasWarning = false;
+      for (const icon of icons) {
+        if (icon.textContent.trim() === 'warning') {
+          hasWarning = true;
+          break;
+        }
+      }
+      if (!hasWarning) return false;
+
+      const text = tile.textContent.toLowerCase();
+      return text.includes('falha') ||
+             text.includes('failed') ||
+             text.includes('violar') ||
+             text.includes('violate');
+    },
+
+    // Return all tiles with generation failure
+    failedTiles: () => {
+      const tiles = document.querySelectorAll('[data-tile-id]');
+      const failed = [];
+      for (const tile of tiles) {
+        if (window.veo3Selectors.detectTileFailure(tile)) {
+          failed.push(tile);
+        }
+      }
+      return failed;
+    },
+
+    // Find the retry button (refresh icon) inside a specific tile
+    retryButton: (tile) => {
+      const buttons = tile.querySelectorAll('button');
+      for (const btn of buttons) {
+        const icon = btn.querySelector('i.google-symbols, i.material-icons, span.google-symbols');
+        if (icon && icon.textContent.trim() === 'refresh') {
+          return btn;
+        }
+      }
+      return null;
+    },
+
     // --- Utility functions (exposed for external use) ---
     findElement,
     findAllElements,

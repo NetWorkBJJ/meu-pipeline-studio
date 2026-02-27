@@ -1,10 +1,14 @@
 import { ipcMain } from 'electron'
 import { cdpCore } from '../veo3/cdp-core'
+import { getVeo3DownloadPath, handleVeo3DownloadComplete, trackSubmittedPrompt } from '../index'
 
 export function registerCdpHandlers(): void {
   ipcMain.handle('cdp:attach', async (_event, webContentsId: number) => {
     try {
-      await cdpCore.attach(webContentsId)
+      await cdpCore.attach(webContentsId, {
+        downloadPath: getVeo3DownloadPath(),
+        onDownloadComplete: handleVeo3DownloadComplete
+      })
       return { success: true }
     } catch (err) {
       return { success: false, error: String(err) }
@@ -82,7 +86,11 @@ export function registerCdpHandlers(): void {
       if (!cdpCore.isAttached()) {
         return { success: false, error: 'CDP not attached' }
       }
-      return await cdpCore.fillPrompt(text)
+      const result = await cdpCore.fillPrompt(text)
+      if (result.success) {
+        trackSubmittedPrompt(text)
+      }
+      return result
     } catch (err) {
       return { success: false, error: String(err) }
     }

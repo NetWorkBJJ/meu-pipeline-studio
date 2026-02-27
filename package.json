@@ -23,6 +23,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "adm-zip": "^0.5.16",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.574.0",
     "uuid": "^11.0.0",
@@ -34,6 +35,7 @@
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.0.0",
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^22.19.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

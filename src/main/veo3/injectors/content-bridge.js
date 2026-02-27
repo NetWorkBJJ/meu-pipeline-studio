@@ -9,7 +9,9 @@
 
   // === CONSTANTS ===
 
-  const BATCH_SIZE = 4;
+  const BATCH_SIZE = 10;
+  const MAX_SKIP_RETRIES = 2;   // 3 total attempts (1 original + 2 retries)
+  const SKIP_RETRY_DELAY = 3000; // 3s delay before retrying a skipped command
 
   // === STATE ===
 
@@ -388,13 +390,57 @@
           // Notify start of processing (not "submitted" - that's misleading)
           notifySidepanel('PROMPT_PROCESSING', { commandId: cmd.id, index: globalIndex });
 
-          const result = await processCommand(cmd, globalIndex);
+          var result = await processCommand(cmd, globalIndex);
+          var skipRetryCount = 0;
+
+          // Retry loop: if command was skipped (gallery selection failure), retry the entire command
+          // Gallery failures can be transient (overlay stuck, Virtuoso not rendered, browser state unstable)
+          while (result?.skipped && skipRetryCount < MAX_SKIP_RETRIES && automationState.running) {
+            skipRetryCount++;
+            console.log('[RETRY_SKIP ' + (globalIndex + 1) + '/' + commandQueue.length + '] ' +
+              'Attempt ' + (skipRetryCount + 1) + '/' + (MAX_SKIP_RETRIES + 1) +
+              ' - Reason: ' + result.reason);
+
+            // Notify sidepanel that we are retrying (UI shows orange "retrying" badge)
+            notifySidepanel('PROMPT_RETRY', {
+              commandId: cmd.id,
+              index: globalIndex,
+              attempt: skipRetryCount + 1,
+              maxAttempts: MAX_SKIP_RETRIES + 1,
+              reason: result.reason
+            });
+
+            // Pre-retry cleanup: dismiss overlays and clear prompt area
+            if (isOverlayOpen()) {
+              await cdpDismiss();
+              await sleep(TIMING.SHORT);
+            }
+            var retryClearBtn = window.veo3Selectors.clearButton();
+            if (retryClearBtn) {
+              await window.veo3RobustClick(retryClearBtn);
+              await sleep(TIMING.SHORT);
+            }
+
+            // Wait for browser/gallery state to stabilize
+            await sleep(SKIP_RETRY_DELAY);
+
+            // Respect pause/stop controls during retry wait
+            while (automationState.paused) {
+              await sleep(500);
+              if (!automationState.running) break;
+            }
+            if (!automationState.running) break;
+
+            // Re-attempt the full command (mode switch + gallery + fill + submit)
+            result = await processCommand(cmd, globalIndex);
+          }
 
           if (result?.skipped) {
             notifySidepanel('PROMPT_SKIPPED', {
               commandId: cmd.id,
               index: globalIndex,
-              reason: result.reason
+              reason: result.reason,
+              attempts: skipRetryCount + 1
             });
           } else {
             notifySidepanel('PROMPT_COMPLETED', { commandId: cmd.id, index: globalIndex });
@@ -416,6 +462,9 @@
 
       // Pause between batches (rate limit protection)
       if (batchIndex < totalBatches - 1 && automationState.running) {
+        // Scan for failed tiles and auto-retry before starting countdown
+        await scanAndRetryFailedTiles();
+
         const pauseMs = TIMING.BATCH_PAUSE;
         const pauseSec = Math.round(pauseMs / 1000);
 
@@ -447,6 +496,12 @@
           }
         }
       }
+    }
+
+    // Final scan: check for failed tiles after last batch (before marking complete)
+    if (automationState.running) {
+      console.log('[RETRY] Final scan after all batches...');
+      await scanAndRetryFailedTiles();
     }
 
     automationState.running = false;
@@ -1014,6 +1069,85 @@
     }
 
     return results;
+  }
+
+  // === GENERATION FAILURE SCAN & AUTO-RETRY ===
+  // Scans all visible tiles for policy violation failures and clicks "Tentar novamente".
+  // Called during batch pause (between batches) and after the final batch.
+  // Max 3 retry attempts per tile, 13s wait between retries.
+
+  const RETRY_MAX_ATTEMPTS = 3;
+  const RETRY_WAIT_MS = 13000; // 13s to wait after clicking retry before re-checking
+
+  async function scanAndRetryFailedTiles() {
+    const { sleep } = window.veo3Timing;
+
+    const failedTiles = window.veo3Selectors.failedTiles();
+    if (failedTiles.length === 0) {
+      console.log('[RETRY] No failed tiles found');
+      return { retried: 0, recovered: 0, exhausted: 0 };
+    }
+
+    console.log('[RETRY] Found ' + failedTiles.length + ' failed tile(s), starting retry sub-batch...');
+    notifySidepanel('RETRY_SCAN', { failedCount: failedTiles.length });
+
+    var totalRetried = 0;
+    var totalRecovered = 0;
+    var totalExhausted = 0;
+
+    for (var t = 0; t < failedTiles.length; t++) {
+      if (!automationState.running) break;
+      var tile = failedTiles[t];
+      var tileId = tile.getAttribute('data-tile-id') || ('tile_' + t);
+
+      for (var attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+        // Handle pause during retry
+        while (automationState.paused) {
+          await sleep(500);
+          if (!automationState.running) break;
+        }
+        if (!automationState.running) break;
+
+        var retryBtn = window.veo3Selectors.retryButton(tile);
+        if (!retryBtn) {
+          console.log('[RETRY] No retry button found in tile ' + tileId);
+          break;
+        }
+
+        console.log('[RETRY] Tile ' + tileId.substring(tileId.length - 8) + ' attempt ' + attempt + '/' + RETRY_MAX_ATTEMPTS);
+        notifySidepanel('GENERATION_RETRY', {
+          tileId: tileId,
+          attempt: attempt,
+          maxAttempts: RETRY_MAX_ATTEMPTS
+        });
+        totalRetried++;
+
+        // Click retry button
+        await window.veo3RobustClick(retryBtn);
+        console.log('[RETRY] Clicked retry, waiting ' + (RETRY_WAIT_MS / 1000) + 's...');
+        await sleep(RETRY_WAIT_MS);
+
+        // Re-check if this tile is still failed
+        var stillFailed = window.veo3Selectors.detectTileFailure(tile);
+        if (!stillFailed) {
+          console.log('[RETRY] Tile ' + tileId.substring(tileId.length - 8) + ' RECOVERED after attempt ' + attempt);
+          notifySidepanel('RETRY_SUCCESS', { tileId: tileId, attempt: attempt });
+          totalRecovered++;
+          break;
+        }
+
+        if (attempt === RETRY_MAX_ATTEMPTS) {
+          console.log('[RETRY] Tile ' + tileId.substring(tileId.length - 8) + ' still FAILED after ' + RETRY_MAX_ATTEMPTS + ' attempts');
+          notifySidepanel('RETRY_EXHAUSTED', { tileId: tileId, attempts: RETRY_MAX_ATTEMPTS });
+          totalExhausted++;
+        }
+      }
+    }
+
+    console.log('[RETRY] Sub-batch complete: ' + totalRetried + ' retries, ' +
+        totalRecovered + ' recovered, ' + totalExhausted + ' exhausted');
+
+    return { retried: totalRetried, recovered: totalRecovered, exhausted: totalExhausted };
   }
 
   // === SETTINGS ===
