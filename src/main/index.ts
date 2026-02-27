@@ -8,8 +8,7 @@ import { loadPersistedDownloadPath } from './ipc/veo3.handlers'
 import {
   buildDownloadFilename,
   parseFlowEntryName,
-  buildCleanFilename,
-  sanitizeForFilesystem
+  buildCleanFilename
 } from './utils/downloadFilename'
 import { processVeo3Zip } from './utils/zipProcessor'
 
