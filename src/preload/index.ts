@@ -364,7 +364,11 @@ const api = {
   cdpGetRect: (selector: string): Promise<{ success: boolean; rect?: unknown; error?: string }> =>
     ipcRenderer.invoke('cdp:get-rect', selector),
   cdpPocTest: (): Promise<{ success: boolean; results?: unknown[]; error?: string }> =>
-    ipcRenderer.invoke('cdp:poc-test')
+    ipcRenderer.invoke('cdp:poc-test'),
+  cdpFillPrompt: (text: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:fill-prompt', text),
+  cdpClickSubmit: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:click-submit')
 }
 
 if (process.contextIsolated) {

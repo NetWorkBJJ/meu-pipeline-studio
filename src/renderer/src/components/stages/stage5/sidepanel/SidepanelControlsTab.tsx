@@ -163,6 +163,20 @@ export function SidepanelControlsTab({
       setIsPreparingImages(false)
     }
 
+    // Attach CDP to webview for trusted input events (fill prompt + submit)
+    try {
+      const wcId = wv.getWebContentsId()
+      console.log(`[SidepanelControls] Attaching CDP to webContentsId: ${wcId}`)
+      const attachResult = await window.api.cdpAttach(wcId)
+      if (!attachResult.success) {
+        console.warn(`[SidepanelControls] CDP attach failed: ${attachResult.error} (will use DOM fallback)`)
+      } else {
+        console.log('[SidepanelControls] CDP attached successfully')
+      }
+    } catch (err) {
+      console.warn('[SidepanelControls] CDP attach error:', err, '(will use DOM fallback)')
+    }
+
     startTab(tabId)
 
     try {

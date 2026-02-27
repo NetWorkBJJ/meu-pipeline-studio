@@ -1,11 +1,15 @@
+import { useState } from 'react'
+import { ClipboardList } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
+import { ClickUpImportModal } from '@/components/clickup/ClickUpImportModal'
 
 interface ScriptInputProps {
   onSplit: () => void
 }
 
 export function ScriptInput({ onSplit }: ScriptInputProps): React.JSX.Element {
-  const { rawScript, setRawScript } = useProjectStore()
+  const { rawScript, setRawScript, clickUpTaskRef } = useProjectStore()
+  const [clickUpOpen, setClickUpOpen] = useState(false)
 
   const charCount = rawScript.length
   const wordCount = rawScript.trim() ? rawScript.trim().split(/\s+/).length : 0
@@ -13,10 +17,26 @@ export function ScriptInput({ onSplit }: ScriptInputProps): React.JSX.Element {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-text">Roteiro</label>
-        <span className="text-xs text-text-muted">
-          {charCount} caracteres | {wordCount} palavras
-        </span>
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-text">Roteiro</label>
+          {clickUpTaskRef && (
+            <span className="rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+              via ClickUp: {clickUpTaskRef.taskName}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setClickUpOpen(true)}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1 text-xs text-text-muted transition-colors hover:border-primary/30 hover:text-text"
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            Importar do ClickUp
+          </button>
+          <span className="text-xs text-text-muted">
+            {charCount} caracteres | {wordCount} palavras
+          </span>
+        </div>
       </div>
       <textarea
         value={rawScript}
@@ -34,6 +54,10 @@ export function ScriptInput({ onSplit }: ScriptInputProps): React.JSX.Element {
           Dividir em blocos
         </button>
       </div>
+
+      {clickUpOpen && (
+        <ClickUpImportModal onClose={() => setClickUpOpen(false)} />
+      )}
     </div>
   )
 }

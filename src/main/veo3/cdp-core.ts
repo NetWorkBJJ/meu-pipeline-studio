@@ -343,6 +343,131 @@ async function runPocTest(): Promise<CdpTestResult[]> {
   return results
 }
 
+// === AUTOMATION OPERATIONS ===
+// Used by the main automation flow via CDP_REQUEST/CDP_RESPONSE protocol.
+// Reuses the same primitives validated by runPocTest.
+
+interface CdpOpResult {
+  success: boolean
+  error?: string
+}
+
+async function fillPrompt(text: string): Promise<CdpOpResult> {
+  try {
+    // Step 1: Clear existing text via the clear button (uses injected veo3Selectors)
+    const clearRect = await evaluate<CdpRect | null>(`
+      (() => {
+        if (typeof window.veo3Selectors === 'undefined') return null;
+        const btn = window.veo3Selectors.clearButton();
+        if (!btn) return null;
+        const r = btn.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return null;
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      })()
+    `)
+
+    if (clearRect) {
+      const cx = Math.round(clearRect.x + clearRect.width / 2)
+      const cy = Math.round(clearRect.y + clearRect.height / 2)
+      console.log(`[CDP] fillPrompt: clearing existing text via clear button at (${cx}, ${cy})`)
+      await click(cx, cy)
+      await sleep(400)
+    }
+
+    // Step 2: Click the Slate editor (primary target - same selector as POC test)
+    let clicked = await clickElement('[data-slate-editor="true"][contenteditable="true"]')
+    if (!clicked) {
+      clicked = await clickElement('#PINHOLE_TEXT_AREA_ELEMENT_ID')
+    }
+    if (!clicked) {
+      return { success: false, error: 'No prompt field found (Slate editor or textarea)' }
+    }
+
+    await sleep(150)
+
+    // Step 3: Type text via CDP Input.insertText (isTrusted event that Slate recognizes)
+    console.log(`[CDP] fillPrompt: typing ${text.length} chars`)
+    await type(text)
+    await sleep(300)
+
+    // Step 4: Verify text was inserted
+    const content = await evaluate<string>(`
+      (() => {
+        const slate = document.querySelector('[data-slate-editor="true"]');
+        if (slate) return slate.textContent || '';
+        const ta = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID');
+        if (ta) return ta.value || '';
+        return '';
+      })()
+    `)
+
+    if (!content || content.trim().length === 0) {
+      return { success: false, error: 'Text insertion verification failed - editor appears empty' }
+    }
+
+    console.log(`[CDP] fillPrompt: verified, content length=${content.length}`)
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: `fillPrompt failed: ${String(err)}` }
+  }
+}
+
+async function clickSubmit(): Promise<CdpOpResult> {
+  try {
+    // Use injected veo3Selectors.submitButton() for robust button detection
+    const submitRect = await evaluate<CdpRect | null>(`
+      (() => {
+        if (typeof window.veo3Selectors !== 'undefined' && window.veo3Selectors.submitButton) {
+          const btn = window.veo3Selectors.submitButton();
+          if (btn) {
+            const r = btn.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return { x: r.x, y: r.y, width: r.width, height: r.height };
+          }
+        }
+        return null;
+      })()
+    `)
+
+    if (!submitRect) {
+      return { success: false, error: 'Submit button not found via veo3Selectors' }
+    }
+
+    const cx = Math.round(submitRect.x + submitRect.width / 2)
+    const cy = Math.round(submitRect.y + submitRect.height / 2)
+
+    console.log(`[CDP] clickSubmit: clicking submit at (${cx}, ${cy})`)
+    await click(cx, cy)
+    await sleep(500)
+
+    // Verify submission: check if editor cleared or loading indicator appeared
+    const submitted = await evaluate<boolean>(`
+      (() => {
+        const slate = document.querySelector('[data-slate-editor="true"]');
+        if (slate && slate.textContent.trim().length < 5) return true;
+        const ta = document.querySelector('#PINHOLE_TEXT_AREA_ELEMENT_ID');
+        if (ta && ta.value.trim() === '') return true;
+        const icons = document.querySelectorAll('i.google-symbols, i.material-icons');
+        for (const icon of icons) {
+          if (icon.textContent.trim() === 'progress_activity') return true;
+        }
+        return false;
+      })()
+    `)
+
+    if (!submitted) {
+      // Retry with Enter key as fallback
+      console.log('[CDP] clickSubmit: click did not trigger submission, trying Enter key')
+      await press('Enter')
+      await sleep(1000)
+    }
+
+    console.log('[CDP] clickSubmit: done')
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: `clickSubmit failed: ${String(err)}` }
+  }
+}
+
 // === UTILS ===
 
 function sleep(ms: number): Promise<void> {
@@ -362,5 +487,7 @@ export const cdpCore = {
   getRect,
   clickElement,
   typeIntoElement,
-  runPocTest
+  runPocTest,
+  fillPrompt,
+  clickSubmit
 }

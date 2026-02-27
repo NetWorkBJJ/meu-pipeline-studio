@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Loader2,
   ChevronRight,
-  ChevronDown,
   Folder,
   List,
   FileText,

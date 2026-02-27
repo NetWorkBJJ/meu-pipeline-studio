@@ -76,4 +76,26 @@ export function registerCdpHandlers(): void {
       return { success: false, error: String(err), results: [] }
     }
   })
+
+  ipcMain.handle('cdp:fill-prompt', async (_event, text: string) => {
+    try {
+      if (!cdpCore.isAttached()) {
+        return { success: false, error: 'CDP not attached' }
+      }
+      return await cdpCore.fillPrompt(text)
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('cdp:click-submit', async () => {
+    try {
+      if (!cdpCore.isAttached()) {
+        return { success: false, error: 'CDP not attached' }
+      }
+      return await cdpCore.clickSubmit()
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
 }

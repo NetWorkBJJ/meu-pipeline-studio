@@ -271,6 +271,8 @@ interface ElectronAppAPI {
   cdpEvaluate: (expression: string) => Promise<{ success: boolean; result?: unknown; error?: string }>
   cdpGetRect: (selector: string) => Promise<{ success: boolean; rect?: unknown; error?: string }>
   cdpPocTest: () => Promise<{ success: boolean; results?: unknown[]; error?: string }>
+  cdpFillPrompt: (text: string) => Promise<{ success: boolean; error?: string }>
+  cdpClickSubmit: () => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

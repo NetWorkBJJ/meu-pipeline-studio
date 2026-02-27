@@ -33,6 +33,80 @@
     }));
   }
 
+  // === CDP REQUEST/RESPONSE PROTOCOL ===
+  // content-bridge cannot call IPC directly (runs inside webview context).
+  // For CDP operations (fill prompt, click submit), it sends a request via console.log
+  // -> Electron catches it in Stage5Veo3.tsx -> routes to cdp-core.ts via IPC
+  // -> response comes back via postMessage.
+
+  let cdpRequestCounter = 0;
+  const pendingCdpRequests = new Map(); // requestId -> { resolve, reject, timer }
+
+  function cdpRequest(operation, data, timeoutMs) {
+    if (timeoutMs === undefined) timeoutMs = 15000;
+    return new Promise(function (resolve, reject) {
+      var requestId = 'cdp_' + (++cdpRequestCounter) + '_' + Date.now();
+
+      var timer = setTimeout(function () {
+        pendingCdpRequests.delete(requestId);
+        reject(new Error('CDP request timeout (' + timeoutMs + 'ms): ' + operation));
+      }, timeoutMs);
+
+      pendingCdpRequests.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+
+      // Send request to renderer via console.log (caught by Veo3Browser console-message handler)
+      console.log(JSON.stringify({
+        type: 'CONTENT_TO_SIDEPANEL',
+        action: 'CDP_REQUEST',
+        data: Object.assign({ operation: operation, requestId: requestId }, data || {})
+      }));
+    });
+  }
+
+  function handleCdpResponse(data) {
+    var requestId = data.requestId;
+    var pending = pendingCdpRequests.get(requestId);
+    if (!pending) {
+      window.veo3Debug?.warn('BRIDGE', 'CDP response for unknown requestId: ' + requestId);
+      return;
+    }
+
+    clearTimeout(pending.timer);
+    pendingCdpRequests.delete(requestId);
+
+    if (data.success) {
+      pending.resolve({ success: true });
+    } else {
+      pending.reject(new Error(data.error || 'CDP operation failed'));
+    }
+  }
+
+  // === CDP-BASED PROMPT FILL AND SUBMIT ===
+
+  async function cdpFillPrompt(text) {
+    console.log('[CDP_FILL] Requesting CDP fillPrompt (' + text.length + ' chars)...');
+    try {
+      await cdpRequest('fillPrompt', { text: text }, 20000);
+      console.log('[CDP_FILL] CDP fillPrompt succeeded');
+      return true;
+    } catch (err) {
+      console.log('[CDP_FILL] CDP fillPrompt FAILED: ' + err.message);
+      return false;
+    }
+  }
+
+  async function cdpClickSubmit() {
+    console.log('[CDP_SUBMIT] Requesting CDP clickSubmit...');
+    try {
+      await cdpRequest('clickSubmit', {}, 15000);
+      console.log('[CDP_SUBMIT] CDP clickSubmit succeeded');
+      return true;
+    } catch (err) {
+      console.log('[CDP_SUBMIT] CDP clickSubmit FAILED: ' + err.message);
+      return false;
+    }
+  }
+
   // === MESSAGE LISTENER ===
 
   window.addEventListener('message', (event) => {
@@ -58,6 +132,9 @@
         break;
       case 'APPLY_SETTINGS':
         applySettings(data);
+        break;
+      case 'CDP_RESPONSE':
+        handleCdpResponse(data);
         break;
       default:
         window.veo3Debug?.warn('BRIDGE', 'Unknown action: ' + action);
@@ -346,19 +423,39 @@
       console.log(tag + ' Step 2/4: No characters (text-only prompt)');
     }
 
-    // Step 3/4: Fill prompt text in Slate editor
+    // Step 3/4: Fill prompt text via CDP (trusted events) with DOM fallback
     window.__veo3_phase = 'FILL_PROMPT';
-    console.log(tag + ' Step 3/4: Filling prompt (' + cmd.prompt.length + ' chars)...');
-    await window.veo3Timing.fillSlateEditor(cmd.prompt);
-    // No extra sleep here - fillSlateEditor already includes AFTER_FILL delay internally
+    console.log(tag + ' Step 3/4: Filling prompt via CDP (' + cmd.prompt.length + ' chars)...');
 
-    // Step 4/4: Submit with retry chain
+    var fillSuccess = await cdpFillPrompt(cmd.prompt);
+
+    if (!fillSuccess) {
+      // Fallback: try the old DOM-based method
+      console.log(tag + ' Step 3/4: CDP fill failed, falling back to DOM fillSlateEditor...');
+      try {
+        await window.veo3Timing.fillSlateEditor(cmd.prompt);
+        fillSuccess = true;
+      } catch (fillErr) {
+        console.log(tag + ' Step 3/4: DOM fallback also failed: ' + fillErr.message);
+        throw new Error('Prompt fill failed (CDP + DOM fallback): ' + fillErr.message);
+      }
+    }
+
+    // Step 4/4: Submit via CDP (trusted click) with DOM fallback
     window.__veo3_phase = 'SUBMIT';
-    console.log(tag + ' Step 4/4: Submitting...');
-    const submitted = await window.veo3Timing.submitWithRetry();
-    if (!submitted) {
-      console.log(tag + ' === FAILED (all submission strategies failed) ===');
-      throw new Error('All submission strategies failed');
+    console.log(tag + ' Step 4/4: Submitting via CDP...');
+
+    var submitSuccess = await cdpClickSubmit();
+
+    if (!submitSuccess) {
+      // Fallback: try the old DOM-based submission chain
+      console.log(tag + ' Step 4/4: CDP submit failed, falling back to DOM submitWithRetry...');
+      submitSuccess = await window.veo3Timing.submitWithRetry();
+    }
+
+    if (!submitSuccess) {
+      console.log(tag + ' === FAILED (CDP + DOM fallback both failed) ===');
+      throw new Error('All submission strategies failed (CDP + DOM)');
     }
 
     console.log(tag + ' === DONE ===');

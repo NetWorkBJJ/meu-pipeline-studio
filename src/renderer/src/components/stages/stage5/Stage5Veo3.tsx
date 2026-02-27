@@ -106,10 +106,61 @@ export function Stage5Veo3(): React.JSX.Element {
     })
   }, [])
 
+  // Handle CDP requests from content-bridge: route to main process CDP, send response back
+  const handleCdpRequest = useCallback(
+    async (tabId: string, reqData: { operation: string; requestId: string; text?: string }) => {
+      const { operation, requestId, text } = reqData
+
+      let result: { success: boolean; error?: string }
+
+      try {
+        switch (operation) {
+          case 'fillPrompt':
+            result = await window.api.cdpFillPrompt(text || '')
+            break
+          case 'clickSubmit':
+            result = await window.api.cdpClickSubmit()
+            break
+          default:
+            result = { success: false, error: `Unknown CDP operation: ${operation}` }
+        }
+      } catch (err) {
+        result = { success: false, error: String(err) }
+      }
+
+      // Send response back to content-bridge via postMessage
+      const handle = browserRefs.current.get(tabId)
+      const wv = handle?.getWebview()
+      if (!wv) return
+
+      const responsePayload = JSON.stringify({
+        type: 'SIDEPANEL_TO_CONTENT',
+        action: 'CDP_RESPONSE',
+        data: { requestId, success: result.success, error: result.error }
+      })
+
+      try {
+        await wv.executeJavaScript(`window.postMessage(${responsePayload}, '*')`)
+      } catch (err) {
+        console.error(`[Stage5Veo3] Failed to send CDP response for ${requestId}:`, err)
+      }
+    },
+    []
+  )
+
   const handleContentMessage = useCallback(
     (tabId: string, msg: Veo3ContentMessage) => {
       const { action, data } = msg
       if (!action) return
+
+      // Route CDP requests to main process (async, fire-and-forget from callback)
+      if (action === 'CDP_REQUEST') {
+        const d = data as { operation: string; requestId: string; text?: string } | undefined
+        if (d?.operation && d?.requestId) {
+          handleCdpRequest(tabId, d)
+        }
+        return
+      }
 
       const automationStore = useVeo3AutomationStore.getState()
 
@@ -213,7 +264,7 @@ export function Stage5Veo3(): React.JSX.Element {
         return next
       })
     },
-    []
+    [handleCdpRequest]
   )
 
   const handleToggleSidepanel = useCallback(() => {
