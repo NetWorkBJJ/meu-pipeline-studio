@@ -176,14 +176,19 @@
       if (score >= 1000) break;
     }
 
-    // Strategy B: If no child cards matched (single-card item or flat structure),
-    // check the item itself — but only if it looks like an image item (not too long)
+    // Strategy B: If no child cards matched AND this appears to be a single-card item
+    // (not a full-width Virtuoso row), allow matching the item itself.
+    // SAFETY: never return an element wider than 400px as a click target,
+    // because clicking the center of a wide row lands on random content.
     if (!bestCard && children.length <= 1) {
-      var cleanFull = cleanMediaText(fullText);
-      var itemScore = scoreMatch(cleanFull, cleanTarget);
-      if (itemScore > 0) {
-        bestScore = itemScore;
-        bestCard = item;
+      var itemRect = item.getBoundingClientRect();
+      if (itemRect.width > 0 && itemRect.width <= 400) {
+        var cleanFull = cleanMediaText(fullText);
+        var itemScore = scoreMatch(cleanFull, cleanTarget);
+        if (itemScore >= 300) {
+          bestScore = itemScore;
+          bestCard = item;
+        }
       }
     }
 
@@ -191,16 +196,120 @@
   }
 
   // Score how well a cleaned text matches the target (0 = no match, 1000 = exact)
+  // Word-level matching with number verification to prevent "outfit 1" vs "outfit 2" confusion
   function scoreMatch(cleanText, cleanTarget) {
     if (cleanText === cleanTarget) return 1000;
-    if (cleanText.includes(cleanTarget)) return cleanTarget.length + 1;
-    if (cleanTarget.includes(cleanText) && cleanText.length > 5) return cleanText.length;
-    return 0;
+
+    // Full substring match (one contains the other entirely)
+    if (cleanText.includes(cleanTarget)) return 500 + cleanTarget.length;
+    if (cleanTarget.includes(cleanText) && cleanText.length > 5) return 400 + cleanText.length;
+
+    // Word-level matching: split both into words, count overlap, penalize number mismatches
+    var textWords = cleanText.split(/[\s,\-_]+/).filter(function (w) { return w.length > 0; });
+    var targetWords = cleanTarget.split(/[\s,\-_]+/).filter(function (w) { return w.length > 0; });
+
+    var matchingWords = 0;
+    var totalTargetWords = targetWords.length;
+
+    for (var i = 0; i < targetWords.length; i++) {
+      var tw = targetWords[i];
+      if (textWords.indexOf(tw) >= 0) {
+        matchingWords++;
+      } else if (/^\d+$/.test(tw)) {
+        // A NUMBER in the target is missing or different in text -> hard fail
+        // This prevents "outfit 1 of chapter 4" matching "outfit 2 of chapter 4"
+        return 0;
+      }
+    }
+
+    if (matchingWords === 0 || totalTargetWords === 0) return 0;
+
+    var ratio = matchingWords / totalTargetWords;
+    if (ratio >= 0.8) return Math.round(300 * ratio);
+    if (ratio >= 0.5) return Math.round(200 * ratio);
+    return 0; // Below 50% word overlap = no match
   }
 
-  async function selectMediaByName(targetName) {
+  // Direct gallery selection for VIDEO mode (elementos/texto).
+  // In video mode, the '+' button opens a file upload menu (no search input).
+  // Instead, we scan the visible gallery items directly without opening any dialog.
+  async function selectMediaInVisibleGallery(targetName) {
+    const { sleep } = window.veo3Timing;
+    const targetLower = targetName.toLowerCase();
+    const cleanTarget = cleanMediaText(targetLower);
+
+    window.veo3Debug?.info('GALLERY', 'Video mode: scanning visible gallery for "' + targetName + '"');
+
+    // Scan visible [data-item-index] items (Virtuoso rows in the gallery panel)
+    var items = readMediaListItems();
+    var bestResult = null;
+    var bestScore = 0;
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var itemTextLower = item.name.toLowerCase();
+      if (isPromptHistoryItem(itemTextLower)) continue;
+
+      var result = findBestCardInItem(item.element, targetLower, cleanTarget);
+      if (result.element && result.score > bestScore) {
+        bestScore = result.score;
+        bestResult = result;
+      }
+      if (bestScore >= 1000) break;
+    }
+
+    // If not found in visible items, scroll through all
+    if (!bestResult || bestScore < 300) {
+      window.veo3Debug?.debug('GALLERY', 'Not in visible items (bestScore=' + bestScore + '), scrolling...');
+      var allItems = await scrollAndCollectAll(10);
+      for (var j = 0; j < allItems.length; j++) {
+        var ai = allItems[j];
+        var aiTextLower = ai.name.toLowerCase();
+        if (isPromptHistoryItem(aiTextLower)) continue;
+
+        // Re-read fresh DOM refs (Virtuoso may have recycled nodes)
+        var freshItems = readMediaListItems();
+        for (var k = 0; k < freshItems.length; k++) {
+          if (freshItems[k].index === ai.index) {
+            var freshResult = findBestCardInItem(freshItems[k].element, targetLower, cleanTarget);
+            if (freshResult.element && freshResult.score > bestScore) {
+              bestScore = freshResult.score;
+              bestResult = freshResult;
+            }
+            break;
+          }
+        }
+        if (bestScore >= 1000) break;
+      }
+    }
+
+    if (bestResult && bestScore >= 300) {
+      var cardText = bestResult.element.textContent.trim();
+      window.veo3Debug?.info('GALLERY', 'Video mode match: "' + cardText.substring(0, 80) + '" (score=' + bestScore + ')');
+      await window.veo3RobustClick(bestResult.element);
+      await sleep(500);
+      return true;
+    }
+
+    window.veo3Debug?.warn('GALLERY', 'Video mode: "' + targetName + '" not found or rejected (bestScore=' + bestScore + ', threshold=300)');
+    return false;
+  }
+
+  async function selectMediaByName(targetName, options) {
+    options = options || {};
+    var mode = options.mode || 'imagem';
+
     const { sleep, TIMING, waitForElement, setReactValue } = window.veo3Timing;
-    window.veo3Debug?.info('GALLERY', 'Selecting media by search: ' + targetName);
+    window.veo3Debug?.info('GALLERY', 'Selecting media by search: ' + targetName + ' (mode=' + mode + ')');
+
+    // In video mode (elementos/texto), the dialog button doesn't exist.
+    // The '+' button opens a file upload menu with NO search input.
+    // Use direct gallery scanning instead.
+    if (mode !== 'imagem') {
+      return await selectMediaInVisibleGallery(targetName);
+    }
+
+    // IMAGE mode: use dialog-based search (has search input)
 
     // Step 1: Click '+' button to open resource dialog (with red circle feedback)
     const addBtn = window.veo3Selectors.addMediaButton();
@@ -258,7 +367,7 @@
       if (bestScore >= 1000) break;
     }
 
-    if (bestCard) {
+    if (bestCard && bestScore >= 300) {
       const cardText = bestCard.textContent.trim();
       const parentIndex = bestCard.closest('[data-item-index]')?.getAttribute('data-item-index') || '?';
       window.veo3Debug?.info('GALLERY', 'Found card in row ' + parentIndex + ': "' + cardText.substring(0, 80) + '" (score=' + bestScore + ')');
@@ -276,6 +385,7 @@
   }
 
   // Legacy fallback: scroll-and-scan approach (used if search input not found)
+  // Collects ALL matches and picks the highest score (prevents wrong clicks)
   async function selectMediaByNameLegacy(targetName) {
     const { sleep } = window.veo3Timing;
     const targetLower = targetName.toLowerCase();
@@ -287,43 +397,55 @@
       if (!opened) return false;
     }
 
-    // Try to find and click a specific card within visible items
+    // Phase 1: Scan visible items and collect ALL matches (not just the first)
+    var bestResult = null;
+    var bestScore = 0;
+
     const items = readMediaListItems();
     for (const item of items) {
       const itemTextLower = item.name.toLowerCase();
-      // Skip prompt history items
       if (isPromptHistoryItem(itemTextLower)) continue;
 
-      // Try to find specific card within the row
       const result = findBestCardInItem(item.element, targetLower, cleanTarget);
-      if (result.element && result.score > 0) {
-        await window.veo3RobustClick(result.element);
-        await sleep(500);
-        console.log('[GalleryMapper] Selected media (legacy): "' + result.element.textContent.trim().substring(0, 80) + '"');
-        return true;
+      if (result.element && result.score > bestScore) {
+        bestScore = result.score;
+        bestResult = result;
       }
+      if (bestScore >= 1000) break;
     }
 
-    const allItems = await scrollAndCollectAll(10);
-    for (const item of allItems) {
-      const itemTextLower = item.name.toLowerCase();
-      if (isPromptHistoryItem(itemTextLower)) continue;
-      if (itemTextLower.includes(targetLower) || cleanMediaText(itemTextLower).includes(cleanTarget)) {
+    // Phase 2: If no good match in visible items, scroll through all
+    if (!bestResult || bestScore < 300) {
+      const allItems = await scrollAndCollectAll(10);
+      for (const item of allItems) {
+        const itemTextLower = item.name.toLowerCase();
+        if (isPromptHistoryItem(itemTextLower)) continue;
+
+        // Re-fetch fresh DOM references (Virtuoso may have recycled nodes during scroll)
         const freshItems = readMediaListItems();
         for (const fresh of freshItems) {
           if (fresh.index === item.index) {
             const result = findBestCardInItem(fresh.element, targetLower, cleanTarget);
-            const clickTarget = result.element || fresh.element;
-            await window.veo3RobustClick(clickTarget);
-            await sleep(500);
-            console.log('[GalleryMapper] Selected media (legacy scroll): "' + clickTarget.textContent.trim().substring(0, 80) + '"');
-            return true;
+            if (result.element && result.score > bestScore) {
+              bestScore = result.score;
+              bestResult = result;
+            }
+            break;
           }
         }
+        if (bestScore >= 1000) break;
       }
     }
 
-    console.warn('[GalleryMapper] Media "' + targetName + '" not found (legacy)');
+    // Only click if score meets minimum threshold (prevents random clicks)
+    if (bestResult && bestScore >= 300) {
+      await window.veo3RobustClick(bestResult.element);
+      await sleep(500);
+      console.log('[GalleryMapper] Selected media (legacy): "' + bestResult.element.textContent.trim().substring(0, 80) + '" (score=' + bestScore + ')');
+      return true;
+    }
+
+    console.warn('[GalleryMapper] Media "' + targetName + '" not found or rejected (legacy, bestScore=' + bestScore + ', threshold=300)');
     return false;
   }
 

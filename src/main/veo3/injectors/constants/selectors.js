@@ -160,6 +160,18 @@
       return null;
     },
 
+    // --- Model name extraction (from settings button text) ---
+    // Text format: "Nano Banana Procrop_16_9x1" or "Veo 3.1-Fastcrop_16_9x1"
+    // Returns everything before "crop_" (the model name)
+    getActiveModelName: () => {
+      const btn = window.veo3Selectors.settingsButton();
+      if (!btn) return null;
+      const text = btn.textContent.trim();
+      const cropIndex = text.indexOf('crop_');
+      if (cropIndex > 0) return text.substring(0, cropIndex).trim();
+      return text;
+    },
+
     // --- Mode detection (via settings button text) ---
     // Google Flow (Feb 2026): mode (Image/Video) is a TAB inside the settings dropdown,
     // NOT a standalone combobox. The settings button text reveals the active model:

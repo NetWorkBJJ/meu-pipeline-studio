@@ -225,14 +225,13 @@ export function Stage5Veo3(): React.JSX.Element {
           break
         }
         case 'BATCH_PAUSE': {
-          const d = data as { batch?: number; totalBatches?: number; pauseSeconds?: number; mode?: string } | undefined
+          const d = data as { batch?: number; totalBatches?: number; pauseSeconds?: number } | undefined
           if (d?.pauseSeconds) {
             automationStore.setBatchPause(tabId, {
               batch: d.batch ?? 0,
               totalBatches: d.totalBatches ?? 0,
               totalSeconds: d.pauseSeconds,
-              pauseEndsAt: Date.now() + d.pauseSeconds * 1000,
-              mode: d.mode ?? 'video'
+              pauseEndsAt: Date.now() + d.pauseSeconds * 1000
             })
           }
           break

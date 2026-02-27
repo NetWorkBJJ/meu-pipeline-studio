@@ -1,17 +1,10 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Square, AlertTriangle, Loader2, Zap, CheckCircle2, XCircle, Timer, FolderOpen, ExternalLink } from 'lucide-react'
+import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import { useProjectStore } from '@/stores/useProjectStore'
 import type { WebviewElement, FlowCommand } from '@/types/veo3'
-
-interface CdpTestStep {
-  step: string
-  success: boolean
-  detail?: string
-  error?: string
-}
 
 interface SidepanelControlsTabProps {
   webviewRef: React.RefObject<WebviewElement | null>
@@ -99,45 +92,6 @@ export function SidepanelControlsTab({
   }
 
   const [isPreparingImages, setIsPreparingImages] = useState(false)
-  const [cdpTestRunning, setCdpTestRunning] = useState(false)
-  const [cdpTestResults, setCdpTestResults] = useState<CdpTestStep[] | null>(null)
-
-  const handleCdpTest = async (): Promise<void> => {
-    const wv = webviewRef.current
-    if (!wv) {
-      setCdpTestResults([{ step: 'Init', success: false, error: 'Webview not available' }])
-      return
-    }
-
-    setCdpTestRunning(true)
-    setCdpTestResults(null)
-
-    try {
-      // Step 1: Attach CDP to webview
-      const wcId = wv.getWebContentsId()
-      console.log(`[CDP Test] Attaching to webContentsId: ${wcId}`)
-      const attachResult = await window.api.cdpAttach(wcId)
-      if (!attachResult.success) {
-        setCdpTestResults([{ step: 'Attach', success: false, error: attachResult.error }])
-        return
-      }
-
-      // Step 2: Run POC test
-      const testResult = await window.api.cdpPocTest()
-      const results = (testResult.results || []) as CdpTestStep[]
-
-      if (!testResult.success && results.length === 0) {
-        setCdpTestResults([{ step: 'POC Test', success: false, error: testResult.error }])
-      } else {
-        setCdpTestResults(results)
-      }
-    } catch (err) {
-      setCdpTestResults([{ step: 'Error', success: false, error: String(err) }])
-    } finally {
-      setCdpTestRunning(false)
-    }
-  }
-
   const handleStart = async (): Promise<void> => {
     if (!tabId) {
       console.error('[SidepanelControls] No tabId available')
@@ -428,7 +382,7 @@ export function SidepanelControlsTab({
                   {Math.floor(countdownSeconds / 60)}:{String(countdownSeconds % 60).padStart(2, '0')}
                 </span>
                 <span className="text-[10px] text-text-muted">
-                  modo {batchPause.mode}
+                  45s fixo
                 </span>
               </div>
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-amber-500/10">
@@ -503,52 +457,34 @@ export function SidepanelControlsTab({
         </div>
       )}
 
-      {/* CDP POC Test */}
+      {/* Download folder */}
       <div className="border-t border-border pt-3">
-        <span className="text-[11px] font-medium text-text-muted">CDP Test (POC)</span>
-        <button
-          onClick={handleCdpTest}
-          disabled={cdpTestRunning || isRunning}
-          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 py-1.5 text-[11px] font-medium text-indigo-400 transition-colors hover:bg-indigo-500/20 disabled:opacity-40"
-        >
-          {cdpTestRunning ? (
-            <>
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Testando CDP...
-            </>
-          ) : (
-            <>
-              <Zap className="h-3 w-3" />
-              Test CDP
-            </>
-          )}
-        </button>
-        {cdpTestResults && (
-          <div className="mt-2 space-y-1">
-            {cdpTestResults.map((r, i) => (
-              <div
-                key={i}
-                className={`flex items-start gap-1.5 rounded px-2 py-1 text-[10px] ${
-                  r.success
-                    ? 'bg-green-500/5 text-green-400'
-                    : 'bg-red-500/5 text-red-400'
-                }`}
-              >
-                {r.success ? (
-                  <CheckCircle2 className="mt-0.5 h-2.5 w-2.5 shrink-0" />
-                ) : (
-                  <XCircle className="mt-0.5 h-2.5 w-2.5 shrink-0" />
-                )}
-                <div>
-                  <span className="font-medium">{r.step}</span>
-                  {r.detail && <span className="ml-1 text-text-muted">{r.detail}</span>}
-                  {r.error && <span className="ml-1">{r.error}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <span className="text-[11px] font-medium text-text-muted">Pasta de downloads</span>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <button
+            onClick={handleOpenDownloadFolder}
+            disabled={!downloadPath}
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-bg px-2.5 py-1.5 text-left transition-colors hover:border-primary/40 hover:bg-white/[0.02] disabled:opacity-40"
+            title={downloadPath || 'Nenhuma pasta definida'}
+          >
+            <FolderOpen className="h-3 w-3 shrink-0 text-text-muted" />
+            <span className="truncate text-[11px] text-text-muted">
+              {downloadPath
+                ? downloadPath.split(/[\\/]/).slice(-2).join('/')
+                : 'Nao definida'}
+            </span>
+            <ExternalLink className="ml-auto h-2.5 w-2.5 shrink-0 text-text-muted/50" />
+          </button>
+          <button
+            onClick={handleChangeDownloadFolder}
+            className="shrink-0 rounded-md border border-border bg-bg px-2 py-1.5 text-[10px] font-medium text-text-muted transition-colors hover:border-primary/40 hover:text-text"
+            title="Alterar pasta"
+          >
+            Alterar
+          </button>
+        </div>
       </div>
+
     </div>
   )
 }

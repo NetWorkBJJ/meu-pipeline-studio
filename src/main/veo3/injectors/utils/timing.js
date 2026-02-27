@@ -20,9 +20,8 @@
     POLL_FAST: 100,
     POLL_NORMAL: 500,
     POLL_SLOW: 1000,
-    // Batch pauses
-    BATCH_PAUSE_VIDEO: 60000,
-    BATCH_PAUSE_IMAGE: 30000,
+    // Batch pause (fixed 45s between all slots)
+    BATCH_PAUSE: 45000,
     BETWEEN_COMMANDS: 2000,
     AFTER_SUBMIT: 500,
     AFTER_MODE_SWITCH: 1000,

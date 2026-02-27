@@ -52,6 +52,7 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
     const wasOnAuthDomain = useRef(false)
     const listenersAttached = useRef(false)
     const domReady = useRef(false)
+    const lastInjectionTime = useRef(0)
     const { zoomFactor } = useVeo3Store()
 
     // Latest-ref pattern: store callbacks in refs so event handlers always read latest values
@@ -97,8 +98,12 @@ export const Veo3Browser = forwardRef<Veo3BrowserHandle, Veo3BrowserProps>(
         })
 
         // Inject automation scripts (only on Flow pages)
+        // Debounce: skip if dom-ready fired within 2s (prevents double injection on SPA navigation)
         const currentUrl = wv.getURL()
-        if (currentUrl.includes('labs.google') && currentUrl.includes('flow')) {
+        const now = Date.now()
+        if (currentUrl.includes('labs.google') && currentUrl.includes('flow') &&
+            now - lastInjectionTime.current >= 2000) {
+          lastInjectionTime.current = now
           for (const script of INJECTOR_SCRIPTS) {
             try {
               const code = await window.api.veo3ReadScript(script)

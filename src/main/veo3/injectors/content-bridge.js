@@ -149,6 +149,16 @@
     return await cdpPressKey('Escape');
   }
 
+  // Check if any dialog, menu, or overlay is currently open in the Google Flow UI.
+  // Used to avoid unnecessary Escape presses that can cause unintended UI side-effects.
+  function isOverlayOpen() {
+    if (document.querySelector('[role="dialog"][id^="radix-"]')) return true;
+    if (document.querySelector('[role="menu"][data-state="open"]')) return true;
+    if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return true;
+    if (document.querySelector('[data-radix-popper-content-wrapper]')) return true;
+    return false;
+  }
+
   // Expose for other injectors (gallery-mapper.js uses Escape)
   window.__veo3_cdpPress = cdpPressKey;
   window.__veo3_cdpClickElement = cdpClickElementByRect;
@@ -406,18 +416,14 @@
 
       // Pause between batches (rate limit protection)
       if (batchIndex < totalBatches - 1 && automationState.running) {
-        const currentMode = detectCurrentMode();
-        const pauseMs = (currentMode === 'imagem')
-          ? TIMING.BATCH_PAUSE_IMAGE
-          : TIMING.BATCH_PAUSE_VIDEO;
+        const pauseMs = TIMING.BATCH_PAUSE;
         const pauseSec = Math.round(pauseMs / 1000);
 
-        console.log('[BATCH ' + (batchIndex + 1) + '/' + totalBatches + '] Done. Pausing ' + pauseSec + 's (' + currentMode + ' mode)...');
+        console.log('[BATCH ' + (batchIndex + 1) + '/' + totalBatches + '] Done. Pausing ' + pauseSec + 's...');
         notifySidepanel('BATCH_PAUSE', {
           batch: batchIndex + 1,
           totalBatches,
-          pauseSeconds: pauseSec,
-          mode: currentMode
+          pauseSeconds: pauseSec
         });
 
         // Countdown with pause check
@@ -487,9 +493,11 @@
     console.log(tag + ' === Processing: "' + (cmd.prompt?.substring(0, 60) || '') + '..." ===');
     console.log(tag + ' Mode: ' + cmd.mode + ' | Characters: ' + (cmd.characterImages?.length || 0));
 
-    // Defensive: dismiss any stale dialogs from previous commands
-    await cdpDismiss();
-    await sleep(TIMING.MICRO);
+    // Defensive: dismiss any stale dialogs from previous commands (only if one is open)
+    if (isOverlayOpen()) {
+      await cdpDismiss();
+      await sleep(TIMING.MICRO);
+    }
 
     // Step 1/4: Mode switch via settings dropdown tabs
     window.__veo3_phase = 'MODE_SWITCH';
@@ -508,7 +516,19 @@
     window.__veo3_phase = 'GALLERY_SELECT';
     if (cmd.characterImages && cmd.characterImages.length > 0) {
       console.log(tag + ' Step 2/4: Selecting ' + cmd.characterImages.length + ' character(s) from gallery...');
-      await selectCharactersFromGallery(cmd.characterImages, globalIndex);
+      var galleryResult = await selectCharactersFromGallery(cmd.characterImages, globalIndex, cmd.mode);
+
+      if (galleryResult.failCount > 0) {
+        // Do NOT submit prompts with missing/wrong characters - skip this command
+        console.log(tag + ' Step 2/4: SKIPPING - ' + galleryResult.failCount +
+          ' character(s) not found: ' + galleryResult.failedNames.join(', '));
+        await cdpDismiss();
+        await sleep(TIMING.SHORT);
+        return {
+          skipped: true,
+          reason: 'Character not found: ' + galleryResult.failedNames.join(', ')
+        };
+      }
     } else {
       console.log(tag + ' Step 2/4: No characters (text-only prompt)');
     }
@@ -553,12 +573,17 @@
   }
 
   // === CHARACTER SELECTION FROM GALLERY ===
-  // For each character in the command, click "+" to open gallery, search by name, click to select
+  // For each character in the command, search by name and click to select.
+  // Returns { successCount, failCount, failedNames } to allow skip-on-failure.
 
-  async function selectCharactersFromGallery(characterImages, promptIndex) {
+  async function selectCharactersFromGallery(characterImages, promptIndex, mode) {
     const { sleep, TIMING } = window.veo3Timing;
     const total = commandQueue.length;
     const tag = '[FLOW ' + (promptIndex + 1) + '/' + total + ']';
+
+    var successCount = 0;
+    var failCount = 0;
+    var failedNames = [];
 
     for (const charImg of characterImages) {
       if (!automationState.running) break;
@@ -567,20 +592,40 @@
       const searchName = charImg.galleryItemName || charImg.name || charImg.characterId;
       if (!searchName) {
         console.log(tag + '   > Gallery: no name to search, skipping');
+        failCount++;
+        failedNames.push('(no name)');
         continue;
       }
 
-      console.log(tag + '   > Gallery: clicking "+", searching "' + searchName + '"...');
+      console.log(tag + '   > Gallery: searching "' + searchName + '"...');
 
-      const selected = await window.veo3GalleryMapper.selectMediaByName(searchName);
+      var selected = await window.veo3GalleryMapper.selectMediaByName(
+        searchName, { mode: mode || 'elementos' }
+      );
+
+      // Retry once on failure: dismiss stale dialogs, wait, try again
+      if (!selected) {
+        console.log(tag + '   > Gallery: retry for "' + searchName + '"...');
+        await cdpDismiss();
+        await sleep(TIMING.STANDARD);
+        selected = await window.veo3GalleryMapper.selectMediaByName(
+          searchName, { mode: mode || 'elementos' }
+        );
+      }
+
       if (selected) {
         console.log(tag + '   > Gallery: match found and selected');
+        successCount++;
       } else {
-        console.log(tag + '   > Gallery: "' + searchName + '" NOT FOUND in gallery');
+        console.log(tag + '   > Gallery: "' + searchName + '" NOT FOUND after retry');
+        failCount++;
+        failedNames.push(searchName);
       }
 
       await sleep(TIMING.MEDIUM);
     }
+
+    return { successCount: successCount, failCount: failCount, failedNames: failedNames };
   }
 
   // === MODE SWITCHING + SETTINGS VIA SETTINGS DROPDOWN ===
@@ -657,7 +702,7 @@
         continue;
       }
 
-      // Step 2b: Apply Landscape + x1 on first run (dropdown is already open)
+      // Step 2b: Apply Landscape + x1 + Nano Banana 2 on first run (dropdown is already open)
       if (!settingsApplied) {
         const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
         if (landscapeTab && landscapeTab.getAttribute('data-state') !== 'active') {
@@ -673,6 +718,35 @@
           await cdpClickElementByRect(count1Tab);
           await sleep(TIMING.SHORT);
           console.log('[MODE] Applied x1 setting');
+        }
+
+        // Ensure Nano Banana 2 is selected for IMAGE mode
+        // The model selector may be a tab, option, radio, or button inside the dropdown
+        if (targetIsImage) {
+          var currentModel = window.veo3Selectors.getActiveModelName();
+          if (currentModel && !currentModel.toLowerCase().includes('nano banana 2')) {
+            console.log('[MODE] Model is "' + currentModel + '", switching to Nano Banana 2...');
+            var modelFound = false;
+            // Search for any clickable element containing "Nano Banana 2"
+            var candidates = document.querySelectorAll('[role="tab"], [role="option"], [role="menuitemradio"], [role="radio"], button, [role="menuitem"]');
+            for (var m = 0; m < candidates.length; m++) {
+              if (candidates[m].offsetParent === null || candidates[m].disabled) continue;
+              var cText = candidates[m].textContent.trim().toLowerCase();
+              if (cText.includes('nano banana 2') && !cText.includes('nano banana 2 pro')) {
+                window.veo3ClickLogger?.logNativeClick(candidates[m], 'SETTINGS', 'Nano Banana 2 model');
+                await cdpClickElementByRect(candidates[m]);
+                await sleep(TIMING.SHORT);
+                console.log('[MODE] Switched to Nano Banana 2');
+                modelFound = true;
+                break;
+              }
+            }
+            if (!modelFound) {
+              console.log('[MODE] Nano Banana 2 selector not found in dropdown (model may need manual selection)');
+            }
+          } else {
+            console.log('[MODE] Model already correct: ' + (currentModel || 'unknown'));
+          }
         }
 
         settingsApplied = true;
@@ -738,7 +812,7 @@
         }
 
         if (success) {
-          console.log('[MODE] Mode switched to "' + targetMode + '" (verified: ' + newMode + ', took ' + (Date.now() - verifyStart) + 'ms)');
+          console.log('[MODE] Mode switched to "' + targetMode + '" (tab: ' + (newMode === 'imagem' ? 'IMAGE' : 'VIDEO') + ', took ' + (Date.now() - verifyStart) + 'ms)');
           return true;
         }
 
