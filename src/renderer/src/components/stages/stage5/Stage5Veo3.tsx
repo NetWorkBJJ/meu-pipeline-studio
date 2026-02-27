@@ -8,7 +8,7 @@ import { Veo3AccountManager } from './Veo3AccountManager'
 import { Veo3AccountSelector } from './Veo3AccountSelector'
 import { Veo3Sidepanel } from './Veo3Sidepanel'
 import type { Veo3BrowserHandle, WebviewState } from './Veo3Browser'
-import { useVeo3AccountStore, useVeo3TabStore } from '@/stores/useVeo3Store'
+import { useVeo3AccountStore, useVeo3TabStore, useVeo3Store } from '@/stores/useVeo3Store'
 import { useVeo3AutomationStore } from '@/stores/useVeo3AutomationStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import type { WebviewElement, Veo3ContentMessage, TabPanelState } from '@/types/veo3'
@@ -50,6 +50,29 @@ export function Stage5Veo3(): React.JSX.Element {
       loadFromProject()
     }
   }, [scenes.length, automationCommands.length, loadFromProject])
+
+  // Listen for completed downloads and track them in store
+  useEffect(() => {
+    const unsub = window.api.onVeo3DownloadComplete(
+      (data: unknown) => {
+        const dl = data as {
+          path: string
+          filename: string
+          originalFilename: string
+          folder: string
+        }
+        useVeo3Store.getState().addDownload({
+          id: `dl_${Date.now()}`,
+          filename: dl.filename,
+          originalFilename: dl.originalFilename,
+          path: dl.path,
+          folder: dl.folder,
+          completedAt: Date.now()
+        })
+      }
+    )
+    return () => unsub()
+  }, [])
 
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [showAccountSelector, setShowAccountSelector] = useState(false)

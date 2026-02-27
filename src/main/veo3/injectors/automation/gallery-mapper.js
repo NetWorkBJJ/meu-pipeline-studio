@@ -230,9 +230,9 @@
     return 0; // Below 50% word overlap = no match
   }
 
-  // Direct gallery selection for VIDEO mode (elementos/texto).
-  // In video mode, the '+' button opens a file upload menu (no search input).
-  // Instead, we scan the visible gallery items directly without opening any dialog.
+  // Fallback gallery selection: scan visible [data-item-index] items directly.
+  // Used when the dialog-based search is unavailable (no search input in dialog).
+  // Scans visible gallery items and scrolls through Virtuoso to find matches.
   async function selectMediaInVisibleGallery(targetName) {
     const { sleep } = window.veo3Timing;
     const targetLower = targetName.toLowerCase();
@@ -302,44 +302,47 @@
     const { sleep, TIMING, waitForElement, setReactValue } = window.veo3Timing;
     window.veo3Debug?.info('GALLERY', 'Selecting media by search: ' + targetName + ' (mode=' + mode + ')');
 
-    // In video mode (elementos/texto), the dialog button doesn't exist.
-    // The '+' button opens a file upload menu with NO search input.
-    // Use direct gallery scanning instead.
-    if (mode !== 'imagem') {
+    // Strategy 1: Dialog-based search (try for ALL modes, not just IMAGE).
+    // The '+' button may open a search dialog in both IMAGE and VIDEO modes.
+    // If it opens a file upload menu instead (no search input), we fall back to visible gallery scan.
+
+    const addBtn = window.veo3Selectors.addMediaButton();
+    if (!addBtn) {
+      window.veo3Debug?.warn('GALLERY', 'Add media button not found, trying visible gallery scan...');
       return await selectMediaInVisibleGallery(targetName);
     }
 
-    // IMAGE mode: use dialog-based search (has search input)
-
-    // Step 1: Click '+' button to open resource dialog (with red circle feedback)
-    const addBtn = window.veo3Selectors.addMediaButton();
-    if (!addBtn) {
-      window.veo3Debug?.warn('GALLERY', 'Add media button not found');
-      return false;
-    }
     await window.veo3RobustClick(addBtn);
     await sleep(TIMING.STANDARD);
 
-    // Step 2: Wait for search input to appear in the dialog
+    // Wait for search input to appear in the dialog
     const searchInput = await waitForElement(
       window.veo3Selectors.searchInput, 6000
     );
+
     if (!searchInput) {
-      window.veo3Debug?.warn('GALLERY', 'Search input not found in dialog');
+      // No search input found - dismiss dialog/menu and fall back
+      window.veo3Debug?.info('GALLERY', 'No search input in dialog (mode=' + mode + '), dismissing and trying fallback...');
       if (window.__veo3_cdpPress) { await window.__veo3_cdpPress('Escape'); } else { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); }
       await sleep(300);
-      // Fallback to legacy scroll-based selection
+      // Fall back to visible gallery scan (for VIDEO mode) or legacy scroll (for IMAGE mode)
+      if (mode !== 'imagem') {
+        return await selectMediaInVisibleGallery(targetName);
+      }
       return await selectMediaByNameLegacy(targetName);
     }
 
-    // Step 3: Type character name in search field (React-compatible value setter)
+    // Search dialog opened with search input - use search-based selection (works for all modes)
+    window.veo3Debug?.info('GALLERY', 'Search input found (mode=' + mode + '), using dialog search');
+
+    // Type character name in search field (React-compatible value setter)
     await setReactValue(searchInput, targetName, { clear: true, focus: true, blur: false, delay: 50 });
     await sleep(TIMING.NETWORK); // Wait for search results to filter
 
-    // Step 4: Wait for Virtuoso to render results
+    // Wait for Virtuoso to render results
     await sleep(500);
 
-    // Step 5: Find the specific image card that matches the target.
+    // Find the specific image card that matches the target.
     // [data-item-index] items are Virtuoso rows that may contain MULTIPLE image cards.
     // We drill into each row to find and click the specific card, not the row center.
     const items = document.querySelectorAll('[data-item-index]');

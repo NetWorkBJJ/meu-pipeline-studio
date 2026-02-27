@@ -1,10 +1,11 @@
 import { app, shell, BrowserWindow, session } from 'electron'
-import { join } from 'path'
+import { join, extname, basename } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import icon from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
 import { loadPersistedDownloadPath } from './ipc/veo3.handlers'
+import { buildDownloadFilename } from './utils/downloadFilename'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -91,19 +92,51 @@ function setupWebviewSecurity(): void {
 }
 
 function handleVeo3Download(_event: Electron.Event, item: Electron.DownloadItem): void {
+  console.log('[Veo3Download] === will-download fired ===')
+  console.log('[Veo3Download] originalFilename:', item.getFilename())
+  console.log('[Veo3Download] url:', item.getURL()?.slice(0, 200))
+  console.log('[Veo3Download] mimeType:', item.getMimeType())
+  console.log('[Veo3Download] totalBytes:', item.getTotalBytes())
+  console.log('[Veo3Download] downloadPath:', veo3DownloadPath)
+
   if (!existsSync(veo3DownloadPath)) {
     mkdirSync(veo3DownloadPath, { recursive: true })
   }
 
-  const filename = item.getFilename()
-  const savePath = join(veo3DownloadPath, filename)
+  const originalFilename = item.getFilename()
+  const filename = buildDownloadFilename(originalFilename, 50)
+  console.log('[Veo3Download] sanitized filename:', filename)
+
+  let savePath = join(veo3DownloadPath, filename)
+  if (existsSync(savePath)) {
+    const ext = extname(filename)
+    const base = basename(filename, ext)
+    let version = 2
+    while (existsSync(join(veo3DownloadPath, `${base}_v${version}${ext}`))) {
+      version++
+    }
+    savePath = join(veo3DownloadPath, `${base}_v${version}${ext}`)
+  }
+
+  console.log('[Veo3Download] final savePath:', savePath)
   item.setSavePath(savePath)
 
+  item.on('updated', (_e, state) => {
+    if (state === 'progressing') {
+      const received = item.getReceivedBytes()
+      const total = item.getTotalBytes()
+      const pct = total > 0 ? Math.round((received / total) * 100) : 0
+      console.log(`[Veo3Download] progress: ${pct}% (${received}/${total})`)
+    }
+  })
+
   item.on('done', (_e, state) => {
+    console.log('[Veo3Download] done:', state, 'path:', savePath)
     if (state === 'completed' && mainWindow) {
       mainWindow.webContents.send('veo3:download-complete', {
         path: savePath,
-        filename,
+        filename: basename(savePath),
+        originalFilename,
         folder: veo3DownloadPath
       })
     }

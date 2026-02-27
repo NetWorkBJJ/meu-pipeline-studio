@@ -10,6 +10,7 @@ export interface Veo3ContentMessage {
 export interface Veo3DownloadItem {
   id: string
   filename: string
+  originalFilename: string
   path: string
   folder: string
   completedAt: number
