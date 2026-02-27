@@ -42,7 +42,10 @@ const submittedPrompts: string[] = []
 const MAX_PROMPT_QUEUE = 200
 
 export function trackSubmittedPrompt(prompt: string): void {
+  // Avoid duplicates (renderer may re-sync on mount)
+  if (submittedPrompts.includes(prompt)) return
   submittedPrompts.push(prompt)
+  console.log(`[PromptQueue] Tracked prompt (${submittedPrompts.length} total): "${prompt.substring(0, 60)}..."`)
   if (submittedPrompts.length > MAX_PROMPT_QUEUE) {
     submittedPrompts.splice(0, submittedPrompts.length - MAX_PROMPT_QUEUE)
   }
@@ -58,28 +61,67 @@ function normalizeForMatching(text: string): string {
 
 /**
  * Match a parsed download filename against submitted prompts.
- * Google Flow truncates prompts to ~30 chars in filenames, so we match
- * by checking if a submitted prompt starts with the filename text.
+ * Google Flow may truncate, summarize, or reorder prompt text in filenames.
+ * Uses multiple strategies: prefix, substring, word overlap.
  * Returns the full prompt if matched, null otherwise.
  */
 function matchPromptForFilename(parsedPromptText: string): string | null {
+  if (submittedPrompts.length === 0) {
+    console.log('[PromptMatch] Queue empty - no prompts tracked')
+    return null
+  }
+
   const normalized = normalizeForMatching(parsedPromptText)
-  if (!normalized || normalized.length < 5) return null
+  if (!normalized || normalized.length < 3) return null
+
+  console.log(`[PromptMatch] Matching "${normalized}" against ${submittedPrompts.length} prompts`)
+
+  const nameWords = normalized.split(' ').filter((w) => w.length > 1)
+  let bestMatch: string | null = null
+  let bestScore = 0
 
   for (const prompt of submittedPrompts) {
     const normalizedPrompt = normalizeForMatching(prompt)
 
+    // Strategy 1: exact prefix match (prompt starts with filename text)
     if (normalizedPrompt.startsWith(normalized)) {
+      console.log(`[PromptMatch] Prefix match found`)
       return prompt
     }
 
-    // Handle dropped leading articles (A, An, The)
+    // Strategy 2: prefix without leading article
     const withoutArticle = normalizedPrompt.replace(/^(a|an|the)\s+/, '')
     if (withoutArticle.startsWith(normalized)) {
+      console.log(`[PromptMatch] Prefix match (no article) found`)
       return prompt
+    }
+
+    // Strategy 3: filename is a substring of the prompt
+    if (normalizedPrompt.includes(normalized)) {
+      console.log(`[PromptMatch] Substring match found`)
+      return prompt
+    }
+
+    // Strategy 4: word overlap scoring
+    const promptWords = new Set(normalizedPrompt.split(' ').filter((w) => w.length > 1))
+    let matchCount = 0
+    for (const word of nameWords) {
+      if (promptWords.has(word)) matchCount++
+    }
+    const score = nameWords.length > 0 ? matchCount / nameWords.length : 0
+    if (score > bestScore) {
+      bestScore = score
+      bestMatch = prompt
     }
   }
 
+  // Accept word overlap >= 60%
+  if (bestScore >= 0.6 && bestMatch) {
+    console.log(`[PromptMatch] Word overlap match (${Math.round(bestScore * 100)}%)`)
+    return bestMatch
+  }
+
+  console.log(`[PromptMatch] No match found (best score: ${Math.round(bestScore * 100)}%)`)
   return null
 }
 
@@ -93,16 +135,23 @@ function buildBestFilename(
   maxPromptLength: number
 ): string {
   const parsed = parseFlowEntryName(suggestedFilename)
+  console.log(`[Download] suggestedFilename: "${suggestedFilename}"`)
+  console.log(`[Download] parsed promptText: "${parsed.promptText}", take: ${parsed.takeNumber}`)
+
   const matchedPrompt = matchPromptForFilename(parsed.promptText)
 
   if (matchedPrompt) {
-    return buildCleanFilename(
+    const result = buildCleanFilename(
       { takeNumber: parsed.takeNumber, promptText: matchedPrompt, ext: parsed.ext },
       maxPromptLength
     )
+    console.log(`[Download] -> matched! Final: "${result}"`)
+    return result
   }
 
-  return buildDownloadFilename(suggestedFilename, maxPromptLength)
+  const fallback = buildDownloadFilename(suggestedFilename, maxPromptLength)
+  console.log(`[Download] -> no match, fallback: "${fallback}"`)
+  return fallback
 }
 
 function createWindow(): void {
@@ -246,7 +295,7 @@ export function handleVeo3DownloadComplete(suggestedFilename: string, downloadDi
         folder: downloadDir
       })
     }
-  } else if (['.mp4', '.webm', '.mov'].includes(ext)) {
+  } else if (['.mp4', '.webm', '.mov', '.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
     const currentPath = join(downloadDir, suggestedFilename)
     if (!existsSync(currentPath)) {
       console.log('[DownloadComplete] File not found (likely handled by session):', currentPath)

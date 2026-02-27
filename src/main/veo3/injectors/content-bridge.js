@@ -1075,30 +1075,62 @@
   // Scans all visible tiles for policy violation failures and clicks "Tentar novamente".
   // Called during batch pause (between batches) and after the final batch.
   // Max 3 retry attempts per tile, 13s wait between retries.
+  //
+  // IMPORTANT: Uses tileId strings (not DOM references) to avoid stale reference bugs.
+  // After clicking retry, Google Flow may re-render the tile entirely, making old
+  // DOM references point to detached nodes that still carry failure indicators.
 
   const RETRY_MAX_ATTEMPTS = 3;
-  const RETRY_WAIT_MS = 13000; // 13s to wait after clicking retry before re-checking
+  const RETRY_WAIT_MS = 13000; // 13s total max wait after clicking retry
+  const RETRY_EARLY_CHECK_INTERVAL = 1500; // Poll every 1.5s for early success detection
+  const RETRY_EARLY_CHECK_MAX = 5000; // Give up on early detection after 5s
+
+  // Helper: check if a tile (by ID) has recovered via any signal
+  function checkTileRecovered(tileId) {
+    var freshTile = window.veo3Selectors.getTileById(tileId);
+    // Tile removed from DOM = React replaced it (success)
+    if (!freshTile) return 'removed_from_dom';
+    // Tile now shows generating spinner (success)
+    if (window.veo3Selectors.detectTileGenerating(freshTile)) return 'generating';
+    // Tile no longer shows failure indicators (success)
+    if (!window.veo3Selectors.detectTileFailure(freshTile)) return 'failure_cleared';
+    // Retry button disappeared = tile transitioning (success)
+    if (!window.veo3Selectors.retryButton(freshTile)) return 'button_gone';
+    return null; // still failed
+  }
 
   async function scanAndRetryFailedTiles() {
     const { sleep } = window.veo3Timing;
 
+    // Capture tileId strings (not DOM references) to avoid stale ref problem
     const failedTiles = window.veo3Selectors.failedTiles();
     if (failedTiles.length === 0) {
       console.log('[RETRY] No failed tiles found');
       return { retried: 0, recovered: 0, exhausted: 0 };
     }
 
-    console.log('[RETRY] Found ' + failedTiles.length + ' failed tile(s), starting retry sub-batch...');
-    notifySidepanel('RETRY_SCAN', { failedCount: failedTiles.length });
+    var tileIds = [];
+    for (var t = 0; t < failedTiles.length; t++) {
+      var id = failedTiles[t].getAttribute('data-tile-id');
+      if (id) tileIds.push(id);
+    }
+
+    if (tileIds.length === 0) {
+      console.log('[RETRY] Failed tiles found but none have data-tile-id, skipping');
+      return { retried: 0, recovered: 0, exhausted: 0 };
+    }
+
+    console.log('[RETRY] Found ' + tileIds.length + ' failed tile(s), starting retry sub-batch...');
+    notifySidepanel('RETRY_SCAN', { failedCount: tileIds.length });
 
     var totalRetried = 0;
     var totalRecovered = 0;
     var totalExhausted = 0;
 
-    for (var t = 0; t < failedTiles.length; t++) {
+    for (var t = 0; t < tileIds.length; t++) {
       if (!automationState.running) break;
-      var tile = failedTiles[t];
-      var tileId = tile.getAttribute('data-tile-id') || ('tile_' + t);
+      var tileId = tileIds[t];
+      var shortId = tileId.substring(tileId.length - 8);
 
       for (var attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
         // Handle pause during retry
@@ -1108,13 +1140,24 @@
         }
         if (!automationState.running) break;
 
-        var retryBtn = window.veo3Selectors.retryButton(tile);
-        if (!retryBtn) {
-          console.log('[RETRY] No retry button found in tile ' + tileId);
+        // Check if tile already recovered (e.g., between attempts or from previous batch action)
+        var preCheck = checkTileRecovered(tileId);
+        if (preCheck) {
+          console.log('[RETRY] Tile ' + shortId + ' already recovered before attempt ' + attempt + ' (' + preCheck + ')');
+          notifySidepanel('RETRY_SUCCESS', { tileId: tileId, attempt: attempt });
+          totalRecovered++;
           break;
         }
 
-        console.log('[RETRY] Tile ' + tileId.substring(tileId.length - 8) + ' attempt ' + attempt + '/' + RETRY_MAX_ATTEMPTS);
+        // Fresh DOM query for retry button
+        var freshTile = window.veo3Selectors.getTileById(tileId);
+        var retryBtn = freshTile ? window.veo3Selectors.retryButton(freshTile) : null;
+        if (!retryBtn) {
+          console.log('[RETRY] No retry button found in tile ' + shortId);
+          break;
+        }
+
+        console.log('[RETRY] Tile ' + shortId + ' attempt ' + attempt + '/' + RETRY_MAX_ATTEMPTS);
         notifySidepanel('GENERATION_RETRY', {
           tileId: tileId,
           attempt: attempt,
@@ -1124,20 +1167,43 @@
 
         // Click retry button
         await window.veo3RobustClick(retryBtn);
-        console.log('[RETRY] Clicked retry, waiting ' + (RETRY_WAIT_MS / 1000) + 's...');
-        await sleep(RETRY_WAIT_MS);
+        console.log('[RETRY] Clicked retry, polling for early success...');
 
-        // Re-check if this tile is still failed
-        var stillFailed = window.veo3Selectors.detectTileFailure(tile);
-        if (!stillFailed) {
-          console.log('[RETRY] Tile ' + tileId.substring(tileId.length - 8) + ' RECOVERED after attempt ' + attempt);
+        // Early success polling: check at short intervals for fast state transitions
+        var earlySuccess = null;
+        var earlyStart = Date.now();
+        while (Date.now() - earlyStart < RETRY_EARLY_CHECK_MAX) {
+          await sleep(RETRY_EARLY_CHECK_INTERVAL);
+          earlySuccess = checkTileRecovered(tileId);
+          if (earlySuccess) break;
+        }
+
+        if (earlySuccess) {
+          console.log('[RETRY] Tile ' + shortId + ' RECOVERED after attempt ' + attempt + ' (early: ' + earlySuccess + ')');
+          notifySidepanel('RETRY_SUCCESS', { tileId: tileId, attempt: attempt });
+          totalRecovered++;
+          break;
+        }
+
+        // No early success -- wait the remaining time before final check
+        var elapsed = Date.now() - earlyStart;
+        var remaining = RETRY_WAIT_MS - elapsed;
+        if (remaining > 0) {
+          console.log('[RETRY] No early success, waiting remaining ' + Math.round(remaining / 1000) + 's...');
+          await sleep(remaining);
+        }
+
+        // Final check with fresh DOM query
+        var finalCheck = checkTileRecovered(tileId);
+        if (finalCheck) {
+          console.log('[RETRY] Tile ' + shortId + ' RECOVERED after attempt ' + attempt + ' (' + finalCheck + ')');
           notifySidepanel('RETRY_SUCCESS', { tileId: tileId, attempt: attempt });
           totalRecovered++;
           break;
         }
 
         if (attempt === RETRY_MAX_ATTEMPTS) {
-          console.log('[RETRY] Tile ' + tileId.substring(tileId.length - 8) + ' still FAILED after ' + RETRY_MAX_ATTEMPTS + ' attempts');
+          console.log('[RETRY] Tile ' + shortId + ' still FAILED after ' + RETRY_MAX_ATTEMPTS + ' attempts');
           notifySidepanel('RETRY_EXHAUSTED', { tileId: tileId, attempts: RETRY_MAX_ATTEMPTS });
           totalExhausted++;
         }

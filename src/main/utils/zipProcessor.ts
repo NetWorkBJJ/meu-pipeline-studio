@@ -15,7 +15,10 @@ export interface ZipProcessResult {
   errors: string[]
 }
 
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mov', '.avi', '.mkv'])
+const MEDIA_EXTENSIONS = new Set([
+  '.mp4', '.webm', '.mov', '.avi', '.mkv',
+  '.jpg', '.jpeg', '.png', '.webp'
+])
 
 function resolveCollision(destDir: string, filename: string): string {
   let finalPath = join(destDir, filename)
@@ -63,7 +66,7 @@ export function processVeo3Zip(
     const originalName = basename(entry.entryName)
     const ext = extname(originalName).toLowerCase()
 
-    if (!VIDEO_EXTENSIONS.has(ext)) continue
+    if (!MEDIA_EXTENSIONS.has(ext)) continue
 
     try {
       const parsed = parseFlowEntryName(originalName)

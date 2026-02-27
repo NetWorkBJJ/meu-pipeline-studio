@@ -87,12 +87,20 @@ export function parseFlowEntryName(filename: string): FlowEntryParsed {
   // Remove trailing hash suffix: _HEX (4+ hex chars at end)
   base = base.replace(/_[a-f0-9]{4,}$/i, '')
 
-  // Detect "Take_N" prefix (Google strips parentheses and space)
+  // Detect Take prefix in multiple formats:
+  // - "Take_N" (Google Flow underscore format)
+  // - "(TAKE N)" (our own clean format, in case of re-processing)
   let takeNumber: number | null = null
   const takeMatch = base.match(/^Take_(\d+)/i)
   if (takeMatch) {
     takeNumber = parseInt(takeMatch[1], 10)
     base = base.slice(takeMatch[0].length)
+  } else {
+    const takeParenMatch = base.match(/^\(TAKE\s+(\d+)\)\s*/i)
+    if (takeParenMatch) {
+      takeNumber = parseInt(takeParenMatch[1], 10)
+      base = base.slice(takeParenMatch[0].length)
+    }
   }
 
   // Replace underscores with spaces, collapse whitespace
@@ -115,6 +123,9 @@ export function buildCleanFilename(
   maxLength = 50
 ): string {
   let prompt = sanitizeForFilesystem(parsed.promptText)
+
+  // Defensive: strip any existing "(TAKE N)" from prompt to prevent duplication
+  prompt = prompt.replace(/^\(TAKE\s+\d+\)\s*/i, '').trim()
 
   if (prompt.length > maxLength) {
     prompt = prompt.slice(0, maxLength).replace(/[\s.]+$/, '')

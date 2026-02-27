@@ -85,6 +85,19 @@ export function registerVeo3Handlers(): void {
     }
   })
 
+  ipcMain.handle('veo3:sync-prompt-queue', async (_event, prompts: string[]) => {
+    const { trackSubmittedPrompt } = await import('../index')
+    let added = 0
+    for (const prompt of prompts) {
+      if (prompt && typeof prompt === 'string') {
+        trackSubmittedPrompt(prompt)
+        added++
+      }
+    }
+    console.log(`[veo3:sync-prompt-queue] Synced ${added} prompts from renderer`)
+    return { success: true, count: added }
+  })
+
   ipcMain.handle('veo3:clear-partition', async (_event, partitionName: string) => {
     if (!partitionName.startsWith('persist:veo3-account-')) {
       return { success: false, error: 'Invalid partition name' }

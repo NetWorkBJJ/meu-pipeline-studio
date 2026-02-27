@@ -90,6 +90,15 @@ export interface BatchPauseInfo {
   pauseEndsAt: number
 }
 
+export interface RetryStateInfo {
+  tileId: string
+  attempt: number
+  maxAttempts: number
+  failedCount: number
+  totalMs: number
+  startedAt: number
+}
+
 export interface FlowAutomationState {
   commands: FlowCommand[]
   isRunning: boolean

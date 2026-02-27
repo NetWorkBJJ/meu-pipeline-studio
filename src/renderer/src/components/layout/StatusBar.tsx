@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useLogStore, selectLastLog, selectErrorCount } from '@/stores/useLogStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -20,23 +19,6 @@ export function StatusBar(): React.JSX.Element {
   return (
     <footer className="flex h-8 items-center justify-between border-t border-border bg-bg px-4 text-[11px] text-text-muted">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span className="flex items-center gap-1.5 flex-shrink-0">
-          <motion.span
-            animate={
-              capCutDraftPath
-                ? { scale: [1, 1.3, 1], opacity: [0.7, 1, 0.7] }
-                : { scale: 1, opacity: 0.4 }
-            }
-            transition={capCutDraftPath ? { duration: 2, repeat: Infinity } : {}}
-            className={`inline-block h-2 w-2 rounded-full ${
-              capCutDraftPath ? 'bg-success' : 'bg-text-muted'
-            }`}
-          />
-          <span className="text-text-tertiary">
-            {capCutDraftPath ? 'Python bridge conectado' : 'Desconectado'}
-          </span>
-        </span>
-
         {lastLog && (
           <span className={`min-w-0 truncate ${LOG_TYPE_COLORS[lastLog.type]}`}>
             {lastLog.message}

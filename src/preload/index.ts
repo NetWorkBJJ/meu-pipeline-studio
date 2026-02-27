@@ -196,6 +196,8 @@ const api = {
     ipcRenderer.invoke('veo3:read-image-as-dataurl', filePath),
   veo3ClearPartition: (partition: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('veo3:clear-partition', partition),
+  veo3SyncPromptQueue: (prompts: string[]): Promise<{ success: boolean; count: number }> =>
+    ipcRenderer.invoke('veo3:sync-prompt-queue', prompts),
   onVeo3DownloadComplete: (callback: (data: unknown) => void): (() => void) => {
     const handler = (_event: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('veo3:download-complete', handler)

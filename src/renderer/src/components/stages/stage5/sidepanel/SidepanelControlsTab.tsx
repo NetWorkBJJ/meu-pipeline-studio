@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink } from 'lucide-react'
+import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink, RotateCw } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -38,10 +38,11 @@ export function SidepanelControlsTab({
   } = useVeo3AutomationStore()
 
   const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
-  const { isRunning, isPaused, currentCommandIndex, startedAt, error, chapterFilter, batchPause } = tabState
+  const { isRunning, isPaused, currentCommandIndex, startedAt, error, chapterFilter, batchPause, retryState } = tabState
 
   const [elapsed, setElapsed] = useState('0s')
   const [countdownSeconds, setCountdownSeconds] = useState(0)
+  const [retryCountdown, setRetryCountdown] = useState(0)
 
   useEffect(() => {
     if (!isRunning || !startedAt) return
@@ -62,6 +63,21 @@ export function SidepanelControlsTab({
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
   }, [batchPause])
+
+  useEffect(() => {
+    if (!retryState) {
+      setRetryCountdown(0)
+      return
+    }
+    const tick = (): void => {
+      const elapsed = Date.now() - retryState.startedAt
+      const remaining = Math.max(0, Math.ceil((retryState.totalMs - elapsed) / 1000))
+      setRetryCountdown(remaining)
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [retryState])
 
   const progress = getProgress(tabId)
   const filteredCommands = getFilteredCommands(tabId)
@@ -391,6 +407,51 @@ export function SidepanelControlsTab({
                   initial={false}
                   animate={{
                     width: `${batchPause.totalSeconds > 0 ? (countdownSeconds / batchPause.totalSeconds) * 100 : 0}%`
+                  }}
+                  transition={{ duration: 0.8, ease: 'linear' }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Retry countdown */}
+      <AnimatePresence>
+        {retryState && retryState.attempt > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <RotateCw className="h-3.5 w-3.5 animate-spin text-orange-400" />
+                  <span className="text-[11px] font-medium text-orange-400">
+                    Retry de geracao
+                  </span>
+                </div>
+                <span className="text-[10px] text-orange-400/70">
+                  Tentativa {retryState.attempt}/{retryState.maxAttempts}
+                </span>
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="font-mono text-lg font-semibold text-orange-400">
+                  {Math.floor(retryCountdown / 60)}:{String(retryCountdown % 60).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] text-text-muted">
+                  {retryState.failedCount} tile{retryState.failedCount !== 1 ? 's' : ''} com falha
+                </span>
+              </div>
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-orange-500/10">
+                <motion.div
+                  className="h-full rounded-full bg-orange-500/60"
+                  initial={false}
+                  animate={{
+                    width: `${retryState.totalMs > 0 ? (retryCountdown / (retryState.totalMs / 1000)) * 100 : 0}%`
                   }}
                   transition={{ duration: 0.8, ease: 'linear' }}
                 />

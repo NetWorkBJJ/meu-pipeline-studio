@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FlowCommand, FlowCommandStatus, FlowCharacterImageRef, BatchPauseInfo } from '@/types/veo3'
+import type { FlowCommand, FlowCommandStatus, FlowCharacterImageRef, BatchPauseInfo, RetryStateInfo } from '@/types/veo3'
 import { buildFlowCommands } from '@/lib/flowCommandBuilder'
 import { useProjectStore } from './useProjectStore'
 
@@ -11,6 +11,7 @@ export interface TabAutomationState {
   error: string | null
   chapterFilter: number[] | null
   batchPause: BatchPauseInfo | null
+  retryState: RetryStateInfo | null
 }
 
 export const DEFAULT_TAB_AUTOMATION: TabAutomationState = {
@@ -20,7 +21,8 @@ export const DEFAULT_TAB_AUTOMATION: TabAutomationState = {
   startedAt: null,
   error: null,
   chapterFilter: null,
-  batchPause: null
+  batchPause: null,
+  retryState: null
 }
 
 interface Veo3AutomationState {
@@ -43,6 +45,8 @@ interface Veo3AutomationState {
   setChapterFilter: (tabId: string, chapters: number[] | null) => void
   setBatchPause: (tabId: string, info: BatchPauseInfo) => void
   clearBatchPause: (tabId: string) => void
+  setRetryState: (tabId: string, info: RetryStateInfo) => void
+  clearRetryState: (tabId: string) => void
   assignCommandsToTab: (tabId: string) => void
   getFilteredCommands: (tabId?: string | null) => FlowCommand[]
   getProgress: (tabId?: string | null) => { completed: number; failed: number; total: number; percentage: number }
@@ -127,7 +131,8 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
           currentCommandIndex: 0,
           startedAt: Date.now(),
           error: null,
-          batchPause: null
+          batchPause: null,
+          retryState: null
         }
       }
     }))
@@ -168,6 +173,7 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
             isRunning: false,
             isPaused: false,
             batchPause: null,
+            retryState: null,
             error: error !== undefined ? error : current.error
           }
         }
@@ -207,6 +213,31 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
         tabStates: {
           ...s.tabStates,
           [tabId]: { ...ts, batchPause: null }
+        }
+      }
+    })
+  },
+
+  setRetryState: (tabId, info) => {
+    set((s) => ({
+      tabStates: {
+        ...s.tabStates,
+        [tabId]: {
+          ...(s.tabStates[tabId] || DEFAULT_TAB_AUTOMATION),
+          retryState: info
+        }
+      }
+    }))
+  },
+
+  clearRetryState: (tabId) => {
+    set((s) => {
+      const ts = s.tabStates[tabId]
+      if (!ts || !ts.retryState) return s
+      return {
+        tabStates: {
+          ...s.tabStates,
+          [tabId]: { ...ts, retryState: null }
         }
       }
     })

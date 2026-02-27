@@ -51,6 +51,15 @@ export function Stage5Veo3(): React.JSX.Element {
     }
   }, [scenes.length, automationCommands.length, loadFromProject])
 
+  // Sync automation prompts to main process for download filename matching
+  useEffect(() => {
+    if (automationCommands.length === 0) return
+    const prompts = automationCommands.map((cmd) => cmd.prompt).filter(Boolean)
+    if (prompts.length > 0) {
+      window.api.veo3SyncPromptQueue(prompts)
+    }
+  }, [automationCommands])
+
   // Listen for completed downloads and track them in store
   useEffect(() => {
     const unsub = window.api.onVeo3DownloadComplete(
@@ -272,6 +281,38 @@ export function Stage5Veo3(): React.JSX.Element {
         }
         case 'AUTOMATION_PROGRESS':
           automationStore.clearBatchPause(tabId)
+          break
+        case 'RETRY_SCAN': {
+          const d = data as { failedCount?: number } | undefined
+          if (d?.failedCount) {
+            automationStore.setRetryState(tabId, {
+              tileId: '',
+              attempt: 0,
+              maxAttempts: 3,
+              failedCount: d.failedCount,
+              totalMs: 13000,
+              startedAt: Date.now()
+            })
+          }
+          break
+        }
+        case 'GENERATION_RETRY': {
+          const d = data as { tileId?: string; attempt?: number; maxAttempts?: number } | undefined
+          if (d?.tileId) {
+            automationStore.setRetryState(tabId, {
+              tileId: d.tileId,
+              attempt: d.attempt ?? 1,
+              maxAttempts: d.maxAttempts ?? 3,
+              failedCount: automationStore.getTabState(tabId).retryState?.failedCount ?? 1,
+              totalMs: 13000,
+              startedAt: Date.now()
+            })
+          }
+          break
+        }
+        case 'RETRY_SUCCESS':
+        case 'RETRY_EXHAUSTED':
+          automationStore.clearRetryState(tabId)
           break
         case 'AUTOMATION_STARTED':
         case 'MODE_SWITCH_FAILED':

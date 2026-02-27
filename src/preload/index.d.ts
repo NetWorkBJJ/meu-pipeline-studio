@@ -139,6 +139,7 @@ interface ElectronAppAPI {
   veo3GetDownloadPath: () => Promise<string>
   veo3ReadImageAsDataUrl: (filePath: string) => Promise<string | null>
   veo3ClearPartition: (partition: string) => Promise<{ success: boolean; error?: string }>
+  veo3SyncPromptQueue: (prompts: string[]) => Promise<{ success: boolean; count: number }>
   onVeo3DownloadComplete: (callback: (data: unknown) => void) => () => void
 
   // AI33.pro

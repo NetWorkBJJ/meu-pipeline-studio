@@ -266,6 +266,24 @@
              text.includes('violate');
     },
 
+    // Detect if a specific tile is in "generating/loading" state (retry worked, generation in progress)
+    // Checks for progress_activity icon, which Google Flow renders as a spinning indicator.
+    detectTileGenerating: (tile) => {
+      const icons = tile.querySelectorAll('i.google-symbols, i.material-icons, span.google-symbols');
+      for (const icon of icons) {
+        if (icon.textContent.trim() === 'progress_activity') {
+          return true;
+        }
+      }
+      return false;
+    },
+
+    // Re-query a tile from the live DOM by its data-tile-id attribute.
+    // Returns null if the tile no longer exists (was removed/replaced by React re-render).
+    getTileById: (tileId) => {
+      return document.querySelector('[data-tile-id="' + tileId + '"]');
+    },
+
     // Return all tiles with generation failure
     failedTiles: () => {
       const tiles = document.querySelectorAll('[data-tile-id]');
