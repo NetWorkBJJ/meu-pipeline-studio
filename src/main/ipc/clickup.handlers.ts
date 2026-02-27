@@ -8,7 +8,7 @@ import { createClickUpService, type ClickUpService } from '../services/clickup.s
 // ---------------------------------------------------------------------------
 
 function getAppDir(): string {
-  return join(app.getPath('appData'), 'meu-pipeline-studio')
+  return join(app.getPath('appData'), 'workflowaa')
 }
 
 function getApiKeyPath(): string {
@@ -39,7 +39,7 @@ export function registerClickUpHandlers(): void {
 
   ipcMain.handle('clickup:save-api-key', async (_event, apiKey: string) => {
     const encrypted = safeStorage.encryptString(apiKey)
-    const dir = join(app.getPath('appData'), 'meu-pipeline-studio')
+    const dir = join(app.getPath('appData'), 'workflowaa')
     await mkdir(dir, { recursive: true })
     await writeFile(getApiKeyPath(), encrypted)
     return { success: true }

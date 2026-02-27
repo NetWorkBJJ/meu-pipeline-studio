@@ -24,7 +24,7 @@ interface CdpTestResult {
   error?: string
 }
 
-type DownloadCompleteCallback = (suggestedFilename: string, downloadDir: string) => void
+type DownloadCompleteCallback = (suggestedFilename: string, downloadDir: string) => void | Promise<void>
 
 interface AttachOptions {
   downloadPath?: string

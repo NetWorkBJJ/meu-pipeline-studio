@@ -51,12 +51,14 @@ export function Stage5Veo3(): React.JSX.Element {
     }
   }, [scenes.length, automationCommands.length, loadFromProject])
 
-  // Sync automation prompts to main process for download filename matching
+  // Sync automation prompts + scene indices to main process for download filename matching
   useEffect(() => {
     if (automationCommands.length === 0) return
-    const prompts = automationCommands.map((cmd) => cmd.prompt).filter(Boolean)
-    if (prompts.length > 0) {
-      window.api.veo3SyncPromptQueue(prompts)
+    const items = automationCommands
+      .filter((cmd) => cmd.prompt)
+      .map((cmd) => ({ prompt: cmd.prompt, sceneIndex: cmd.sceneIndex }))
+    if (items.length > 0) {
+      window.api.veo3SyncPromptQueue(items)
     }
   }, [automationCommands])
 

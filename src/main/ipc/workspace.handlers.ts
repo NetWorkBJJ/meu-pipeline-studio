@@ -39,7 +39,7 @@ interface WorkspaceConfig {
 }
 
 function getRegistryPath(): string {
-  return join(app.getPath('appData'), 'meu-pipeline-studio', 'workspace-registry.json')
+  return join(app.getPath('appData'), 'workflowaa', 'workspace-registry.json')
 }
 
 function getDefaultCapCutPath(): string {
@@ -76,7 +76,7 @@ async function readRegistry(): Promise<WorkspaceRegistryEntry[]> {
 
 async function writeRegistry(entries: WorkspaceRegistryEntry[]): Promise<void> {
   const registryPath = getRegistryPath()
-  await ensureDir(join(app.getPath('appData'), 'meu-pipeline-studio'))
+  await ensureDir(join(app.getPath('appData'), 'workflowaa'))
   await writeFile(registryPath, JSON.stringify(entries, null, 2), 'utf-8')
 }
 
@@ -199,7 +199,7 @@ async function createDefaultWorkspace(): Promise<WorkspaceRegistryEntry | null> 
   const now = new Date().toISOString()
   const workspacePath = join(
     app.getPath('appData'),
-    'meu-pipeline-studio',
+    'workflowaa',
     'workspaces',
     'capcut-default'
   )

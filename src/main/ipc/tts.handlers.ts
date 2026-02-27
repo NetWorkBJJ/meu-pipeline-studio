@@ -4,7 +4,7 @@ import { join } from 'path'
 import { callPython } from '../python/bridge'
 
 function getApiKeyPath(): string {
-  return join(app.getPath('appData'), 'meu-pipeline-studio', 'gemini-api-key.enc')
+  return join(app.getPath('appData'), 'workflowaa', 'gemini-api-key.enc')
 }
 
 async function decryptApiKey(): Promise<string> {
@@ -18,7 +18,7 @@ export function registerTtsHandlers(): void {
 
   ipcMain.handle('tts:save-api-key', async (_event, apiKey: string) => {
     const encrypted = safeStorage.encryptString(apiKey)
-    const dir = join(app.getPath('appData'), 'meu-pipeline-studio')
+    const dir = join(app.getPath('appData'), 'workflowaa')
     await mkdir(dir, { recursive: true })
     await writeFile(getApiKeyPath(), encrypted)
     return { success: true }
@@ -69,7 +69,7 @@ export function registerTtsHandlers(): void {
 
       let outputDir = params.outputDir
       if (!outputDir) {
-        const baseDir = join(app.getPath('appData'), 'meu-pipeline-studio', 'tts-output')
+        const baseDir = join(app.getPath('appData'), 'workflowaa', 'tts-output')
         await mkdir(baseDir, { recursive: true })
         outputDir = join(baseDir, `tts-${Date.now()}`)
         await mkdir(outputDir, { recursive: true })

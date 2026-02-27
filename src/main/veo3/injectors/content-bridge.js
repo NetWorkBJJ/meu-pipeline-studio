@@ -1308,6 +1308,87 @@
     }
   }
 
+  // === DOWNLOAD CONTEXT INTERCEPTOR ===
+  // Captures the prompt text from the gallery tile when the user clicks a download button.
+  // Stores contexts in window.__veo3_downloadContexts[] (FIFO queue).
+  // The main process reads this via CDP evaluate to assign correct (TAKE N) names.
+
+  window.__veo3_downloadContexts = [];
+
+  function findPromptFromTile(element) {
+    // Strategy 1: traverse up from download button to a [data-tile-id] tile,
+    // then up to the parent [data-item-index] prompt history entry
+    var tile = element.closest('[data-tile-id]');
+    var historyEntry = element.closest('[data-item-index]');
+
+    if (!historyEntry && tile) {
+      historyEntry = tile.closest('[data-item-index]');
+    }
+
+    if (historyEntry) {
+      // The prompt history entry text contains the prompt + UI labels.
+      // Look for the longest text block that isn't a UI label.
+      var textNodes = [];
+      var walker = document.createTreeWalker(historyEntry, NodeFilter.SHOW_TEXT, null, false);
+      var node;
+      while ((node = walker.nextNode())) {
+        var text = node.textContent.trim();
+        // Filter out UI labels: icon text, button labels, short fragments
+        if (text.length > 20 && !text.includes('reutilizar') && !text.includes('reuse') &&
+            !text.includes('delete_forever') && !text.includes('progress_activity') &&
+            !text.includes('download') && !text.includes('save_alt') &&
+            !text.includes('content_copy') && !text.includes('share')) {
+          textNodes.push(text);
+        }
+      }
+      // Pick the longest text node (most likely the prompt)
+      if (textNodes.length > 0) {
+        textNodes.sort(function (a, b) { return b.length - a.length; });
+        return textNodes[0];
+      }
+    }
+
+    // Strategy 2: try tooltip or aria-label on the tile itself
+    if (tile) {
+      var title = tile.getAttribute('title') || tile.getAttribute('aria-label') || '';
+      if (title.length > 10) return title;
+    }
+
+    return null;
+  }
+
+  document.addEventListener('click', function (e) {
+    // Detect download button clicks by checking for download-related icons
+    var btn = e.target.closest('button, a[download]');
+    if (!btn) return;
+
+    var icon = btn.querySelector('i.google-symbols, i.material-icons, span.google-symbols');
+    var iconText = icon ? icon.textContent.trim().toLowerCase() : '';
+    var ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+
+    var isDownload = iconText === 'download' || iconText === 'save_alt' ||
+      iconText === 'file_download' || iconText === 'download_for_offline' ||
+      ariaLabel.includes('download') || ariaLabel.includes('baixar') ||
+      ariaLabel.includes('salvar') || btn.hasAttribute('download');
+
+    if (!isDownload) return;
+
+    var prompt = findPromptFromTile(btn);
+    if (prompt && prompt.length > 5) {
+      window.__veo3_downloadContexts.push({
+        prompt: prompt,
+        timestamp: Date.now()
+      });
+      console.log('[Flow] Download context captured: "' + prompt.substring(0, 80) + '..."');
+
+      // Cleanup old entries (> 60 seconds)
+      var cutoff = Date.now() - 60000;
+      while (window.__veo3_downloadContexts.length > 0 && window.__veo3_downloadContexts[0].timestamp < cutoff) {
+        window.__veo3_downloadContexts.shift();
+      }
+    }
+  }, true); // capture phase - fires before the download starts
+
   // === INITIALIZATION ===
 
   console.log('[Flow] Content bridge loaded - ready for commands');

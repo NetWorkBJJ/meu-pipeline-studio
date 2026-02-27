@@ -542,7 +542,7 @@ export class Ai33Service {
     fileName?: string
   ): Promise<{ localPath: string; size: number }> {
     const outputDir =
-      destDir || join(app.getPath('appData'), 'meu-pipeline-studio', 'ai33-output')
+      destDir || join(app.getPath('appData'), 'workflowaa', 'ai33-output')
     await mkdir(outputDir, { recursive: true })
 
     const resolvedName =

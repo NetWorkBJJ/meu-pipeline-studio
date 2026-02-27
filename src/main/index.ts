@@ -37,18 +37,41 @@ export function setVeo3DownloadPath(p: string): void {
   veo3DownloadPath = p
 }
 
-// --- Prompt queue: maps submitted prompts to downloads ---
-const submittedPrompts: string[] = []
-const MAX_PROMPT_QUEUE = 200
+// --- Prompt queue: maps submitted prompts + scene index to downloads ---
+export interface TrackedPrompt {
+  prompt: string
+  sceneIndex: number
+}
 
-export function trackSubmittedPrompt(prompt: string): void {
+const submittedPrompts: TrackedPrompt[] = []
+const MAX_PROMPT_QUEUE = 5000
+let autoSceneCounter = 0
+
+export function trackSubmittedPrompt(prompt: string, sceneIndex?: number): void {
   // Avoid duplicates (renderer may re-sync on mount)
-  if (submittedPrompts.includes(prompt)) return
-  submittedPrompts.push(prompt)
-  console.log(`[PromptQueue] Tracked prompt (${submittedPrompts.length} total): "${prompt.substring(0, 60)}..."`)
+  if (submittedPrompts.some((p) => p.prompt === prompt)) return
+  const idx = sceneIndex ?? autoSceneCounter++
+  submittedPrompts.push({ prompt, sceneIndex: idx })
+  console.log(
+    `[PromptQueue] Tracked prompt #${idx} (${submittedPrompts.length} total): "${prompt.substring(0, 60)}..."`
+  )
   if (submittedPrompts.length > MAX_PROMPT_QUEUE) {
     submittedPrompts.splice(0, submittedPrompts.length - MAX_PROMPT_QUEUE)
   }
+}
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+  'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'be',
+  'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+  'would', 'could', 'should', 'may', 'might', 'shall', 'can',
+  'not', 'no', 'nor', 'so', 'if', 'then', 'than', 'that', 'this',
+  'these', 'those', 'it', 'its', 'he', 'she', 'his', 'her', 'their',
+  'our', 'your', 'my', 'up', 'out', 'off', 'over', 'under', 'into'
+])
+
+function filterContentWords(words: string[]): string[] {
+  return words.filter((w) => w.length >= 3 && !STOP_WORDS.has(w))
 }
 
 function normalizeForMatching(text: string): string {
@@ -63,9 +86,9 @@ function normalizeForMatching(text: string): string {
  * Match a parsed download filename against submitted prompts.
  * Google Flow may truncate, summarize, or reorder prompt text in filenames.
  * Uses multiple strategies: prefix, substring, word overlap.
- * Returns the full prompt if matched, null otherwise.
+ * Returns the tracked prompt (with sceneIndex) if matched, null otherwise.
  */
-function matchPromptForFilename(parsedPromptText: string): string | null {
+export function matchPromptForFilename(parsedPromptText: string): TrackedPrompt | null {
   if (submittedPrompts.length === 0) {
     console.log('[PromptMatch] Queue empty - no prompts tracked')
     return null
@@ -76,59 +99,71 @@ function matchPromptForFilename(parsedPromptText: string): string | null {
 
   console.log(`[PromptMatch] Matching "${normalized}" against ${submittedPrompts.length} prompts`)
 
-  const nameWords = normalized.split(' ').filter((w) => w.length > 1)
-  let bestMatch: string | null = null
+  // Prepare filename words: content words for scoring, all words as fallback
+  const allNameWords = normalized.split(' ').filter((w) => w.length >= 2)
+  const nameContentWords = filterContentWords(allNameWords)
+  // Use content words if enough are available (>= 2), otherwise fall back to all words
+  const nameWords = nameContentWords.length >= 2 ? nameContentWords : allNameWords
+
+  let bestMatch: TrackedPrompt | null = null
   let bestScore = 0
 
-  for (const prompt of submittedPrompts) {
-    const normalizedPrompt = normalizeForMatching(prompt)
+  for (const tracked of submittedPrompts) {
+    const normalizedPrompt = normalizeForMatching(tracked.prompt)
 
     // Strategy 1: exact prefix match (prompt starts with filename text)
     if (normalizedPrompt.startsWith(normalized)) {
-      console.log(`[PromptMatch] Prefix match found`)
-      return prompt
+      console.log(`[PromptMatch] Prefix match found (scene ${tracked.sceneIndex})`)
+      return tracked
     }
 
     // Strategy 2: prefix without leading article
     const withoutArticle = normalizedPrompt.replace(/^(a|an|the)\s+/, '')
     if (withoutArticle.startsWith(normalized)) {
-      console.log(`[PromptMatch] Prefix match (no article) found`)
-      return prompt
+      console.log(`[PromptMatch] Prefix match (no article) found (scene ${tracked.sceneIndex})`)
+      return tracked
     }
 
     // Strategy 3: filename is a substring of the prompt
     if (normalizedPrompt.includes(normalized)) {
-      console.log(`[PromptMatch] Substring match found`)
-      return prompt
+      console.log(`[PromptMatch] Substring match found (scene ${tracked.sceneIndex})`)
+      return tracked
     }
 
-    // Strategy 4: word overlap scoring
-    const promptWords = new Set(normalizedPrompt.split(' ').filter((w) => w.length > 1))
+    // Strategy 4: word overlap scoring with stop word filtering
+    const promptContentWords = new Set(
+      filterContentWords(normalizedPrompt.split(' ').filter((w) => w.length >= 2))
+    )
     let matchCount = 0
     for (const word of nameWords) {
-      if (promptWords.has(word)) matchCount++
+      if (promptContentWords.has(word)) matchCount++
     }
     const score = nameWords.length > 0 ? matchCount / nameWords.length : 0
     if (score > bestScore) {
       bestScore = score
-      bestMatch = prompt
+      bestMatch = tracked
     }
   }
 
-  // Accept word overlap >= 60%
-  if (bestScore >= 0.6 && bestMatch) {
-    console.log(`[PromptMatch] Word overlap match (${Math.round(bestScore * 100)}%)`)
+  // Dynamic threshold: lower for short filenames (fewer content words = less data to match)
+  const threshold = nameContentWords.length <= 3 ? 0.5 : 0.55
+
+  if (bestScore >= threshold && bestMatch) {
+    console.log(
+      `[PromptMatch] Word overlap match (${Math.round(bestScore * 100)}%, scene ${bestMatch.sceneIndex}, threshold ${Math.round(threshold * 100)}%)`
+    )
     return bestMatch
   }
 
-  console.log(`[PromptMatch] No match found (best score: ${Math.round(bestScore * 100)}%)`)
+  console.log(`[PromptMatch] No match found (best score: ${Math.round(bestScore * 100)}%, threshold: ${Math.round(threshold * 100)}%)`)
   return null
 }
 
 /**
  * Build the best possible filename for a download.
- * Tries to match against submitted prompts for full prompt text,
+ * Tries to match against submitted prompts for full prompt text + sceneIndex,
  * falls back to Flow-parsed filename.
+ * TAKE priority: sceneIndex (from project) > filename Take_N > fallback
  */
 function buildBestFilename(
   suggestedFilename: string,
@@ -138,20 +173,62 @@ function buildBestFilename(
   console.log(`[Download] suggestedFilename: "${suggestedFilename}"`)
   console.log(`[Download] parsed promptText: "${parsed.promptText}", take: ${parsed.takeNumber}`)
 
-  const matchedPrompt = matchPromptForFilename(parsed.promptText)
+  const matched = matchPromptForFilename(parsed.promptText)
 
-  if (matchedPrompt) {
+  if (matched) {
+    // Use sceneIndex+1 as TAKE (project order), fall back to filename TAKE
+    const takeNumber = matched.sceneIndex + 1
     const result = buildCleanFilename(
-      { takeNumber: parsed.takeNumber, promptText: matchedPrompt, ext: parsed.ext },
+      { takeNumber, promptText: matched.prompt, ext: parsed.ext },
       maxPromptLength
     )
-    console.log(`[Download] -> matched! Final: "${result}"`)
+    console.log(`[Download] -> matched scene ${matched.sceneIndex}! Final: "${result}"`)
     return result
   }
 
   const fallback = buildDownloadFilename(suggestedFilename, maxPromptLength)
   console.log(`[Download] -> no match, fallback: "${fallback}"`)
   return fallback
+}
+
+/**
+ * Read download context captured by content-bridge's click interceptor.
+ * Returns the prompt text from the gallery tile where download was clicked.
+ * Uses CDP evaluate to read window.__veo3_downloadContexts[] (FIFO queue).
+ */
+async function readDownloadContextFromPage(): Promise<string | null> {
+  try {
+    const { cdpCore } = await import('./veo3/cdp-core')
+    if (!cdpCore.isAttached()) return null
+
+    const result = await cdpCore.evaluate<{ prompt: string; timestamp: number } | null>(`
+      (() => {
+        const q = window.__veo3_downloadContexts;
+        if (!q || q.length === 0) return null;
+        return q.shift();
+      })()
+    `)
+
+    if (result && result.prompt && Date.now() - result.timestamp < 30000) {
+      console.log(`[Download] CDP context: "${result.prompt.substring(0, 80)}..."`)
+      return result.prompt
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function resolveFileCollision(dir: string, filename: string): string {
+  let fullPath = join(dir, filename)
+  if (!existsSync(fullPath)) return fullPath
+  const ext = extname(filename)
+  const base = basename(filename, ext)
+  let version = 2
+  while (existsSync(join(dir, `${base}_v${version}${ext}`))) {
+    version++
+  }
+  return join(dir, `${base}_v${version}${ext}`)
 }
 
 function createWindow(): void {
@@ -219,31 +296,22 @@ function handleVeo3Download(_event: Electron.Event, item: Electron.DownloadItem)
   }
 
   const originalFilename = item.getFilename()
-  const filename = buildBestFilename(originalFilename, 150)
 
-  let savePath = join(veo3DownloadPath, filename)
-  if (existsSync(savePath)) {
-    const ext = extname(filename)
-    const base = basename(filename, ext)
-    let version = 2
-    while (existsSync(join(veo3DownloadPath, `${base}_v${version}${ext}`))) {
-      version++
-    }
-    savePath = join(veo3DownloadPath, `${base}_v${version}${ext}`)
-  }
+  // First pass: synchronous naming from filename matching (best effort)
+  const firstPassName = buildBestFilename(originalFilename, 150)
+  const savePath = resolveFileCollision(veo3DownloadPath, firstPassName)
 
   item.setSavePath(savePath)
 
-  item.on('done', (_e, state) => {
+  item.on('done', async (_e, state) => {
     if (state !== 'completed' || !mainWindow) return
 
     const ext = extname(savePath).toLowerCase()
     if (ext === '.zip') {
-      // Extract ZIP, rename contents, notify renderer for each file
       const result = processVeo3Zip(savePath, veo3DownloadPath, {
         deleteZipAfter: true,
         maxPromptLength: 150,
-        matchPrompt: matchPromptForFilename
+        matchPrompt: (text) => matchPromptForFilename(text)
       })
       for (const file of result.extractedFiles) {
         mainWindow.webContents.send('veo3:download-complete', {
@@ -253,23 +321,49 @@ function handleVeo3Download(_event: Electron.Event, item: Electron.DownloadItem)
           folder: veo3DownloadPath
         })
       }
-    } else {
-      // Individual file download
-      mainWindow.webContents.send('veo3:download-complete', {
-        path: savePath,
-        filename: basename(savePath),
-        originalFilename,
-        folder: veo3DownloadPath
-      })
+      return
     }
+
+    // Second pass: if first pass didn't produce a (TAKE N) name, try CDP context
+    let finalPath = savePath
+    const hasGoodName = basename(savePath).startsWith('(TAKE ')
+
+    if (!hasGoodName) {
+      const contextPrompt = await readDownloadContextFromPage()
+      if (contextPrompt) {
+        const matched = matchPromptForFilename(contextPrompt)
+        if (matched) {
+          const betterName = buildCleanFilename(
+            { takeNumber: matched.sceneIndex + 1, promptText: matched.prompt, ext: extname(originalFilename) },
+            150
+          )
+          const betterPath = resolveFileCollision(veo3DownloadPath, betterName)
+          try {
+            renameSync(savePath, betterPath)
+            finalPath = betterPath
+            console.log(`[Download] CDP rename: "${basename(betterPath)}"`)
+          } catch (err) {
+            console.error('[Download] CDP rename failed:', err)
+          }
+        }
+      }
+    }
+
+    mainWindow.webContents.send('veo3:download-complete', {
+      path: finalPath,
+      filename: basename(finalPath),
+      originalFilename,
+      folder: veo3DownloadPath
+    })
   })
 }
 
 /**
  * Handle a completed CDP-tracked download: rename files and extract ZIPs.
  * Passed as callback to cdp-core's download tracking.
+ * Also tries CDP context (from content-bridge interceptor) for better naming.
  */
-export function handleVeo3DownloadComplete(suggestedFilename: string, downloadDir: string): void {
+export async function handleVeo3DownloadComplete(suggestedFilename: string, downloadDir: string): Promise<void> {
   if (!suggestedFilename || !mainWindow) return
 
   const ext = extname(suggestedFilename).toLowerCase()
@@ -284,7 +378,7 @@ export function handleVeo3DownloadComplete(suggestedFilename: string, downloadDi
     const result = processVeo3Zip(zipPath, downloadDir, {
       deleteZipAfter: true,
       maxPromptLength: 150,
-      matchPrompt: matchPromptForFilename
+      matchPrompt: (text) => matchPromptForFilename(text)
     })
 
     for (const file of result.extractedFiles) {
@@ -302,18 +396,25 @@ export function handleVeo3DownloadComplete(suggestedFilename: string, downloadDi
       return
     }
 
-    const cleanName = buildBestFilename(suggestedFilename, 150)
-    let finalPath = join(downloadDir, cleanName)
+    // First pass: filename-based matching
+    let cleanName = buildBestFilename(suggestedFilename, 150)
 
-    if (existsSync(finalPath) && finalPath !== currentPath) {
-      const fileExt = extname(cleanName)
-      const fileBase = basename(cleanName, fileExt)
-      let version = 2
-      while (existsSync(join(downloadDir, `${fileBase}_v${version}${fileExt}`))) {
-        version++
+    // Second pass: if no (TAKE N), try CDP context
+    if (!cleanName.startsWith('(TAKE ')) {
+      const contextPrompt = await readDownloadContextFromPage()
+      if (contextPrompt) {
+        const matched = matchPromptForFilename(contextPrompt)
+        if (matched) {
+          cleanName = buildCleanFilename(
+            { takeNumber: matched.sceneIndex + 1, promptText: matched.prompt, ext: extname(suggestedFilename) },
+            150
+          )
+          console.log(`[DownloadComplete] CDP context matched scene ${matched.sceneIndex}`)
+        }
       }
-      finalPath = join(downloadDir, `${fileBase}_v${version}${fileExt}`)
     }
+
+    let finalPath = resolveFileCollision(downloadDir, cleanName)
 
     if (currentPath !== finalPath) {
       try {
@@ -342,12 +443,12 @@ function setupVeo3Downloads(): void {
 
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.meupipeline.studio')
+    app.setAppUserModelId('com.workflowaa.app')
   }
 
   // Initialize download path: use persisted value or default
   const persistedPath = loadPersistedDownloadPath()
-  veo3DownloadPath = persistedPath || join(app.getPath('downloads'), 'MeuPipeline', 'midias')
+  veo3DownloadPath = persistedPath || join(app.getPath('downloads'), 'WorkFlowAA', 'midias')
 
   setupWebviewSecurity()
   setupVeo3Downloads()

@@ -19,7 +19,7 @@ let logFilePath = ''
 
 async function ensureLogFile(): Promise<void> {
   if (logFilePath) return
-  const logDir = join(app.getPath('appData'), 'meu-pipeline-studio', 'logs')
+  const logDir = join(app.getPath('appData'), 'workflowaa', 'logs')
   await mkdir(logDir, { recursive: true })
   const date = new Date().toISOString().split('T')[0]
   logFilePath = join(logDir, `bridge-node-${date}.log`)
@@ -46,6 +46,9 @@ function summarize(obj: unknown, maxLen = 200): string {
 }
 
 function getPythonPath(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'python', 'python.exe')
+  }
   return 'python'
 }
 
@@ -60,12 +63,28 @@ export function startPythonBridge(): void {
   if (pythonProcess) return
 
   const scriptPath = getScriptPath()
-  pythonProcess = spawn(getPythonPath(), [scriptPath], {
+  const pythonPath = getPythonPath()
+
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    PYTHONUTF8: '1',
+    PYTHONDONTWRITEBYTECODE: '1'
+  }
+
+  if (app.isPackaged) {
+    env.PYTHONPATH = join(process.resourcesPath, 'executions')
+  }
+
+  pythonProcess = spawn(pythonPath, [scriptPath], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, PYTHONUTF8: '1' }
+    cwd: app.isPackaged ? join(process.resourcesPath, 'executions') : undefined,
+    env
   })
 
-  bridgeLog('INFO', `Python bridge started (script=${scriptPath}, pid=${pythonProcess.pid})`)
+  bridgeLog(
+    'INFO',
+    `Python bridge started (python=${pythonPath}, script=${scriptPath}, pid=${pythonProcess.pid})`
+  )
 
   const stdoutDecoder = new StringDecoder('utf8')
   pythonProcess.stdout?.on('data', (data: Buffer) => {

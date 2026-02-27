@@ -81,14 +81,14 @@ export function registerCdpHandlers(): void {
     }
   })
 
-  ipcMain.handle('cdp:fill-prompt', async (_event, text: string) => {
+  ipcMain.handle('cdp:fill-prompt', async (_event, text: string, sceneIndex?: number) => {
     try {
       if (!cdpCore.isAttached()) {
         return { success: false, error: 'CDP not attached' }
       }
       const result = await cdpCore.fillPrompt(text)
       if (result.success) {
-        trackSubmittedPrompt(text)
+        trackSubmittedPrompt(text, sceneIndex)
       }
       return result
     } catch (err) {

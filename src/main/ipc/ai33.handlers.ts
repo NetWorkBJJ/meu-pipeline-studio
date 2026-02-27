@@ -8,7 +8,7 @@ import { createAi33Service, type Ai33Service } from '../services/ai33.service'
 // ---------------------------------------------------------------------------
 
 function getApiKeyPath(): string {
-  return join(app.getPath('appData'), 'meu-pipeline-studio', 'ai33-api-key.enc')
+  return join(app.getPath('appData'), 'workflowaa', 'ai33-api-key.enc')
 }
 
 async function decryptApiKey(): Promise<string> {
@@ -52,7 +52,7 @@ export function registerAi33Handlers(): void {
 
   ipcMain.handle('ai33:save-api-key', async (_event, apiKey: string) => {
     const encrypted = safeStorage.encryptString(apiKey)
-    const dir = join(app.getPath('appData'), 'meu-pipeline-studio')
+    const dir = join(app.getPath('appData'), 'workflowaa')
     await mkdir(dir, { recursive: true })
     await writeFile(getApiKeyPath(), encrypted)
     return { success: true }

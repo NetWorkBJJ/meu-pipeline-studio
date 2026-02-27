@@ -5,7 +5,7 @@ import { join, normalize, resolve, extname } from 'path'
 import { getVeo3DownloadPath, setVeo3DownloadPath } from '../index'
 
 function getDownloadPathConfigFile(): string {
-  const configDir = join(app.getPath('appData'), 'meu-pipeline-studio')
+  const configDir = join(app.getPath('appData'), 'workflowaa')
   if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true })
   return join(configDir, 'veo3-download-path.txt')
 }
@@ -85,18 +85,21 @@ export function registerVeo3Handlers(): void {
     }
   })
 
-  ipcMain.handle('veo3:sync-prompt-queue', async (_event, prompts: string[]) => {
-    const { trackSubmittedPrompt } = await import('../index')
-    let added = 0
-    for (const prompt of prompts) {
-      if (prompt && typeof prompt === 'string') {
-        trackSubmittedPrompt(prompt)
-        added++
+  ipcMain.handle(
+    'veo3:sync-prompt-queue',
+    async (_event, items: Array<{ prompt: string; sceneIndex: number }>) => {
+      const { trackSubmittedPrompt } = await import('../index')
+      let added = 0
+      for (const item of items) {
+        if (item && item.prompt && typeof item.prompt === 'string') {
+          trackSubmittedPrompt(item.prompt, item.sceneIndex)
+          added++
+        }
       }
+      console.log(`[veo3:sync-prompt-queue] Synced ${added} prompts from renderer`)
+      return { success: true, count: added }
     }
-    console.log(`[veo3:sync-prompt-queue] Synced ${added} prompts from renderer`)
-    return { success: true, count: added }
-  })
+  )
 
   ipcMain.handle('veo3:clear-partition', async (_event, partitionName: string) => {
     if (!partitionName.startsWith('persist:veo3-account-')) {

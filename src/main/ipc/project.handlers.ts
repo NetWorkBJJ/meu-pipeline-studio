@@ -23,7 +23,7 @@ export function registerProjectHandlers(): void {
     const result = await dialog.showSaveDialog({
       title: 'Salvar projeto',
       defaultPath: 'projeto.mps.json',
-      filters: [{ name: 'MEU Pipeline Studio', extensions: ['mps.json'] }]
+      filters: [{ name: 'WorkFlowAA', extensions: ['mps.json'] }]
     })
     if (result.canceled || !result.filePath) return
     await writeFile(result.filePath, data, 'utf-8')

@@ -1,5 +1,5 @@
-appId: com.meupipeline.studio
-productName: MEU Pipeline Studio
+appId: com.workflowaa.app
+productName: WorkFlowAA
 directories:
   buildResources: build
 files:
@@ -9,10 +9,30 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!resources/python-embed/**'
+  - '!executions/**'
+  - '!scripts/**'
+  - '!directives/**'
 asarUnpack:
   - resources/**
+extraResources:
+  - from: executions
+    to: executions
+    filter:
+      - '**/*.py'
+      - '**/*.json'
+      - '**/*.txt'
+      - '!__pycache__/**'
+      - '!**/*.pyc'
+  - from: src/main/veo3/injectors
+    to: veo3-injectors
+    filter:
+      - '**/*.js'
+      - '!tests/**'
+  - from: resources/python-embed
+    to: python
 win:
-  executableName: meu-pipeline-studio
+  executableName: workflowaa
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

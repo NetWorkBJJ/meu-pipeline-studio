@@ -15,7 +15,7 @@ def _setup_logging():
     """Configure structured logging to file and stderr."""
     log_dir = Path(
         os.environ.get("APPDATA", "")
-    ) / "meu-pipeline-studio" / "logs"
+    ) / "workflowaa" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Cleanup old logs (keep last 7 days)

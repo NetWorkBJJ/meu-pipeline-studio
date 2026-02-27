@@ -141,7 +141,7 @@ export class ClickUpService {
     fileName?: string
   ): Promise<DownloadResult> {
     const outputDir =
-      destDir || join(app.getPath('appData'), 'meu-pipeline-studio', 'clickup-downloads')
+      destDir || join(app.getPath('appData'), 'workflowaa', 'clickup-downloads')
     await mkdir(outputDir, { recursive: true })
 
     const resolvedName = fileName || `clickup-${Date.now()}${extFromUrl(url)}`

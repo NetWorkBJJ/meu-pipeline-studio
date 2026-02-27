@@ -5,7 +5,6 @@ import { TopBar } from './TopBar'
 import { StageProgress } from './StageProgress'
 import { ProjectSummaryBar } from './ProjectSummaryBar'
 import { TimelinePanel } from '../timeline/TimelinePanel'
-import { StatusBar } from './StatusBar'
 import { useStageStore } from '@/stores/useStageStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -160,7 +159,6 @@ export function PipelineWorkspace(): React.JSX.Element {
       )}
 
       {!isVeo3Stage && <TimelinePanel />}
-      <StatusBar />
     </div>
   )
 }
