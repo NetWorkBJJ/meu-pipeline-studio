@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   X,
@@ -16,6 +16,12 @@ import { ClickUpBrowser } from './ClickUpBrowser'
 import type { ClickUpTask, ClickUpAttachment } from '@/types/clickup'
 import { classifyAttachment, SCRIPT_EXTENSIONS } from '@/types/clickup'
 
+interface ClickUpDefaultListConfig {
+  listId: string
+  listName: string
+  breadcrumb: string
+}
+
 interface ClickUpImportModalProps {
   onClose: () => void
   onImported?: () => void
@@ -28,10 +34,34 @@ export function ClickUpImportModal({
   const { addToast } = useUIStore()
   const { setRawScript, setClickUpTaskRef } = useProjectStore()
 
+  const [defaultList, setDefaultList] = useState<ClickUpDefaultListConfig | null>(null)
+  const [defaultListLoaded, setDefaultListLoaded] = useState(false)
   const [selectedTask, setSelectedTask] = useState<ClickUpTask | null>(null)
   const [selectedScript, setSelectedScript] = useState<ClickUpAttachment | null>(null)
   const [selectedCharacters, setSelectedCharacters] = useState<Set<string>>(new Set())
   const [importing, setImporting] = useState(false)
+
+  // Load default list config on mount
+  useEffect(() => {
+    window.api
+      .clickupGetDefaultList()
+      .then((res) => {
+        const config = res as ClickUpDefaultListConfig | null
+        if (config && config.listId) {
+          setDefaultList(config)
+        }
+      })
+      .catch(() => {
+        // No default list configured
+      })
+      .finally(() => {
+        setDefaultListLoaded(true)
+      })
+  }, [])
+
+  const handleDefaultListChanged = (config: ClickUpDefaultListConfig | null): void => {
+    setDefaultList(config)
+  }
 
   const handleTaskSelected = (task: ClickUpTask): void => {
     setSelectedTask(task)
@@ -173,13 +203,21 @@ export function ClickUpImportModal({
           </div>
 
           {/* Body - split layout */}
-          <div className="flex flex-1 min-h-0">
+          <div className="flex min-h-0 flex-1">
             {/* Left: Browser */}
             <div className="w-1/2 overflow-y-auto border-r border-border p-4">
-              <ClickUpBrowser
-                onTaskSelected={handleTaskSelected}
-                selectedTaskId={selectedTask?.id || null}
-              />
+              {defaultListLoaded ? (
+                <ClickUpBrowser
+                  onTaskSelected={handleTaskSelected}
+                  selectedTaskId={selectedTask?.id || null}
+                  defaultList={defaultList}
+                  onDefaultListChanged={handleDefaultListChanged}
+                />
+              ) : (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                </div>
+              )}
             </div>
 
             {/* Right: Task Detail */}

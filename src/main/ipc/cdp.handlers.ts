@@ -98,4 +98,16 @@ export function registerCdpHandlers(): void {
       return { success: false, error: String(err) }
     }
   })
+
+  ipcMain.handle('cdp:click-at', async (_event, x: number, y: number) => {
+    try {
+      if (!cdpCore.isAttached()) {
+        return { success: false, error: 'CDP not attached' }
+      }
+      await cdpCore.click(x, y)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
 }

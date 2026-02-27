@@ -121,7 +121,7 @@
       galleryState.items = items;
 
       // Close the media library
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      if (window.__veo3_cdpPress) { await window.__veo3_cdpPress('Escape'); } else { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); }
       await window.veo3Timing.sleep(300);
 
       console.log(`[GalleryMapper] Mapped ${items.length} items from media library`);
@@ -129,6 +129,73 @@
     } finally {
       galleryState.isMapping = false;
     }
+  }
+
+  // Check if a [data-item-index] element is a prompt history item (not an actual image).
+  // Prompt history items contain action buttons, progress indicators, and full prompt text
+  // that can include character names — causing false positive matches.
+  function isPromptHistoryItem(text) {
+    return text.includes('reutilizar comando') || text.includes('reuse command') ||
+      text.includes('delete_forever') || text.includes('progress_activity') ||
+      text.includes('(take ');
+  }
+
+  // Strip icon prefixes ("image", "videocam") and file extensions from text for clean matching
+  function cleanMediaText(text) {
+    return text.replace(/^(image|videocam|video)\s*/i, '').replace(/\.(png|jpg|jpeg|webp)$/i, '').trim();
+  }
+
+  // Find the best matching individual image card within a Virtuoso row or the row itself.
+  // Virtuoso [data-item-index] rows can contain MULTIPLE image cards side-by-side.
+  // Clicking the row center lands on the wrong card, so we drill into child elements.
+  function findBestCardInItem(item, targetLower, cleanTarget) {
+    var fullText = item.textContent.trim().toLowerCase();
+    var bestCard = null;
+    var bestScore = 0;
+
+    // Strategy A: Look for individual clickable cards as direct children of the row
+    var children = item.querySelectorAll(':scope > div, :scope > button, :scope > a');
+
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      if (child.offsetParent === null) continue;
+      var childText = child.textContent.trim().toLowerCase();
+
+      // Skip wrappers whose text equals the full row (not an individual card)
+      if (childText === fullText) continue;
+      // Skip very short text (just icons like "image" or "add_2")
+      if (childText.length < 5) continue;
+
+      var cleanChild = cleanMediaText(childText);
+      var score = scoreMatch(cleanChild, cleanTarget);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCard = child;
+      }
+      if (score >= 1000) break;
+    }
+
+    // Strategy B: If no child cards matched (single-card item or flat structure),
+    // check the item itself — but only if it looks like an image item (not too long)
+    if (!bestCard && children.length <= 1) {
+      var cleanFull = cleanMediaText(fullText);
+      var itemScore = scoreMatch(cleanFull, cleanTarget);
+      if (itemScore > 0) {
+        bestScore = itemScore;
+        bestCard = item;
+      }
+    }
+
+    return { element: bestCard, score: bestScore };
+  }
+
+  // Score how well a cleaned text matches the target (0 = no match, 1000 = exact)
+  function scoreMatch(cleanText, cleanTarget) {
+    if (cleanText === cleanTarget) return 1000;
+    if (cleanText.includes(cleanTarget)) return cleanTarget.length + 1;
+    if (cleanTarget.includes(cleanText) && cleanText.length > 5) return cleanText.length;
+    return 0;
   }
 
   async function selectMediaByName(targetName) {
@@ -150,7 +217,7 @@
     );
     if (!searchInput) {
       window.veo3Debug?.warn('GALLERY', 'Search input not found in dialog');
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      if (window.__veo3_cdpPress) { await window.__veo3_cdpPress('Escape'); } else { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); }
       await sleep(300);
       // Fallback to legacy scroll-based selection
       return await selectMediaByNameLegacy(targetName);
@@ -163,35 +230,39 @@
     // Step 4: Wait for Virtuoso to render results
     await sleep(500);
 
-    // Step 5: Find and click the best matching item from filtered results
+    // Step 5: Find the specific image card that matches the target.
+    // [data-item-index] items are Virtuoso rows that may contain MULTIPLE image cards.
+    // We drill into each row to find and click the specific card, not the row center.
     const items = document.querySelectorAll('[data-item-index]');
     const targetLower = targetName.toLowerCase();
-    let bestMatch = null;
+    const cleanTarget = cleanMediaText(targetLower);
+    let bestCard = null;
     let bestScore = 0;
 
     for (const item of items) {
       if (item.offsetParent === null) continue;
-      const text = item.textContent.trim().toLowerCase();
 
-      // Exact match gets highest score
-      if (text === targetLower) {
-        bestMatch = item;
-        bestScore = 1000;
-        break;
+      // Filter out prompt history items (contain character names from previous prompts)
+      const fullText = item.textContent.trim().toLowerCase();
+      if (isPromptHistoryItem(fullText)) {
+        window.veo3Debug?.debug('GALLERY', 'Skipping prompt history item: "' + fullText.substring(0, 60) + '..."');
+        continue;
       }
-      // Contains match
-      if (text.includes(targetLower) || targetLower.includes(text)) {
-        const score = Math.min(text.length, targetLower.length);
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = item;
-        }
+
+      // Find the best matching card within this row
+      const result = findBestCardInItem(item, targetLower, cleanTarget);
+      if (result.score > bestScore) {
+        bestScore = result.score;
+        bestCard = result.element;
       }
+      if (bestScore >= 1000) break;
     }
 
-    if (bestMatch) {
-      window.veo3Debug?.info('GALLERY', 'Found match, clicking: ' + bestMatch.textContent.trim());
-      await window.veo3RobustClick(bestMatch); // Red circle feedback
+    if (bestCard) {
+      const cardText = bestCard.textContent.trim();
+      const parentIndex = bestCard.closest('[data-item-index]')?.getAttribute('data-item-index') || '?';
+      window.veo3Debug?.info('GALLERY', 'Found card in row ' + parentIndex + ': "' + cardText.substring(0, 80) + '" (score=' + bestScore + ')');
+      await window.veo3RobustClick(bestCard); // Red circle feedback on specific card
       await sleep(TIMING.MEDIUM);
       // Dialog may auto-close after selection
       return true;
@@ -199,7 +270,7 @@
 
     // No match found - close dialog
     window.veo3Debug?.warn('GALLERY', 'No search results matched: ' + targetName);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    if (window.__veo3_cdpPress) { await window.__veo3_cdpPress('Escape'); } else { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); }
     await sleep(300);
     return false;
   }
@@ -208,6 +279,7 @@
   async function selectMediaByNameLegacy(targetName) {
     const { sleep } = window.veo3Timing;
     const targetLower = targetName.toLowerCase();
+    const cleanTarget = cleanMediaText(targetLower);
 
     const existingItems = document.querySelectorAll(window.veo3Selectors.mediaListItem);
     if (existingItems.length === 0) {
@@ -215,32 +287,43 @@
       if (!opened) return false;
     }
 
+    // Try to find and click a specific card within visible items
     const items = readMediaListItems();
     for (const item of items) {
-      if (item.name.toLowerCase().includes(targetLower)) {
-        await window.veo3RobustClick(item.element);
+      const itemTextLower = item.name.toLowerCase();
+      // Skip prompt history items
+      if (isPromptHistoryItem(itemTextLower)) continue;
+
+      // Try to find specific card within the row
+      const result = findBestCardInItem(item.element, targetLower, cleanTarget);
+      if (result.element && result.score > 0) {
+        await window.veo3RobustClick(result.element);
         await sleep(500);
-        console.log(`[GalleryMapper] Selected media (legacy): "${item.name}"`);
+        console.log('[GalleryMapper] Selected media (legacy): "' + result.element.textContent.trim().substring(0, 80) + '"');
         return true;
       }
     }
 
     const allItems = await scrollAndCollectAll(10);
     for (const item of allItems) {
-      if (item.name.toLowerCase().includes(targetLower)) {
+      const itemTextLower = item.name.toLowerCase();
+      if (isPromptHistoryItem(itemTextLower)) continue;
+      if (itemTextLower.includes(targetLower) || cleanMediaText(itemTextLower).includes(cleanTarget)) {
         const freshItems = readMediaListItems();
         for (const fresh of freshItems) {
           if (fresh.index === item.index) {
-            await window.veo3RobustClick(fresh.element);
+            const result = findBestCardInItem(fresh.element, targetLower, cleanTarget);
+            const clickTarget = result.element || fresh.element;
+            await window.veo3RobustClick(clickTarget);
             await sleep(500);
-            console.log(`[GalleryMapper] Selected media (legacy scroll): "${item.name}"`);
+            console.log('[GalleryMapper] Selected media (legacy scroll): "' + clickTarget.textContent.trim().substring(0, 80) + '"');
             return true;
           }
         }
       }
     }
 
-    console.warn(`[GalleryMapper] Media "${targetName}" not found (legacy)`);
+    console.warn('[GalleryMapper] Media "' + targetName + '" not found (legacy)');
     return false;
   }
 

@@ -334,6 +334,8 @@ const api = {
     ipcRenderer.invoke('clickup:get-tasks', params),
   clickupGetTask: (taskId: string): Promise<unknown> =>
     ipcRenderer.invoke('clickup:get-task', taskId),
+  clickupGetList: (listId: string): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-list', listId),
   clickupDownloadAttachment: (params: {
     url: string
     destDir?: string
@@ -347,6 +349,11 @@ const api = {
     ipcRenderer.invoke('clickup:read-text-file', filePath),
   clickupTestConnection: (): Promise<unknown> =>
     ipcRenderer.invoke('clickup:test-connection'),
+  clickupSaveDefaultList: (
+    config: { listId: string; listName: string; breadcrumb: string } | null
+  ): Promise<unknown> => ipcRenderer.invoke('clickup:save-default-list', config),
+  clickupGetDefaultList: (): Promise<unknown> =>
+    ipcRenderer.invoke('clickup:get-default-list'),
 
   // CDP (Chrome DevTools Protocol) automation
   cdpAttach: (webContentsId: number): Promise<{ success: boolean; error?: string }> =>
@@ -368,7 +375,9 @@ const api = {
   cdpFillPrompt: (text: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('cdp:fill-prompt', text),
   cdpClickSubmit: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('cdp:click-submit')
+    ipcRenderer.invoke('cdp:click-submit'),
+  cdpClickAt: (x: number, y: number): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:click-at', x, y)
 }
 
 if (process.contextIsolated) {

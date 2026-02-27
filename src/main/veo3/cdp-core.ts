@@ -354,27 +354,7 @@ interface CdpOpResult {
 
 async function fillPrompt(text: string): Promise<CdpOpResult> {
   try {
-    // Step 1: Clear existing text via the clear button (uses injected veo3Selectors)
-    const clearRect = await evaluate<CdpRect | null>(`
-      (() => {
-        if (typeof window.veo3Selectors === 'undefined') return null;
-        const btn = window.veo3Selectors.clearButton();
-        if (!btn) return null;
-        const r = btn.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) return null;
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      })()
-    `)
-
-    if (clearRect) {
-      const cx = Math.round(clearRect.x + clearRect.width / 2)
-      const cy = Math.round(clearRect.y + clearRect.height / 2)
-      console.log(`[CDP] fillPrompt: clearing existing text via clear button at (${cx}, ${cy})`)
-      await click(cx, cy)
-      await sleep(400)
-    }
-
-    // Step 2: Click the Slate editor (primary target - same selector as POC test)
+    // Step 1: Click the Slate editor to focus it
     let clicked = await clickElement('[data-slate-editor="true"][contenteditable="true"]')
     if (!clicked) {
       clicked = await clickElement('#PINHOLE_TEXT_AREA_ELEMENT_ID')
@@ -385,7 +365,16 @@ async function fillPrompt(text: string): Promise<CdpOpResult> {
 
     await sleep(150)
 
+    // Step 2: Select all existing text via Ctrl+A so typing replaces it.
+    // IMPORTANT: Do NOT use the clear button ("Apagar comando") here because it
+    // removes the entire prompt area including character image references that
+    // were selected in the gallery step. Ctrl+A only selects text within the
+    // Slate editor, preserving character chips/references.
+    await press('a', 2) // 2 = Ctrl modifier
+    await sleep(100)
+
     // Step 3: Type text via CDP Input.insertText (isTrusted event that Slate recognizes)
+    // If text was selected by Ctrl+A, this replaces it. If editor was empty, just inserts.
     console.log(`[CDP] fillPrompt: typing ${text.length} chars`)
     await type(text)
     await sleep(300)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Play, Pause, Square, AlertTriangle, Loader2, Zap, CheckCircle2, XCircle } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Play, Pause, Square, AlertTriangle, Loader2, Zap, CheckCircle2, XCircle, Timer } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import type { WebviewElement, FlowCommand } from '@/types/veo3'
@@ -43,15 +44,30 @@ export function SidepanelControlsTab({
   } = useVeo3AutomationStore()
 
   const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
-  const { isRunning, isPaused, currentCommandIndex, startedAt, error, chapterFilter } = tabState
+  const { isRunning, isPaused, currentCommandIndex, startedAt, error, chapterFilter, batchPause } = tabState
 
   const [elapsed, setElapsed] = useState('0s')
+  const [countdownSeconds, setCountdownSeconds] = useState(0)
 
   useEffect(() => {
     if (!isRunning || !startedAt) return
     const timer = setInterval(() => setElapsed(formatElapsed(startedAt)), 1000)
     return () => clearInterval(timer)
   }, [isRunning, startedAt])
+
+  useEffect(() => {
+    if (!batchPause) {
+      setCountdownSeconds(0)
+      return
+    }
+    const tick = (): void => {
+      const remaining = Math.max(0, Math.ceil((batchPause.pauseEndsAt - Date.now()) / 1000))
+      setCountdownSeconds(remaining)
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [batchPause])
 
   const progress = getProgress(tabId)
   const filteredCommands = getFilteredCommands(tabId)
@@ -360,6 +376,51 @@ export function SidepanelControlsTab({
           </>
         )}
       </div>
+
+      {/* Batch pause countdown */}
+      <AnimatePresence>
+        {batchPause && countdownSeconds >= 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Timer className="h-3.5 w-3.5 text-amber-400" />
+                  <span className="text-[11px] font-medium text-amber-400">
+                    Pausa entre lotes
+                  </span>
+                </div>
+                <span className="text-[10px] text-amber-400/70">
+                  Lote {batchPause.batch}/{batchPause.totalBatches}
+                </span>
+              </div>
+              <div className="mt-2 flex items-baseline justify-between">
+                <span className="font-mono text-lg font-semibold text-amber-400">
+                  {Math.floor(countdownSeconds / 60)}:{String(countdownSeconds % 60).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] text-text-muted">
+                  modo {batchPause.mode}
+                </span>
+              </div>
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-amber-500/10">
+                <motion.div
+                  className="h-full rounded-full bg-amber-500/60"
+                  initial={false}
+                  animate={{
+                    width: `${batchPause.totalSeconds > 0 ? (countdownSeconds / batchPause.totalSeconds) * 100 : 0}%`
+                  }}
+                  transition={{ duration: 0.8, ease: 'linear' }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Progress */}
       {(isRunning || progress.completed > 0) && (

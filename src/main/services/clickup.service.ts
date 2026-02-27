@@ -97,19 +97,19 @@ export class ClickUpService {
   }
 
   async getSpaces(teamId: string): Promise<SpacesResponse> {
-    return this.request<SpacesResponse>(`/team/${teamId}/space?archived=false`)
+    return this.request<SpacesResponse>(`/team/${teamId}/space`)
   }
 
   async getFolders(spaceId: string): Promise<FoldersResponse> {
-    return this.request<FoldersResponse>(`/space/${spaceId}/folder?archived=false`)
+    return this.request<FoldersResponse>(`/space/${spaceId}/folder`)
   }
 
   async getFolderlessLists(spaceId: string): Promise<ListsResponse> {
-    return this.request<ListsResponse>(`/space/${spaceId}/list?archived=false`)
+    return this.request<ListsResponse>(`/space/${spaceId}/list`)
   }
 
   async getLists(folderId: string): Promise<ListsResponse> {
-    return this.request<ListsResponse>(`/folder/${folderId}/list?archived=false`)
+    return this.request<ListsResponse>(`/folder/${folderId}/list`)
   }
 
   async getTasks(listId: string, page = 0): Promise<TasksResponse> {
@@ -125,6 +125,10 @@ export class ClickUpService {
     return this.request<Record<string, unknown>>(
       `/task/${taskId}?include_subtasks=false`
     )
+  }
+
+  async getList(listId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(`/list/${listId}`)
   }
 
   // -------------------------------------------------------------------------

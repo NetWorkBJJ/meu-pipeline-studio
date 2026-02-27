@@ -7,8 +7,16 @@ import { createClickUpService, type ClickUpService } from '../services/clickup.s
 // API Key management (encrypted with safeStorage / Windows DPAPI)
 // ---------------------------------------------------------------------------
 
+function getAppDir(): string {
+  return join(app.getPath('appData'), 'meu-pipeline-studio')
+}
+
 function getApiKeyPath(): string {
-  return join(app.getPath('appData'), 'meu-pipeline-studio', 'clickup-api-key.enc')
+  return join(getAppDir(), 'clickup-api-key.enc')
+}
+
+function getConfigPath(): string {
+  return join(getAppDir(), 'clickup-config.json')
 }
 
 async function decryptApiKey(): Promise<string> {
@@ -95,6 +103,11 @@ export function registerClickUpHandlers(): void {
     return svc.getTask(taskId)
   })
 
+  ipcMain.handle('clickup:get-list', async (_e, listId: string) => {
+    const svc = await getService()
+    return svc.getList(listId)
+  })
+
   // === Download ===
 
   ipcMain.handle(
@@ -160,5 +173,41 @@ export function registerClickUpHandlers(): void {
       return { success: true, teamName: null }
     }
     return { success: true, teamName: (teams[0] as Record<string, unknown>).name as string }
+  })
+
+  // === Default List Config ===
+
+  ipcMain.handle(
+    'clickup:save-default-list',
+    async (
+      _e,
+      config: { listId: string; listName: string; breadcrumb: string } | null
+    ) => {
+      const configPath = getConfigPath()
+      if (config === null) {
+        try {
+          await unlink(configPath)
+        } catch {
+          // File may not exist
+        }
+      } else {
+        await mkdir(getAppDir(), { recursive: true })
+        await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8')
+      }
+      return { success: true }
+    }
+  )
+
+  ipcMain.handle('clickup:get-default-list', async () => {
+    try {
+      const raw = await readFile(getConfigPath(), 'utf-8')
+      return JSON.parse(raw) as {
+        listId: string
+        listName: string
+        breadcrumb: string
+      }
+    } catch {
+      return null
+    }
   })
 }

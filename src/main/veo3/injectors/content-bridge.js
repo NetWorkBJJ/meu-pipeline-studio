@@ -107,6 +107,96 @@
     }
   }
 
+  // === CDP-BASED GENERIC CLICK AND KEY PRESS ===
+  // Generic helpers that use the same CDP_REQUEST/CDP_RESPONSE protocol
+  // as cdpFillPrompt and cdpClickSubmit. These enable CDP for ALL interactions
+  // (mode switching, gallery selection, Escape dismissals).
+
+  async function cdpClickAt(x, y) {
+    try {
+      await cdpRequest('clickAt', { x: x, y: y }, 10000);
+      return true;
+    } catch (err) {
+      console.log('[CDP_CLICK] FAILED at (' + x + ',' + y + '): ' + err.message);
+      return false;
+    }
+  }
+
+  async function cdpPressKey(key) {
+    try {
+      await cdpRequest('press', { key: key }, 10000);
+      return true;
+    } catch (err) {
+      console.log('[CDP_PRESS] FAILED (' + key + '): ' + err.message);
+      return false;
+    }
+  }
+
+  // Click an element via CDP using its bounding rect.
+  // The element is already found via DOM (querySelector/selectors.js),
+  // so we just need its coordinates -- no CSS selector construction needed.
+  async function cdpClickElementByRect(element) {
+    if (!element) return false;
+    var rect = element.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return false;
+    var cx = Math.round(rect.x + rect.width / 2);
+    var cy = Math.round(rect.y + rect.height / 2);
+    return await cdpClickAt(cx, cy);
+  }
+
+  // Dismiss overlays via CDP Escape (isTrusted: true)
+  async function cdpDismiss() {
+    return await cdpPressKey('Escape');
+  }
+
+  // Expose for other injectors (gallery-mapper.js uses Escape)
+  window.__veo3_cdpPress = cdpPressKey;
+  window.__veo3_cdpClickElement = cdpClickElementByRect;
+
+  // === CDP CLICK OVERRIDES ===
+  // Override the synthetic click functions with CDP-powered versions.
+  // Gallery-mapper.js and other injectors call window.veo3RobustClick/veo3RadixClick
+  // which are originally defined in click-feedback.js. By overriding them HERE
+  // (content-bridge.js is injected LAST), all callers automatically get CDP clicks.
+  // Fallback: if CDP click fails, call the original synthetic version.
+
+  var _origRobustClick = window.veo3RobustClick;
+  var _origRadixClick = window.veo3RadixClick;
+
+  window.veo3RobustClick = async function cdpRobustClick(element, options) {
+    if (!element) return false;
+    if (window.veo3Highlight) window.veo3Highlight(element);
+
+    var cdpOk = await cdpClickElementByRect(element);
+    if (cdpOk) {
+      if (options && options.sendEnter) {
+        await window.veo3Timing.sleep(50);
+        await cdpPressKey('Enter');
+      }
+      return true;
+    }
+
+    // Fallback to original synthetic click
+    console.log('[CDP_OVERRIDE] robustClick CDP failed, falling back to synthetic');
+    if (_origRobustClick) return await _origRobustClick(element, options);
+    element.click();
+    return true;
+  };
+
+  window.veo3RadixClick = async function cdpRadixClick(element) {
+    if (!element) return false;
+    if (window.veo3Highlight) window.veo3Highlight(element);
+
+    var cdpOk = await cdpClickElementByRect(element);
+    if (cdpOk) return true;
+
+    // Fallback to original synthetic PointerEvent dispatch
+    console.log('[CDP_OVERRIDE] radixClick CDP failed, falling back to synthetic');
+    if (_origRadixClick) return await _origRadixClick(element);
+    element.click();
+    return true;
+  };
+
   // === MESSAGE LISTENER ===
 
   window.addEventListener('message', (event) => {
@@ -398,7 +488,7 @@
     console.log(tag + ' Mode: ' + cmd.mode + ' | Characters: ' + (cmd.characterImages?.length || 0));
 
     // Defensive: dismiss any stale dialogs from previous commands
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await cdpDismiss();
     await sleep(TIMING.MICRO);
 
     // Step 1/4: Mode switch via settings dropdown tabs
@@ -407,7 +497,7 @@
     const modeOk = await ensureCreationMode(cmd.mode);
     if (!modeOk) {
       // Fail-fast: do not proceed in wrong mode (causes cascading chaos)
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await cdpDismiss();
       await sleep(TIMING.MICRO);
       throw new Error('Mode switch to "' + cmd.mode + '" failed');
     } else {
@@ -555,14 +645,14 @@
 
         if (attempt < MAX_OPEN_RETRIES) {
           console.log('[MODE] Dropdown did not open, retrying...');
-          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await cdpDismiss();
           await sleep(TIMING.MEDIUM);
         }
       }
 
       if (!menuOpened) {
         console.log('[MODE] Settings dropdown did not open after ' + MAX_OPEN_RETRIES + ' attempts');
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await cdpDismiss();
         await sleep(TIMING.SHORT);
         continue;
       }
@@ -572,7 +662,7 @@
         const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
         if (landscapeTab && landscapeTab.getAttribute('data-state') !== 'active') {
           window.veo3ClickLogger?.logNativeClick(landscapeTab, 'SETTINGS', 'Landscape tab');
-          landscapeTab.click();
+          await cdpClickElementByRect(landscapeTab);
           await sleep(TIMING.SHORT);
           console.log('[MODE] Applied Landscape setting');
         }
@@ -580,7 +670,7 @@
         const count1Tab = document.querySelector(window.veo3Selectors.tabCount(1));
         if (count1Tab && count1Tab.getAttribute('data-state') !== 'active') {
           window.veo3ClickLogger?.logNativeClick(count1Tab, 'SETTINGS', 'x1 tab');
-          count1Tab.click();
+          await cdpClickElementByRect(count1Tab);
           await sleep(TIMING.SHORT);
           console.log('[MODE] Applied x1 setting');
         }
@@ -593,7 +683,7 @@
         const modeTab = window.veo3Selectors.getModeTab(targetMode);
         if (!modeTab) {
           console.log('[MODE] Mode tab not found for "' + targetMode + '"');
-          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await cdpDismiss();
           await sleep(TIMING.SHORT);
           continue;
         }
@@ -618,7 +708,7 @@
             console.log('[MODE] Tab activated (data-state=active) for ' + (targetIsImage ? 'IMAGE' : 'VIDEO'));
           } else {
             console.log('[MODE] Tab click did not activate after 3s, will retry');
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            await cdpDismiss();
             await sleep(TIMING.SHORT);
             continue;
           }
@@ -886,40 +976,40 @@
 
       if (attempt < MAX_RETRIES) {
         console.log('[SETTINGS] Menu did not open, retrying...');
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await cdpDismiss();
         await sleep(TIMING.MEDIUM);
       }
     }
 
     if (!menuOpened) {
       console.log('[SETTINGS] Menu did not open after ' + MAX_RETRIES + ' attempts, skipping settings');
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await cdpDismiss();
       await sleep(TIMING.SHORT);
       return;
     }
 
-    // Click Landscape tab (simple click for tabs)
+    // Click Landscape tab via CDP
     const landscapeTab = document.querySelector(window.veo3Selectors.tabLandscape);
     if (landscapeTab) {
       window.veo3ClickLogger?.logNativeClick(landscapeTab, 'SETTINGS', 'Landscape tab');
-      landscapeTab.click();
+      await cdpClickElementByRect(landscapeTab);
       if (window.veo3Highlight) window.veo3Highlight(landscapeTab);
       await sleep(TIMING.SHORT);
       console.log('[SETTINGS] Clicked Landscape tab');
     }
 
-    // Click x1 tab
+    // Click x1 tab via CDP
     const count1Tab = document.querySelector(window.veo3Selectors.tabCount(1));
     if (count1Tab) {
       window.veo3ClickLogger?.logNativeClick(count1Tab, 'SETTINGS', 'x1 tab');
-      count1Tab.click();
+      await cdpClickElementByRect(count1Tab);
       if (window.veo3Highlight) window.veo3Highlight(count1Tab);
       await sleep(TIMING.SHORT);
       console.log('[SETTINGS] Clicked x1 tab');
     }
 
     // Close settings
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await cdpDismiss();
     await sleep(TIMING.MEDIUM);
 
     console.log('[SETTINGS] Settings applied. Closing menu.');

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, FolderOpen, Check, Trash2, Loader2, ExternalLink } from 'lucide-react'
+import { X, FolderOpen, Check, Trash2, Loader2, ExternalLink, Pin } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -39,6 +39,11 @@ export function SettingsModal(): React.JSX.Element | null {
   const [clickupSaving, setClickupSaving] = useState(false)
   const [clickupTesting, setClickupTesting] = useState(false)
   const [clickupTeamName, setClickupTeamName] = useState<string | null>(null)
+  const [clickupDefaultList, setClickupDefaultList] = useState<{
+    listId: string
+    listName: string
+    breadcrumb: string
+  } | null>(null)
 
   useEffect(() => {
     if (settingsOpen) {
@@ -49,6 +54,13 @@ export function SettingsModal(): React.JSX.Element | null {
       window.api.ttsHasApiKey().then(setTtsHasKey).catch(() => setTtsHasKey(false))
       window.api.ai33HasApiKey().then(setAi33HasKey).catch(() => setAi33HasKey(false))
       window.api.clickupHasApiKey().then(setClickupHasKey).catch(() => setClickupHasKey(false))
+      window.api
+        .clickupGetDefaultList()
+        .then((res) => {
+          const config = res as { listId: string; listName: string; breadcrumb: string } | null
+          setClickupDefaultList(config && config.listId ? config : null)
+        })
+        .catch(() => setClickupDefaultList(null))
     }
   }, [settingsOpen, activeWorkspace])
 
@@ -175,6 +187,16 @@ export function SettingsModal(): React.JSX.Element | null {
     setClickupHasKey(false)
     setClickupTeamName(null)
     addToast({ type: 'success', message: 'API Token ClickUp removido.' })
+  }
+
+  const handleClearClickupDefaultList = async (): Promise<void> => {
+    try {
+      await window.api.clickupSaveDefaultList(null)
+      setClickupDefaultList(null)
+      addToast({ type: 'success', message: 'Lista padrao removida.' })
+    } catch {
+      addToast({ type: 'error', message: 'Erro ao remover lista padrao.' })
+    }
   }
 
   const handleTestClickup = async (): Promise<void> => {
@@ -571,6 +593,35 @@ export function SettingsModal(): React.JSX.Element | null {
                         <span className="text-[10px] text-text-muted">
                           Workspace: {clickupTeamName}
                         </span>
+                      )}
+                    </div>
+                  )}
+                  {clickupHasKey && (
+                    <div className="mt-2 border-t border-border/50 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-text-muted">Lista Padrao</span>
+                      </div>
+                      {clickupDefaultList ? (
+                        <div className="mt-1 flex items-center gap-2">
+                          <Pin className="h-3 w-3 shrink-0 text-primary" />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs text-text">{clickupDefaultList.listName}</span>
+                            <span className="ml-1.5 text-[10px] text-text-muted">
+                              {clickupDefaultList.breadcrumb}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleClearClickupDefaultList}
+                            className="flex h-5 items-center rounded border border-border bg-surface px-1.5 text-[10px] text-text-muted transition-colors hover:text-error"
+                          >
+                            <Trash2 className="h-2.5 w-2.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-[10px] text-text-muted/60">
+                          Nenhuma. Fixe uma lista no modal de importacao.
+                        </p>
                       )}
                     </div>
                   )}

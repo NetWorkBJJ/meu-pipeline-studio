@@ -250,6 +250,7 @@ interface ElectronAppAPI {
   clickupGetLists: (folderId: string) => Promise<unknown>
   clickupGetTasks: (params: { listId: string; page?: number }) => Promise<unknown>
   clickupGetTask: (taskId: string) => Promise<unknown>
+  clickupGetList: (listId: string) => Promise<unknown>
   clickupDownloadAttachment: (params: {
     url: string
     destDir?: string
@@ -261,6 +262,10 @@ interface ElectronAppAPI {
   }) => Promise<unknown>
   clickupReadTextFile: (filePath: string) => Promise<unknown>
   clickupTestConnection: () => Promise<unknown>
+  clickupSaveDefaultList: (
+    config: { listId: string; listName: string; breadcrumb: string } | null
+  ) => Promise<unknown>
+  clickupGetDefaultList: () => Promise<unknown>
 
   // CDP (Chrome DevTools Protocol) automation
   cdpAttach: (webContentsId: number) => Promise<{ success: boolean; error?: string }>
@@ -273,6 +278,7 @@ interface ElectronAppAPI {
   cdpPocTest: () => Promise<{ success: boolean; results?: unknown[]; error?: string }>
   cdpFillPrompt: (text: string) => Promise<{ success: boolean; error?: string }>
   cdpClickSubmit: () => Promise<{ success: boolean; error?: string }>
+  cdpClickAt: (x: number, y: number) => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

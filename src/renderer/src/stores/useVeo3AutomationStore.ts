@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { FlowCommand, FlowCommandStatus, FlowCharacterImageRef } from '@/types/veo3'
+import type { FlowCommand, FlowCommandStatus, FlowCharacterImageRef, BatchPauseInfo } from '@/types/veo3'
 import { buildFlowCommands } from '@/lib/flowCommandBuilder'
 import { useProjectStore } from './useProjectStore'
 
@@ -10,6 +10,7 @@ export interface TabAutomationState {
   startedAt: number | null
   error: string | null
   chapterFilter: number[] | null
+  batchPause: BatchPauseInfo | null
 }
 
 export const DEFAULT_TAB_AUTOMATION: TabAutomationState = {
@@ -18,7 +19,8 @@ export const DEFAULT_TAB_AUTOMATION: TabAutomationState = {
   currentCommandIndex: 0,
   startedAt: null,
   error: null,
-  chapterFilter: null
+  chapterFilter: null,
+  batchPause: null
 }
 
 interface Veo3AutomationState {
@@ -39,6 +41,8 @@ interface Veo3AutomationState {
   stopTab: (tabId: string, error?: string) => void
   advanceToNext: (tabId: string) => void
   setChapterFilter: (tabId: string, chapters: number[] | null) => void
+  setBatchPause: (tabId: string, info: BatchPauseInfo) => void
+  clearBatchPause: (tabId: string) => void
   assignCommandsToTab: (tabId: string) => void
   getFilteredCommands: (tabId?: string | null) => FlowCommand[]
   getProgress: (tabId?: string | null) => { completed: number; failed: number; total: number; percentage: number }
@@ -54,7 +58,27 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
 
   loadFromProject: () => {
     const { scenes, characterRefs } = useProjectStore.getState()
+
+    const platformDist = scenes.reduce(
+      (acc, s) => {
+        acc[s.platform] = (acc[s.platform] || 0) + 1
+        return acc
+      },
+      {} as Record<string, number>
+    )
+    console.log('[Veo3Automation] Scenes from project:', scenes.length, '| Platforms:', platformDist)
+
     const commands = buildFlowCommands(scenes, characterRefs)
+
+    const modeDist = commands.reduce(
+      (acc, c) => {
+        acc[c.mode] = (acc[c.mode] || 0) + 1
+        return acc
+      },
+      {} as Record<string, number>
+    )
+    console.log('[Veo3Automation] Commands built:', commands.length, '| Modes:', modeDist)
+
     set({ ...initialState, commands })
   },
 
@@ -102,7 +126,8 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
           isPaused: false,
           currentCommandIndex: 0,
           startedAt: Date.now(),
-          error: null
+          error: null,
+          batchPause: null
         }
       }
     }))
@@ -142,6 +167,7 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
             ...current,
             isRunning: false,
             isPaused: false,
+            batchPause: null,
             error: error !== undefined ? error : current.error
           }
         }
@@ -155,7 +181,32 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
       return {
         tabStates: {
           ...s.tabStates,
-          [tabId]: { ...ts, currentCommandIndex: ts.currentCommandIndex + 1 }
+          [tabId]: { ...ts, currentCommandIndex: ts.currentCommandIndex + 1, batchPause: null }
+        }
+      }
+    })
+  },
+
+  setBatchPause: (tabId, info) => {
+    set((s) => ({
+      tabStates: {
+        ...s.tabStates,
+        [tabId]: {
+          ...(s.tabStates[tabId] || DEFAULT_TAB_AUTOMATION),
+          batchPause: info
+        }
+      }
+    }))
+  },
+
+  clearBatchPause: (tabId) => {
+    set((s) => {
+      const ts = s.tabStates[tabId]
+      if (!ts || !ts.batchPause) return s
+      return {
+        tabStates: {
+          ...s.tabStates,
+          [tabId]: { ...ts, batchPause: null }
         }
       }
     })

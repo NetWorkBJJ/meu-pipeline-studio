@@ -81,6 +81,14 @@ export interface FlowCommand {
   error: string | null
 }
 
+export interface BatchPauseInfo {
+  batch: number
+  totalBatches: number
+  totalSeconds: number
+  pauseEndsAt: number
+  mode: string
+}
+
 export interface FlowAutomationState {
   commands: FlowCommand[]
   isRunning: boolean

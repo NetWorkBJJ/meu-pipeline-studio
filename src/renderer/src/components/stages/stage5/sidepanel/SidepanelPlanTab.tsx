@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ListOrdered } from 'lucide-react'
+import { Film, ImageIcon, ListOrdered, Sparkles } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import type { FlowCommand, FlowCreationMode, FlowCharacterImageRef } from '@/types/veo3'
 
@@ -13,6 +14,18 @@ const MODE_COLORS: Record<FlowCreationMode, string> = {
   texto: 'bg-blue-500/15 text-blue-400',
   elementos: 'bg-violet-500/15 text-violet-400',
   imagem: 'bg-amber-500/15 text-amber-400'
+}
+
+const MODE_ICONS: Record<FlowCreationMode, LucideIcon> = {
+  texto: Film,
+  elementos: Sparkles,
+  imagem: ImageIcon
+}
+
+const MODE_BORDER: Record<FlowCreationMode, string> = {
+  texto: 'border-l-blue-500/40',
+  elementos: 'border-l-violet-500/40',
+  imagem: 'border-l-amber-500/40'
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -38,7 +51,7 @@ function CharacterBadge({
         <img
           src={thumbnail}
           alt={ci.name}
-          className="h-4 w-4 shrink-0 rounded-sm object-cover"
+          className="h-5 w-5 shrink-0 rounded-sm object-cover"
         />
       )}
       <span className="text-[9px] text-text-muted">{ci.name}</span>
@@ -55,9 +68,10 @@ function CommandCard({
   isActive: boolean
   thumbnails: Map<string, string>
 }): React.JSX.Element {
+  const ModeIcon = MODE_ICONS[command.mode]
   return (
     <div
-      className={`rounded-lg border p-2.5 transition-colors ${
+      className={`rounded-lg border border-l-2 p-2.5 transition-colors ${MODE_BORDER[command.mode]} ${
         isActive
           ? 'border-primary/40 bg-primary/5'
           : 'border-border bg-bg hover:border-border/80'
@@ -67,7 +81,8 @@ function CommandCard({
         <span className="shrink-0 text-[10px] font-mono text-text-muted">
           #{String(command.sceneIndex + 1).padStart(2, '0')}
         </span>
-        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium ${MODE_COLORS[command.mode]}`}>
+        <span className={`flex items-center gap-0.5 shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium ${MODE_COLORS[command.mode]}`}>
+          <ModeIcon className="h-2.5 w-2.5" />
           {MODE_LABELS[command.mode]}
         </span>
         <span className={`ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium ${STATUS_COLORS[command.status]}`}>
@@ -176,6 +191,16 @@ export function SidepanelPlanTab({ tabId }: SidepanelPlanTabProps): React.JSX.El
       <div className="flex items-center justify-between pb-1">
         <span className="text-[11px] font-medium text-text-muted">
           {commands.length} cenas no plano
+          {(() => {
+            const txt = commands.filter((c) => c.mode === 'texto').length
+            const elem = commands.filter((c) => c.mode === 'elementos').length
+            const img = commands.filter((c) => c.mode === 'imagem').length
+            const parts: string[] = []
+            if (txt > 0) parts.push(`${txt} txt`)
+            if (elem > 0) parts.push(`${elem} elem`)
+            if (img > 0) parts.push(`${img} img`)
+            return parts.length > 1 ? ` (${parts.join(', ')})` : ''
+          })()}
         </span>
         <button
           onClick={loadFromProject}

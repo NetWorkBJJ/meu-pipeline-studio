@@ -108,7 +108,17 @@ export function Stage5Veo3(): React.JSX.Element {
 
   // Handle CDP requests from content-bridge: route to main process CDP, send response back
   const handleCdpRequest = useCallback(
-    async (tabId: string, reqData: { operation: string; requestId: string; text?: string }) => {
+    async (
+      tabId: string,
+      reqData: {
+        operation: string
+        requestId: string
+        text?: string
+        x?: number
+        y?: number
+        key?: string
+      }
+    ) => {
       const { operation, requestId, text } = reqData
 
       let result: { success: boolean; error?: string }
@@ -120,6 +130,12 @@ export function Stage5Veo3(): React.JSX.Element {
             break
           case 'clickSubmit':
             result = await window.api.cdpClickSubmit()
+            break
+          case 'clickAt':
+            result = await window.api.cdpClickAt(reqData.x ?? 0, reqData.y ?? 0)
+            break
+          case 'press':
+            result = await window.api.cdpPress(reqData.key ?? 'Escape')
             break
           default:
             result = { success: false, error: `Unknown CDP operation: ${operation}` }
@@ -208,11 +224,28 @@ export function Stage5Veo3(): React.JSX.Element {
           }
           break
         }
+        case 'BATCH_PAUSE': {
+          const d = data as { batch?: number; totalBatches?: number; pauseSeconds?: number; mode?: string } | undefined
+          if (d?.pauseSeconds) {
+            automationStore.setBatchPause(tabId, {
+              batch: d.batch ?? 0,
+              totalBatches: d.totalBatches ?? 0,
+              totalSeconds: d.pauseSeconds,
+              pauseEndsAt: Date.now() + d.pauseSeconds * 1000,
+              mode: d.mode ?? 'video'
+            })
+          }
+          break
+        }
+        case 'AUTOMATION_PROGRESS':
+          automationStore.clearBatchPause(tabId)
+          break
         case 'AUTOMATION_STARTED':
         case 'MODE_SWITCH_FAILED':
         case 'MODE_CHANGED':
         case 'PAGE_READY':
         case 'DEBUG_ERROR':
+        case 'BATCH_PAUSE_UPDATE':
           break
       }
 

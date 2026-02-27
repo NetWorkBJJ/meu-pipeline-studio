@@ -27,12 +27,14 @@ export function Veo3Sidepanel({ webviewRef, tabId, compact }: Veo3SidepanelProps
   const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
   const progress = getProgress(tabId)
 
-  const { isRunning, isPaused } = tabState
+  const { isRunning, isPaused, batchPause } = tabState
 
   const statusLabel = isRunning
-    ? isPaused
-      ? 'paused'
-      : 'running'
+    ? batchPause
+      ? `lote ${batchPause.batch}/${batchPause.totalBatches}`
+      : isPaused
+        ? 'paused'
+        : 'running'
     : progress.completed > 0 && progress.completed === progress.total
       ? 'completed'
       : 'idle'
@@ -40,11 +42,13 @@ export function Veo3Sidepanel({ webviewRef, tabId, compact }: Veo3SidepanelProps
   const statusColor =
     statusLabel === 'running'
       ? 'bg-green-500/10 text-green-400'
-      : statusLabel === 'paused'
-        ? 'bg-yellow-500/10 text-yellow-400'
-        : statusLabel === 'completed'
-          ? 'bg-primary/10 text-primary'
-          : 'bg-white/5 text-text-muted'
+      : batchPause
+        ? 'bg-amber-500/10 text-amber-400'
+        : statusLabel === 'paused'
+          ? 'bg-yellow-500/10 text-yellow-400'
+          : statusLabel === 'completed'
+            ? 'bg-primary/10 text-primary'
+            : 'bg-white/5 text-text-muted'
 
   return (
     <div className={`flex h-full flex-col ${compact ? 'w-full' : 'w-[360px]'}`}>

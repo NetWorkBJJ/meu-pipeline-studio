@@ -7,14 +7,22 @@ import {
   Clock,
   BarChart3,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { planScenes } from '@/lib/scenePlanner'
 import type { PlanResult } from '@/lib/scenePlanner'
+import type { MediaPlatform } from '@/types/project'
 import { SceneCard } from './SceneCard'
 import { SceneTimeline } from './SceneTimeline'
+
+interface MediaTypeDecision {
+  scene_index: number
+  media_type: 'video' | 'photo'
+  reasoning?: string
+}
 
 interface ScenePlannerPanelProps {
   onConfirm: () => void
@@ -24,16 +32,17 @@ export function ScenePlannerPanel({ onConfirm }: ScenePlannerPanelProps): React.
   const storyBlocks = useProjectStore((s) => s.storyBlocks)
   const scenes = useProjectStore((s) => s.scenes)
   const config = useProjectStore((s) => s.directorConfig)
-  const { setScenes, updateScene } = useProjectStore()
+  const { setScenes, updateScene, bulkUpdateScenes } = useProjectStore()
   const { addToast } = useUIStore()
   const [stats, setStats] = useState<PlanResult['statistics'] | null>(null)
+  const [isDecidingMedia, setIsDecidingMedia] = useState(false)
 
   const totalDurationMs =
     storyBlocks.length > 0
       ? storyBlocks[storyBlocks.length - 1].endMs - storyBlocks[0].startMs
       : 0
 
-  const handlePlan = (): void => {
+  const handlePlan = async (): Promise<void> => {
     if (storyBlocks.length === 0) {
       addToast({ type: 'warning', message: 'Nenhum bloco de texto disponivel.' })
       return
@@ -42,10 +51,70 @@ export function ScenePlannerPanel({ onConfirm }: ScenePlannerPanelProps): React.
     const result = planScenes(storyBlocks, config)
     setScenes(result.scenes)
     setStats(result.statistics)
-    addToast({
-      type: 'success',
-      message: `${result.scenes.length} cenas planejadas (${result.statistics.videoCount} videos, ${result.statistics.imageCount} fotos).`
-    })
+
+    // For ai-decided mode, call LLM to decide media types per scene
+    if (config.sequenceMode === 'ai-decided') {
+      setIsDecidingMedia(true)
+      try {
+        const sceneData = result.scenes.map((s) => {
+          const sceneBlocks = storyBlocks.filter((b) => s.blockIds.includes(b.id))
+          return {
+            index: s.index,
+            block_texts: sceneBlocks.map((b) => b.text).join(' '),
+            duration_ms: s.durationMs,
+            narrative_context: s.narrativeContext || ''
+          }
+        })
+
+        const response = (await window.api.directorDecideMediaTypes({
+          provider: config.llmProvider,
+          model: config.llmModel || undefined,
+          scenes: sceneData
+        })) as { decisions: MediaTypeDecision[] }
+
+        if (response.decisions && response.decisions.length > 0) {
+          const updates = response.decisions
+            .map((d) => {
+              const scene = result.scenes.find((s) => s.index === d.scene_index)
+              if (!scene) return null
+              const mediaType = d.media_type === 'photo' ? 'photo' : 'video'
+              const platform: MediaPlatform = mediaType === 'photo' ? 'nano-banana-2' : 'vo3'
+              return { id: scene.id, updates: { mediaType, platform } }
+            })
+            .filter(Boolean) as Array<{ id: string; updates: { mediaType: 'video' | 'photo'; platform: MediaPlatform } }>
+
+          if (updates.length > 0) {
+            bulkUpdateScenes(updates)
+            const videoCount = updates.filter((u) => u.updates.mediaType === 'video').length
+            const imageCount = updates.filter((u) => u.updates.mediaType === 'photo').length
+            setStats((prev) => prev ? { ...prev, videoCount, imageCount } : prev)
+          }
+
+          addToast({
+            type: 'success',
+            message: `${result.scenes.length} cenas planejadas. IA decidiu: ${response.decisions.filter((d) => d.media_type === 'video').length} videos, ${response.decisions.filter((d) => d.media_type === 'photo').length} fotos.`
+          })
+        } else {
+          addToast({
+            type: 'success',
+            message: `${result.scenes.length} cenas planejadas (${result.statistics.videoCount} videos, ${result.statistics.imageCount} fotos).`
+          })
+        }
+      } catch (err) {
+        console.error('[ScenePlanner] Failed to decide media types via LLM:', err)
+        addToast({
+          type: 'warning',
+          message: `Cenas planejadas, mas IA nao conseguiu decidir tipos de midia. Usando distribuicao padrao.`
+        })
+      } finally {
+        setIsDecidingMedia(false)
+      }
+    } else {
+      addToast({
+        type: 'success',
+        message: `${result.scenes.length} cenas planejadas (${result.statistics.videoCount} videos, ${result.statistics.imageCount} fotos).`
+      })
+    }
   }
 
   const handleReplan = (): void => {
@@ -94,11 +163,15 @@ export function ScenePlannerPanel({ onConfirm }: ScenePlannerPanelProps): React.
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
             onClick={handlePlan}
-            disabled={storyBlocks.length === 0}
+            disabled={storyBlocks.length === 0 || isDecidingMedia}
             className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <LayoutGrid className="h-3.5 w-3.5" />
-            Planejar cenas
+            {isDecidingMedia ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <LayoutGrid className="h-3.5 w-3.5" />
+            )}
+            {isDecidingMedia ? 'IA decidindo tipos...' : 'Planejar cenas'}
           </motion.button>
         </div>
       </div>
