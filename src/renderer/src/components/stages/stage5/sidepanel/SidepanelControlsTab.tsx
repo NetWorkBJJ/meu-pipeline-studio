@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Square, AlertTriangle, Loader2, Zap, CheckCircle2, XCircle, Timer } from 'lucide-react'
+import { Play, Pause, Square, AlertTriangle, Loader2, Zap, CheckCircle2, XCircle, Timer, FolderOpen, ExternalLink } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
+import { useVeo3Store } from '@/stores/useVeo3Store'
 import { useProjectStore } from '@/stores/useProjectStore'
 import type { WebviewElement, FlowCommand } from '@/types/veo3'
 
@@ -73,6 +74,29 @@ export function SidepanelControlsTab({
   const filteredCommands = getFilteredCommands(tabId)
 
   const chapters = [...new Set(commands.map((c) => c.chapter))].sort((a, b) => a - b)
+
+  const downloadPath = useVeo3Store((s) => s.downloadPath)
+  const setDownloadPath = useVeo3Store((s) => s.setDownloadPath)
+
+  useEffect(() => {
+    window.api.veo3GetDownloadPath().then((path) => {
+      if (path) setDownloadPath(path)
+    })
+  }, [setDownloadPath])
+
+  const handleChangeDownloadFolder = async (): Promise<void> => {
+    const selected = await window.api.selectDirectory()
+    if (selected) {
+      await window.api.veo3SetDownloadPath(selected)
+      setDownloadPath(selected)
+    }
+  }
+
+  const handleOpenDownloadFolder = async (): Promise<void> => {
+    if (downloadPath) {
+      await window.api.openInExplorer(downloadPath)
+    }
+  }
 
   const [isPreparingImages, setIsPreparingImages] = useState(false)
   const [cdpTestRunning, setCdpTestRunning] = useState(false)

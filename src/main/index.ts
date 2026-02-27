@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'fs'
 import icon from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
+import { loadPersistedDownloadPath } from './ipc/veo3.handlers'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -121,8 +122,9 @@ app.whenReady().then(() => {
     app.setAppUserModelId('com.meupipeline.studio')
   }
 
-  // Initialize download path now that app is ready
-  veo3DownloadPath = join(app.getPath('downloads'), 'MeuPipeline', 'midias')
+  // Initialize download path: use persisted value or default
+  const persistedPath = loadPersistedDownloadPath()
+  veo3DownloadPath = persistedPath || join(app.getPath('downloads'), 'MeuPipeline', 'midias')
 
   setupWebviewSecurity()
   setupVeo3Downloads()

@@ -1,8 +1,25 @@
 import { ipcMain, app, session } from 'electron'
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { join, normalize, resolve, extname } from 'path'
 import { getVeo3DownloadPath, setVeo3DownloadPath } from '../index'
+
+function getDownloadPathConfigFile(): string {
+  const configDir = join(app.getPath('appData'), 'meu-pipeline-studio')
+  if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true })
+  return join(configDir, 'veo3-download-path.txt')
+}
+
+export function loadPersistedDownloadPath(): string | null {
+  const configFile = getDownloadPathConfigFile()
+  if (!existsSync(configFile)) return null
+  try {
+    const saved = readFileSync(configFile, 'utf-8').trim()
+    return saved || null
+  } catch {
+    return null
+  }
+}
 
 function getInjectorsBasePath(): string {
   if (app.isPackaged) {
@@ -34,6 +51,11 @@ export function registerVeo3Handlers(): void {
 
   ipcMain.handle('veo3:set-download-path', async (_event, folderPath: string) => {
     setVeo3DownloadPath(folderPath)
+    try {
+      writeFileSync(getDownloadPathConfigFile(), folderPath, 'utf-8')
+    } catch (err) {
+      console.error('[veo3:set-download-path] Failed to persist:', err)
+    }
     return { success: true }
   })
 
