@@ -480,7 +480,11 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
           message: msg
         })
       } else {
-        addToast({ type: 'error', message: 'Nenhum take gerado.' })
+        const firstError = currentBatchResults.find((r) => r.status === 'error')?.error
+        const errorMsg = firstError
+          ? `Nenhum take gerado. ${firstError}`
+          : 'Nenhum take gerado.'
+        addToast({ type: 'error', message: errorMsg })
       }
     } catch (err) {
       console.error('[Director] ERRO na geracao:', err)
