@@ -20,9 +20,17 @@ from template_loader import load_template
 # Constants
 # ---------------------------------------------------------------------------
 
-CAPCUT_PROJECTS_PATH = Path(
-    os.environ.get("LOCALAPPDATA", "")
-) / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+def _get_capcut_projects_path() -> Path:
+    """Get the CapCut projects path based on the current platform."""
+    import sys as _sys
+    if _sys.platform == "darwin":
+        return Path.home() / "Movies" / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+    return Path(
+        os.environ.get("LOCALAPPDATA", "")
+    ) / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+
+
+CAPCUT_PROJECTS_PATH = _get_capcut_projects_path()
 
 MAX_BACKUPS = 10
 
@@ -1323,9 +1331,37 @@ def analyze_project(draft_path: str) -> dict:
 # Project Creation
 # ---------------------------------------------------------------------------
 
+def _get_platform_info() -> dict:
+    """Get CapCut platform info for the current OS."""
+    import sys as _sys
+    import platform as _platform
+    if _sys.platform == "darwin":
+        return {
+            "app_id": 346280,
+            "app_source": "cc",
+            "app_version": "4.0.0",
+            "device_id": "",
+            "hard_disk_id": "",
+            "mac_address": "",
+            "os": "mac",
+            "os_version": _platform.release(),
+        }
+    return {
+        "app_id": 359289,
+        "app_source": "cc",
+        "app_version": "4.0.0",
+        "device_id": "",
+        "hard_disk_id": "",
+        "mac_address": "",
+        "os": "windows",
+        "os_version": "10.0.22631",
+    }
+
+
 def _create_empty_draft(project_name: str) -> dict:
     """Create a complete draft_content.json matching NardotoStudio main.js."""
     now_sec = int(datetime.now().timestamp())
+    platform_info = _get_platform_info()
     return {
         "canvas_config": {"height": 1080, "width": 1920, "ratio": "16:9"},
         "color_space": 0,
@@ -1367,16 +1403,7 @@ def _create_empty_draft(project_name: str) -> dict:
             "texts": [],
             "videos": [],
         },
-        "last_modified_platform": {
-            "app_id": 359289,
-            "app_source": "cc",
-            "app_version": "4.0.0",
-            "device_id": "",
-            "hard_disk_id": "",
-            "mac_address": "",
-            "os": "windows",
-            "os_version": "10.0.22631",
-        },
+        "last_modified_platform": platform_info,
         "materials": {
             "ai_translates": [],
             "audio_balances": [],
@@ -1427,16 +1454,7 @@ def _create_empty_draft(project_name: str) -> dict:
         "mutable_config": None,
         "name": project_name,
         "new_version": "113.0.0",
-        "platform": {
-            "app_id": 359289,
-            "app_source": "cc",
-            "app_version": "4.0.0",
-            "device_id": "",
-            "hard_disk_id": "",
-            "mac_address": "",
-            "os": "windows",
-            "os_version": "10.0.22631",
-        },
+        "platform": platform_info,
         "relationships": [],
         "render_index_track_mode_on": False,
         "retouch_cover": None,
@@ -1470,12 +1488,24 @@ def create_project(project_name: str) -> dict:
 
     # Check if CapCut is running
     try:
-        import subprocess
-        output = subprocess.check_output(
-            ["tasklist", "/FI", "IMAGENAME eq CapCut.exe", "/FO", "CSV", "/NH"],
-            text=True, stderr=subprocess.DEVNULL,
-        )
-        if "CapCut.exe" in output:
+        import sys as _sys
+        capcut_proc = "CapCut.exe" if _sys.platform == "win32" else "CapCut"
+        if _sys.platform == "win32":
+            output = subprocess.check_output(
+                ["tasklist", "/FI", f"IMAGENAME eq {capcut_proc}", "/FO", "CSV", "/NH"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            is_running = capcut_proc in output
+        else:
+            try:
+                subprocess.check_output(
+                    ["pgrep", "-x", capcut_proc],
+                    text=True, stderr=subprocess.DEVNULL,
+                )
+                is_running = True
+            except subprocess.CalledProcessError:
+                is_running = False
+        if is_running:
             warnings.append(
                 "CapCut is running. The project may not be registered correctly. "
                 "Close CapCut and recreate the project if it does not appear."
@@ -1500,41 +1530,52 @@ def create_project(project_name: str) -> dict:
     draft_id = draft["id"]
 
     # ---------------------------------------------------------------
-    # draft_info.json  (complete, 28 fields - matches NardotoStudio main.js)
-    # Note: timestamps in SECONDS (not microseconds)
+    # draft_info.json
+    # On macOS: CapCut reads draft_info.json as the primary draft file
+    #           (full draft content, same as draft_content.json)
+    # On Windows: small metadata file (28 fields, timestamps in SECONDS)
     # ---------------------------------------------------------------
-    draft_info = {
-        "draft_cloud_capcut_purchase_info": None,
-        "draft_cloud_purchase_info": None,
-        "draft_cloud_template_id": "",
-        "draft_cloud_tutorial_info": None,
-        "draft_cloud_videocut_purchase_info": None,
-        "draft_cover": "",
-        "draft_deeplink_url": "",
-        "draft_enterprise_info": None,
-        "draft_fold_path": project_dir_str,
-        "draft_id": draft_id,
-        "draft_is_ai_shorts": False,
-        "draft_is_article_video_draft": False,
-        "draft_is_from_deeplink": False,
-        "draft_is_invisible": False,
-        "draft_materials_copied": False,
-        "draft_materials_copied_path": None,
-        "draft_name": project_name,
-        "draft_new_version": "",
-        "draft_removable_storage_device": "",
-        "draft_root_path": root_path_str,
-        "draft_segment_extra_info": None,
-        "draft_timeline_materials_size": 0,
-        "draft_type": "normal",
-        "tm_draft_cloud_completed": None,
-        "tm_draft_cloud_modified": 0,
-        "tm_draft_create": now_sec,
-        "tm_draft_modified": now_sec,
-        "tm_draft_removed": 0,
-    }
-    with open(project_dir / "draft_info.json", "w", encoding="utf-8") as f:
-        json.dump(draft_info, f, ensure_ascii=False, indent=2)
+    import sys as _sys
+    if _sys.platform == "darwin":
+        # macOS: draft_info.json IS the draft content
+        draft_info_json = json.dumps(draft, ensure_ascii=False, separators=(",", ":"))
+        with open(project_dir / "draft_info.json", "wb") as f:
+            f.write(draft_info_json.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+    else:
+        draft_info = {
+            "draft_cloud_capcut_purchase_info": None,
+            "draft_cloud_purchase_info": None,
+            "draft_cloud_template_id": "",
+            "draft_cloud_tutorial_info": None,
+            "draft_cloud_videocut_purchase_info": None,
+            "draft_cover": "",
+            "draft_deeplink_url": "",
+            "draft_enterprise_info": None,
+            "draft_fold_path": project_dir_str,
+            "draft_id": draft_id,
+            "draft_is_ai_shorts": False,
+            "draft_is_article_video_draft": False,
+            "draft_is_from_deeplink": False,
+            "draft_is_invisible": False,
+            "draft_materials_copied": False,
+            "draft_materials_copied_path": None,
+            "draft_name": project_name,
+            "draft_new_version": "",
+            "draft_removable_storage_device": "",
+            "draft_root_path": root_path_str,
+            "draft_segment_extra_info": None,
+            "draft_timeline_materials_size": 0,
+            "draft_type": "normal",
+            "tm_draft_cloud_completed": None,
+            "tm_draft_cloud_modified": 0,
+            "tm_draft_create": now_sec,
+            "tm_draft_modified": now_sec,
+            "tm_draft_removed": 0,
+        }
+        with open(project_dir / "draft_info.json", "w", encoding="utf-8") as f:
+            json.dump(draft_info, f, ensure_ascii=False, indent=2)
 
     # ---------------------------------------------------------------
     # draft_meta_info.json  (complete, 26+ fields)

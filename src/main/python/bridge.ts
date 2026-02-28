@@ -47,9 +47,12 @@ function summarize(obj: unknown, maxLen = 200): string {
 
 function getPythonPath(): string {
   if (app.isPackaged) {
-    return join(process.resourcesPath, 'python', 'python.exe')
+    if (process.platform === 'win32') {
+      return join(process.resourcesPath, 'python', 'python.exe')
+    }
+    return join(process.resourcesPath, 'python', 'bin', 'python3')
   }
-  return 'python'
+  return process.platform === 'win32' ? 'python' : 'python3'
 }
 
 function getScriptPath(): string {

@@ -2,6 +2,8 @@
 
 Studio de pre-edicao automatizada para CapCut. Transforma um roteiro em texto em um projeto CapCut completo com legendas sincronizadas, audio e midias posicionadas na timeline.
 
+**Plataformas**: Windows + macOS (multiplataforma obrigatoria)
+
 ## Framework DOE
 
 Este projeto segue o Framework **DOE** (Directives, Orchestration, Executions):
@@ -171,6 +173,8 @@ directives/
 - Animacoes: Framer Motion (AnimatePresence, motion.div, whileHover, whileTap)
 
 ### CapCut
+
+#### Regras de manipulacao
 - Unidade interna do CapCut: microsegundos (us)
 - Unidade da API/UI do app: milissegundos (ms)
 - Conversao: us = ms * 1000
@@ -180,6 +184,68 @@ directives/
 - NUNCA alterar segmentos de audio existentes durante insercao de midias
 - Preservar todos os campos desconhecidos do JSON do CapCut
 - draft_content.json pode ter 1-10MB+ - nunca ler com Read tool, usar Python
+
+#### Paths por plataforma
+
+| Recurso | Windows | macOS |
+|---------|---------|-------|
+| Projetos CapCut | `%LOCALAPPDATA%/CapCut/User Data/Projects/com.lveditor.draft` | `~/Movies/CapCut/User Data/Projects/com.lveditor.draft` |
+| Executavel CapCut | `%LOCALAPPDATA%/CapCut/CapCut.exe` | `/Applications/CapCut.app` |
+| App data | `process.env.LOCALAPPDATA` | `os.homedir() + '/Movies'` |
+
+**Regras de path**:
+- SEMPRE usar `path.join()` no TypeScript e `pathlib.Path` ou `os.path.join()` no Python
+- NUNCA hardcodar separadores (`/` ou `\\`) em paths - usar APIs do sistema
+- NUNCA converter `/` para `\\` com `.replace()` - forward slashes funcionam em ambas plataformas
+- SEMPRE usar `process.platform === 'darwin'` para branching de paths no TypeScript
+- SEMPRE usar `sys.platform == 'darwin'` para branching no Python
+- Usar `os.homedir()` ao inves de `process.env.USERPROFILE` ou `process.env.HOME`
+- Usar `app.getPath('appData')` para diretorio de dados da aplicacao
+
+#### platform_info no draft
+
+| Campo | Windows | macOS |
+|-------|---------|-------|
+| `os` | `"windows"` | `"mac"` |
+| `os_version` | `platform.version()` (dinamico) | `platform.mac_ver()[0]` (dinamico) |
+| `app_id` | `359289` | `359289` |
+
+**Regra**: NUNCA hardcodar `os_version` - sempre obter dinamicamente via `platform` module.
+
+### Cross-Platform (OBRIGATORIO)
+
+Todo codigo que interage com o OS DEVE funcionar em Windows E macOS. Consultar `.claude/skills/cross-platform/SKILL.md` para checklist completo.
+
+#### Python bridge
+
+| Contexto | Windows | macOS |
+|----------|---------|-------|
+| Dev (spawn) | `python` ou `python3` | `python3` |
+| Packaged | `resources/python/python.exe` | `resources/python/bin/python3` |
+
+- Em `bridge.ts`, SEMPRE verificar `process.platform` para selecionar o executavel
+- Em packaged mode, cada plataforma tem seu diretorio de Python embutido
+
+#### Shell & processos
+
+| Operacao | Windows | macOS |
+|----------|---------|-------|
+| Matar processo | `taskkill /F /PID` | `kill -9 PID` |
+| Encontrar executavel | `where` | `which` |
+| Abrir arquivo/app | `start` | `open` |
+
+- NUNCA usar comandos shell platform-specific sem `process.platform` check
+- Para keyboard modifiers (CDP): Ctrl = modifier 2 (Windows), Cmd/Meta = modifier 4 (macOS)
+
+#### Ferramentas externas
+- `ffprobe`: verificar com `shutil.which("ffprobe")` antes de usar
+- `npm`: pode nao estar no PATH em GUI apps no macOS (Electron launched from Finder)
+- Qualquer executavel: NUNCA assumir que esta no PATH, sempre verificar
+
+#### electron-builder
+- Configuracao DEVE ter secoes `win:` e `mac:` separadas para `extraResources`
+- Scripts de build DEVEM ter variantes: `build:win` e `build:mac`
+- Python embeddable DEVE ser preparado separadamente por plataforma
 
 ### IPC
 - Renderer -> Main: ipcRenderer.invoke (async, promise-based)
@@ -193,6 +259,7 @@ directives/
 npm run dev            # Dev mode com HMR
 npm run build          # Build de producao (com typecheck)
 npm run build:win      # Build + empacotamento Windows
+npm run build:mac      # Build + empacotamento macOS
 npm run build:unpack   # Build + electron-builder preview
 npm run lint           # ESLint
 npm run typecheck      # Typecheck completo (node + web)
@@ -207,10 +274,28 @@ npm run format         # Prettier
 
 ## Paths Importantes
 
-- Projetos CapCut: `C:/Users/ander/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft/`
-- draft_content.json: arquivo principal do projeto CapCut
-- draft_meta_info.json: metadata do projeto (campo `"draft_timeline_materials_size_"` COM underscore)
-- root_meta_info.json: metadata raiz (campo `"draft_timeline_materials_size"` SEM underscore)
+### Projetos CapCut
+| Plataforma | Path |
+|------------|------|
+| Windows | `%LOCALAPPDATA%/CapCut/User Data/Projects/com.lveditor.draft/` |
+| macOS | `~/Movies/CapCut/User Data/Projects/com.lveditor.draft/` |
+
+### Executavel CapCut
+| Plataforma | Path | Fallbacks |
+|------------|------|-----------|
+| Windows | `%LOCALAPPDATA%/CapCut/CapCut.exe` | `%PROGRAMFILES%/CapCut/CapCut.exe` |
+| macOS | `/Applications/CapCut.app` | `~/Applications/CapCut.app` |
+
+### Arquivos do draft
+- `draft_content.json` - arquivo principal do projeto CapCut
+- `draft_meta_info.json` - metadata do projeto (campo `"draft_timeline_materials_size_"` COM underscore)
+- `root_meta_info.json` - metadata raiz (campo `"draft_timeline_materials_size"` SEM underscore)
+
+### Python embeddable (packaged app)
+| Plataforma | Path no bundle |
+|------------|---------------|
+| Windows | `resources/python/python.exe` |
+| macOS | `resources/python/bin/python3` |
 
 ## Documentacao
 

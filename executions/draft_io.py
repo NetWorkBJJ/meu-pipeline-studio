@@ -14,6 +14,7 @@ syncs metadata files (draft_meta_info.json, root_meta_info.json).
 
 import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -72,7 +73,17 @@ def save_draft(draft: dict, draft_path: str, sync_meta: bool = True) -> dict:
     _write_bytes_fsync(str(path), data_bytes)
     written_files.append(str(path))
 
-    for mirror_name in ["draft_content.json.bak", "template-2.tmp"]:
+    # Mirror to all draft file variants so CapCut picks up changes.
+    # Both draft_content.json and draft_info.json must stay in sync.
+    main_name = path.name
+    mirror_names = ["draft_content.json.bak", "template-2.tmp"]
+    # Always mirror to the other draft file (whichever wasn't the main path)
+    if main_name != "draft_content.json":
+        mirror_names.append("draft_content.json")
+    if main_name != "draft_info.json":
+        mirror_names.append("draft_info.json")
+
+    for mirror_name in mirror_names:
         mirror_path = draft_dir / mirror_name
         try:
             _write_bytes_fsync(str(mirror_path), data_bytes)
@@ -130,6 +141,18 @@ def save_draft(draft: dict, draft_path: str, sync_meta: bool = True) -> dict:
 
 
 def read_draft(draft_path: str) -> dict:
-    """Read and parse draft_content.json."""
-    with open(draft_path, "r", encoding="utf-8") as f:
+    """Read and parse the draft file.
+
+    If the specified path does not exist, tries alternative filenames
+    in the same directory (draft_info.json, draft_content.json, template.tmp).
+    """
+    path = Path(draft_path)
+    if not path.exists():
+        parent = path.parent
+        for candidate in ["draft_info.json", "draft_content.json", "template.tmp"]:
+            alt = parent / candidate
+            if alt.exists():
+                path = alt
+                break
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)

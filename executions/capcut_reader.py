@@ -4,13 +4,34 @@ import json
 from pathlib import Path
 
 
+def _resolve_draft_path(draft_path: str) -> Path:
+    """Resolve the actual draft file path.
+
+    On macOS, CapCut may use draft_info.json or template.tmp instead of
+    draft_content.json. This function checks for all known filenames.
+    """
+    path = Path(draft_path)
+    if path.exists():
+        return path
+
+    # Try alternative filenames in the same directory.
+    # Prefer draft_info.json (CapCut working file, most up-to-date on macOS).
+    parent = path.parent
+    for candidate in ["draft_info.json", "draft_content.json", "template.tmp"]:
+        alt = parent / candidate
+        if alt.exists():
+            return alt
+
+    raise FileNotFoundError(f"Draft not found: {draft_path}")
+
+
 def read_draft(draft_path: str) -> dict:
     """Read a CapCut draft and return a summary of its structure.
 
     Returns a dict with: canvas_config, duration_ms, tracks summary,
     text_materials, audio_materials, video_materials.
     """
-    path = Path(draft_path)
+    path = _resolve_draft_path(draft_path)
     if not path.exists():
         raise FileNotFoundError(f"Draft not found: {draft_path}")
 
@@ -83,9 +104,7 @@ def read_audio_blocks(draft_path: str) -> list:
     Each block contains: id, material_id, start_ms, end_ms, duration_ms,
     file_path, tone_type, tone_platform, track_index.
     """
-    path = Path(draft_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Draft not found: {draft_path}")
+    path = _resolve_draft_path(draft_path)
 
     with open(path, "r", encoding="utf-8") as f:
         draft = json.load(f)
@@ -131,9 +150,7 @@ def read_subtitles(draft_path: str) -> list:
     Returns list of: { index, track_idx, segment_idx, material_id, text,
     start_us, duration_us, start_ms, end_ms, timestamp }.
     """
-    path = Path(draft_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Draft not found: {draft_path}")
+    path = _resolve_draft_path(draft_path)
 
     with open(path, "r", encoding="utf-8") as f:
         draft = json.load(f)
@@ -186,12 +203,10 @@ def read_subtitles(draft_path: str) -> list:
 def load_full_project(draft_path: str) -> dict:
     """Read a CapCut draft fully and return all data for app hydration.
 
-    Reads draft_content.json once and extracts audio segments, text segments,
+    Reads the draft file once and extracts audio segments, text segments,
     video segments, track overview, and project summary.
     """
-    path = Path(draft_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Draft not found: {draft_path}")
+    path = _resolve_draft_path(draft_path)
 
     with open(path, "r", encoding="utf-8") as f:
         draft = json.load(f)

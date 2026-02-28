@@ -11,11 +11,21 @@ export function registerProjectHandlers(): void {
     const result = await dialog.showOpenDialog({
       title: 'Selecionar projeto CapCut',
       properties: ['openDirectory'],
-      defaultPath: 'C:/Users/ander/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft'
+      defaultPath:
+        process.platform === 'darwin'
+          ? join(require('os').homedir(), 'Movies/CapCut/User Data/Projects/com.lveditor.draft')
+          : join(
+              process.env.LOCALAPPDATA || require('os').homedir(),
+              'CapCut/User Data/Projects/com.lveditor.draft'
+            )
     })
     if (result.canceled) return null
 
-    const draftPath = join(result.filePaths[0], 'draft_content.json')
+    const projectDir = result.filePaths[0]
+    // Prefer draft_info.json (CapCut working file, most up-to-date on macOS)
+    const draftInfoPath = join(projectDir, 'draft_info.json')
+    const draftContentPath = join(projectDir, 'draft_content.json')
+    const draftPath = existsSync(draftInfoPath) ? draftInfoPath : draftContentPath
     return draftPath
   })
 
@@ -79,14 +89,13 @@ export function registerProjectHandlers(): void {
             continue
           }
 
-          const draftPath = join(projectPath, 'draft_content.json')
-          try {
-            await stat(draftPath)
-          } catch {
+          const hasDraftInfo = existsSync(join(projectPath, 'draft_info.json'))
+          const hasDraftContent = existsSync(join(projectPath, 'draft_content.json'))
+          if (!hasDraftInfo && !hasDraftContent) {
             results.push({
               path: projectPath,
               success: false,
-              error: 'No draft_content.json found - not a valid CapCut project'
+              error: 'No draft file found - not a valid CapCut project'
             })
             continue
           }
@@ -134,17 +143,23 @@ export function registerProjectHandlers(): void {
 
   ipcMain.handle('project:open-capcut', async () => {
     const home = homedir()
-    const directPath = join(home, 'AppData/Local/CapCut/CapCut.exe')
+    let capCutPath: string
 
-    if (existsSync(directPath)) {
-      const error = await shell.openPath(directPath)
+    if (process.platform === 'darwin') {
+      capCutPath = '/Applications/CapCut.app'
+    } else {
+      capCutPath = join(home, 'AppData/Local/CapCut/CapCut.exe')
+    }
+
+    if (existsSync(capCutPath)) {
+      const error = await shell.openPath(capCutPath)
       if (error) return { success: false, error }
       return { success: true }
     }
 
     return {
       success: false,
-      error: 'CapCut.exe nao encontrado. Verifique se o CapCut esta instalado.'
+      error: 'CapCut nao encontrado. Verifique se o CapCut esta instalado.'
     }
   })
 }

@@ -7,13 +7,21 @@ check if CapCut is running, and get overall project health reports.
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 
-CAPCUT_PROJECTS_PATH = Path(
-    os.environ.get("LOCALAPPDATA", "")
-) / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+def _get_capcut_projects_path() -> Path:
+    """Get the CapCut projects path based on the current platform."""
+    if sys.platform == "darwin":
+        return Path.home() / "Movies" / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+    return Path(
+        os.environ.get("LOCALAPPDATA", "")
+    ) / "CapCut" / "User Data" / "Projects" / "com.lveditor.draft"
+
+
+CAPCUT_PROJECTS_PATH = _get_capcut_projects_path()
 
 # Materials expected by CapCut (from NardotoStudio reference)
 EXPECTED_MATERIALS_KEYS = [
@@ -266,13 +274,19 @@ def diagnose_root_meta(project_name: str) -> dict:
     return result
 
 
-CAPCUT_PROCESSES = ["CapCut.exe", "CapCutHelper.exe", "CreativeGPT.exe"]
+CAPCUT_PROCESSES_WIN = ["CapCut.exe", "CapCutHelper.exe", "CreativeGPT.exe"]
+CAPCUT_PROCESSES_MAC = ["CapCut", "CapCutHelper", "CreativeGPT"]
+
+
+def _get_capcut_process_names() -> list:
+    """Get platform-specific process names."""
+    return CAPCUT_PROCESSES_WIN if sys.platform == "win32" else CAPCUT_PROCESSES_MAC
 
 
 def check_capcut_running() -> dict:
     """Check if any CapCut-related process is currently running.
 
-    Checks CapCut.exe, CapCutHelper.exe, and CreativeGPT.exe because
+    Checks CapCut, CapCutHelper, and CreativeGPT because
     background processes can modify project files even when the main app
     is closed.
     """
@@ -282,25 +296,49 @@ def check_capcut_running() -> dict:
         "warning": "",
     }
 
-    for proc_name in CAPCUT_PROCESSES:
-        try:
-            output = subprocess.check_output(
-                ["tasklist", "/FI", f"IMAGENAME eq {proc_name}", "/FO", "CSV", "/NH"],
-                text=True,
-                stderr=subprocess.DEVNULL,
-            )
-            for line in output.strip().split("\n"):
-                line = line.strip()
-                if line and proc_name in line:
-                    result["running"] = True
-                    parts = line.replace('"', '').split(",")
-                    if len(parts) >= 2:
+    proc_names = _get_capcut_process_names()
+
+    if sys.platform == "win32":
+        for proc_name in proc_names:
+            try:
+                output = subprocess.check_output(
+                    ["tasklist", "/FI", f"IMAGENAME eq {proc_name}", "/FO", "CSV", "/NH"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                for line in output.strip().split("\n"):
+                    line = line.strip()
+                    if line and proc_name in line:
+                        result["running"] = True
+                        parts = line.replace('"', '').split(",")
+                        if len(parts) >= 2:
+                            result["processes"].append({
+                                "name": parts[0],
+                                "pid": parts[1],
+                            })
+            except Exception:
+                pass
+    else:
+        # macOS / Linux: use pgrep
+        for proc_name in proc_names:
+            try:
+                output = subprocess.check_output(
+                    ["pgrep", "-x", proc_name],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                for pid in output.strip().split("\n"):
+                    pid = pid.strip()
+                    if pid:
+                        result["running"] = True
                         result["processes"].append({
-                            "name": parts[0],
-                            "pid": parts[1],
+                            "name": proc_name,
+                            "pid": pid,
                         })
-        except Exception:
-            pass
+            except subprocess.CalledProcessError:
+                pass
+            except Exception:
+                pass
 
     if result["running"]:
         names = [p["name"] for p in result["processes"]]
@@ -315,7 +353,7 @@ def check_capcut_running() -> dict:
 def close_capcut() -> dict:
     """Close ALL CapCut processes. Tries graceful shutdown first, then force kill.
 
-    Kills CapCut.exe, CapCutHelper.exe, and CreativeGPT.exe to prevent
+    Kills CapCut, CapCutHelper, and CreativeGPT to prevent
     background processes from overwriting project files.
 
     Returns:
@@ -326,16 +364,21 @@ def close_capcut() -> dict:
         return {"closed": False, "was_running": False, "method": "none", "killed": []}
 
     killed = []
+    proc_names = _get_capcut_process_names()
 
     # Try graceful close for all processes
-    for proc_name in CAPCUT_PROCESSES:
+    for proc_name in proc_names:
         try:
-            subprocess.run(
-                ["taskkill", "/IM", proc_name],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/IM", proc_name],
+                    capture_output=True, text=True, timeout=5,
+                )
+            else:
+                subprocess.run(
+                    ["pkill", "-x", proc_name],
+                    capture_output=True, text=True, timeout=5,
+                )
         except Exception:
             pass
 
@@ -348,14 +391,18 @@ def close_capcut() -> dict:
             return {"closed": True, "was_running": True, "method": "graceful", "killed": killed}
 
     # Force kill all remaining processes
-    for proc_name in CAPCUT_PROCESSES:
+    for proc_name in proc_names:
         try:
-            subprocess.run(
-                ["taskkill", "/F", "/IM", proc_name],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", proc_name],
+                    capture_output=True, text=True, timeout=5,
+                )
+            else:
+                subprocess.run(
+                    ["pkill", "-9", "-x", proc_name],
+                    capture_output=True, text=True, timeout=5,
+                )
         except Exception:
             pass
 
@@ -626,21 +673,13 @@ def debug_sync_state(draft_path: str, expected_segments: list = None) -> dict:
                 )
 
     # --- 7. Check CapCut running ---
-    capcut_running = False
-    try:
-        output = subprocess.check_output(
-            ["tasklist", "/FI", "IMAGENAME eq CapCut.exe", "/FO", "CSV", "/NH"],
-            text=True,
-            stderr=subprocess.DEVNULL,
+    capcut_status = check_capcut_running()
+    capcut_running = capcut_status["running"]
+    if capcut_running:
+        warnings.append(
+            "CapCut Desktop is running. It may revert changes to the draft "
+            "if metadata is not synced immediately after writing."
         )
-        if "CapCut.exe" in output:
-            capcut_running = True
-            warnings.append(
-                "CapCut Desktop is running. It may revert changes to the draft "
-                "if metadata is not synced immediately after writing."
-            )
-    except Exception:
-        pass
 
     return {
         "draft_path": str(path),
