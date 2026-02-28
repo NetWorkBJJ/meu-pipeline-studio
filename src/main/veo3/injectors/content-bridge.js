@@ -161,9 +161,29 @@
     return false;
   }
 
-  // Expose for other injectors (gallery-mapper.js uses Escape)
+  // Expose for other injectors (gallery-mapper.js uses Escape, rename-automator.js uses type/right-click)
   window.__veo3_cdpPress = cdpPressKey;
   window.__veo3_cdpClickElement = cdpClickElementByRect;
+
+  window.__veo3_cdpType = async function(text) {
+    try {
+      await cdpRequest('type', { text: text }, 10000);
+      return { success: true };
+    } catch (err) {
+      console.log('[CDP_TYPE] FAILED: ' + err.message);
+      return { success: false, error: err.message };
+    }
+  };
+
+  window.__veo3_cdpRightClickAt = async function(x, y) {
+    try {
+      await cdpRequest('clickAt', { x: x, y: y, button: 'right' }, 10000);
+      return { success: true };
+    } catch (err) {
+      console.log('[CDP_RIGHTCLICK] FAILED at (' + x + ',' + y + '): ' + err.message);
+      return { success: false, error: err.message };
+    }
+  };
 
   // === CDP CLICK OVERRIDES ===
   // Override the synthetic click functions with CDP-powered versions.
@@ -237,6 +257,19 @@
         break;
       case 'CDP_RESPONSE':
         handleCdpResponse(data);
+        break;
+      case 'RENAME_ALL_MEDIA':
+        if (window.veo3RenameAutomator) {
+          window.veo3RenameAutomator.renameAll();
+        } else {
+          console.log('[ContentBridge] rename-automator not loaded');
+          notifySidepanel('RENAME_ERROR', { message: 'rename-automator not loaded' });
+        }
+        break;
+      case 'STOP_RENAME':
+        if (window.veo3RenameAutomator) {
+          window.veo3RenameAutomator.stop();
+        }
         break;
       default:
         window.veo3Debug?.warn('BRIDGE', 'Unknown action: ' + action);
