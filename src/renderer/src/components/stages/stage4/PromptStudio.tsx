@@ -37,6 +37,19 @@ interface TakeRecord {
   environment_lock: string
 }
 
+/** Race a promise against an AbortSignal. Rejects with 'aborted' when cancelled. */
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new DOMException('Aborted', 'AbortError'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (val) => { signal.removeEventListener('abort', onAbort); resolve(val) },
+      (err) => { signal.removeEventListener('abort', onAbort); reject(err) }
+    )
+  })
+}
+
 interface PromptStudioProps {
   onConfirm: () => void
 }
@@ -108,7 +121,7 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
   const handleCancel = (): void => {
     if (abortRef.current) {
       abortRef.current.abort()
-      addToast({ type: 'info', message: 'Geracao sera cancelada apos o lote atual.' })
+      addToast({ type: 'info', message: 'Cancelando geracao...' })
     }
   }
 
@@ -145,14 +158,14 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
 
     try {
       // Narrative analysis (once, before batch loop)
-      if (config.sequenceMode === 'ai-decided') {
+      if (config.sequenceMode === 'ai-decided' && !controller.signal.aborted) {
         const fullScript = storyBlocks.map((b) => b.text).join(' ')
-        const analysis = (await window.api.directorAnalyzeNarrative({
+        const analysis = (await withAbort(window.api.directorAnalyzeNarrative({
           provider: config.llmProvider,
           model: config.llmModel || undefined,
           script_text: fullScript,
           scene_count: scenes.length
-        })) as {
+        }), controller.signal)) as {
           scenes?: Array<{
             scene_index: number
             narrative_context: string
@@ -230,12 +243,12 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
 
           console.log(`[Director] Lote ${batchIdx + 1}/${chunks.length}: takes ${chunkStartTake}-${chunkEndTake} | payload ${userMessage.length} chars`)
 
-          const result = (await window.api.directorGeneratePrompts({
+          const result = (await withAbort(window.api.directorGeneratePrompts({
             provider: config.llmProvider,
             model: config.llmModel || undefined,
             system_prompt: systemPrompt,
             user_message: userMessage
-          })) as {
+          }), controller.signal)) as {
             takes: TakeRecord[]
             success: boolean
             error?: string
@@ -303,6 +316,18 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
             })
           }
         } catch (batchErr) {
+          if (batchErr instanceof DOMException && batchErr.name === 'AbortError') {
+            currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
+              status: 'cancelled',
+              durationMs: Date.now() - batchStart
+            })
+            // Mark remaining batches as cancelled
+            for (let j = batchIdx + 1; j < chunks.length; j++) {
+              currentBatchResults = updateBatchResult(currentBatchResults, j, { status: 'cancelled' })
+            }
+            setDirectorProgress({ batchResults: currentBatchResults })
+            break
+          }
           const message = batchErr instanceof Error ? batchErr.message : 'Erro no lote'
           currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
             status: 'error',
@@ -319,7 +344,8 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
       }
 
       // Quality validation + auto-fix + LLM fix (all automatic)
-      if (allGeneratedTakes.length > 0) {
+      // Skip validation/fix entirely if user cancelled
+      if (allGeneratedTakes.length > 0 && !controller.signal.aborted) {
         let parsedForValidation: ParsedTake[] = allGeneratedTakes.map((t) => ({
           takeNumber: t.take_number,
           description: t.description,
@@ -371,7 +397,7 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
         ])
         const hasLlmFailures = !report.passed && report.rules.some((r) => !r.passed && LLM_RULES.has(r.id))
 
-        if (hasLlmFailures) {
+        if (hasLlmFailures && !controller.signal.aborted) {
           console.log('[Director] Iniciando correcao automatica com LLM...')
           try {
             const failingMap = identifyFailingTakes(parsedForValidation, scenes, characterRefs, startingTakeNumber)
@@ -394,12 +420,12 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
                 const { systemPrompt, userMessage } = buildFixPrompt(failingTakeData, characterRefs)
                 console.log(`[Director] LLM fix: ${failingTakeData.length} takes, ${userMessage.length} chars`)
 
-                const fixResult = (await window.api.directorGeneratePrompts({
+                const fixResult = (await withAbort(window.api.directorGeneratePrompts({
                   provider: config.llmProvider,
                   model: config.llmModel || undefined,
                   system_prompt: systemPrompt,
                   user_message: userMessage
-                })) as { takes: TakeRecord[]; success: boolean; raw_response?: string }
+                }), controller.signal)) as { takes: TakeRecord[]; success: boolean; raw_response?: string }
 
                 let llmFixedTakes: ParsedTake[] = []
                 if (fixResult.success && fixResult.takes?.length > 0) {
@@ -479,18 +505,29 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
           type: failedBatches > 0 || cancelledBatches > 0 ? 'warning' : report.passed ? 'success' : 'warning',
           message: msg
         })
-      } else {
+      } else if (!controller.signal.aborted) {
         const firstError = currentBatchResults.find((r) => r.status === 'error')?.error
         const errorMsg = firstError
           ? `Nenhum take gerado. ${firstError}`
           : 'Nenhum take gerado.'
         addToast({ type: 'error', message: errorMsg })
+      } else if (allGeneratedTakes.length > 0) {
+        // Cancelled but some takes were generated - show them
+        addToast({ type: 'info', message: `Cancelado. ${allGeneratedTakes.length} takes gerados.` })
+      } else {
+        addToast({ type: 'info', message: 'Geracao cancelada.' })
       }
     } catch (err) {
-      console.error('[Director] ERRO na geracao:', err)
-      const message = err instanceof Error ? err.message : 'Erro ao gerar prompts'
-      setDirectorProgress({ error: message })
-      addToast({ type: 'error', message })
+      // Abort is not an error - user cancelled intentionally
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.log('[Director] Geracao cancelada pelo usuario')
+        addToast({ type: 'info', message: 'Geracao cancelada.' })
+      } else {
+        console.error('[Director] ERRO na geracao:', err)
+        const message = err instanceof Error ? err.message : 'Erro ao gerar prompts'
+        setDirectorProgress({ error: message })
+        addToast({ type: 'error', message })
+      }
     } finally {
       abortRef.current = null
       setDirectorProgress({ isGeneratingPrompts: false })
