@@ -281,7 +281,14 @@ interface ElectronAppAPI {
   cdpPocTest: () => Promise<{ success: boolean; results?: unknown[]; error?: string }>
   cdpFillPrompt: (text: string) => Promise<{ success: boolean; error?: string }>
   cdpClickSubmit: () => Promise<{ success: boolean; error?: string }>
-  cdpClickAt: (x: number, y: number) => Promise<{ success: boolean; error?: string }>
+  cdpClickAt: (x: number, y: number, button?: string) => Promise<{ success: boolean; error?: string }>
+
+  // System
+  systemHealthCheck: () => Promise<{
+    python: { ok: boolean; error?: string }
+    capcut: { ok: boolean; path?: string }
+    capcutProjects: { ok: boolean; path?: string }
+  }>
 }
 
 declare global {

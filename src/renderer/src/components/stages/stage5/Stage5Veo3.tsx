@@ -151,6 +151,8 @@ export function Stage5Veo3(): React.JSX.Element {
         x?: number
         y?: number
         key?: string
+        button?: string
+        modifiers?: number
       }
     ) => {
       const { operation, requestId, text } = reqData
@@ -166,7 +168,10 @@ export function Stage5Veo3(): React.JSX.Element {
             result = await window.api.cdpClickSubmit()
             break
           case 'clickAt':
-            result = await window.api.cdpClickAt(reqData.x ?? 0, reqData.y ?? 0)
+            result = await window.api.cdpClickAt(reqData.x ?? 0, reqData.y ?? 0, reqData.button)
+            break
+          case 'type':
+            result = await window.api.cdpType(text || '')
             break
           case 'press':
             result = await window.api.cdpPress(reqData.key ?? 'Escape')
@@ -322,6 +327,11 @@ export function Stage5Veo3(): React.JSX.Element {
         case 'PAGE_READY':
         case 'DEBUG_ERROR':
         case 'BATCH_PAUSE_UPDATE':
+          break
+        case 'RENAME_STARTED':
+        case 'RENAME_PROGRESS':
+        case 'RENAME_COMPLETE':
+        case 'RENAME_ERROR':
           break
       }
 

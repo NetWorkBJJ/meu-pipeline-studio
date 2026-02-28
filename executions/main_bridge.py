@@ -465,7 +465,13 @@ def director_scan_media_folder(params):
     return scan_media_folder(params)
 
 
+def ping(params):
+    """Health check: confirms Python bridge is alive."""
+    return {"ok": True, "pid": os.getpid()}
+
+
 METHODS = {
+    "ping": ping,
     "read_draft": read_draft,
     "load_full_project": load_full_project,
     "read_audio_blocks": read_audio_blocks,

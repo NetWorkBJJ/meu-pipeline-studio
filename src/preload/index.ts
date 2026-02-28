@@ -380,8 +380,11 @@ const api = {
     ipcRenderer.invoke('cdp:fill-prompt', text),
   cdpClickSubmit: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('cdp:click-submit'),
-  cdpClickAt: (x: number, y: number): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('cdp:click-at', x, y)
+  cdpClickAt: (x: number, y: number, button?: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('cdp:click-at', x, y, button),
+
+  // System
+  systemHealthCheck: (): Promise<unknown> => ipcRenderer.invoke('system:health-check')
 }
 
 if (process.contextIsolated) {

@@ -20,6 +20,7 @@ const INJECTOR_SCRIPTS = [
   'automation/gallery-mapper.js',
   'automation/elements-mode-handler.js',
   'automation/image-creation-handler.js',
+  'automation/rename-automator.js',
   'content-bridge.js'
 ]
 

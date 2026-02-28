@@ -107,12 +107,13 @@ export function registerCdpHandlers(): void {
     }
   })
 
-  ipcMain.handle('cdp:click-at', async (_event, x: number, y: number) => {
+  ipcMain.handle('cdp:click-at', async (_event, x: number, y: number, button?: string) => {
     try {
       if (!cdpCore.isAttached()) {
         return { success: false, error: 'CDP not attached' }
       }
-      await cdpCore.click(x, y)
+      const clickButton = (button === 'right' || button === 'middle') ? button : 'left'
+      await cdpCore.click(x, y, { button: clickButton as 'left' | 'right' | 'middle' })
       return { success: true }
     } catch (err) {
       return { success: false, error: String(err) }

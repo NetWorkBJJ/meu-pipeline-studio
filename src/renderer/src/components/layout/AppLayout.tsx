@@ -6,6 +6,7 @@ import { WorkspaceSelectorScreen } from './WorkspaceSelectorScreen'
 import { PipelineWorkspace } from './PipelineWorkspace'
 import { ProjectDashboard } from '../projects/ProjectDashboard'
 import { SettingsModal } from '../shared/SettingsModal'
+import { HealthCheckModal } from '../shared/HealthCheckModal'
 
 export function AppLayout(): React.JSX.Element {
   const { currentView, setCurrentView } = useUIStore()
@@ -13,6 +14,7 @@ export function AppLayout(): React.JSX.Element {
 
   // Once pipeline is opened, keep it mounted forever to preserve webviews
   const [pipelineActivated, setPipelineActivated] = useState(false)
+  const [showHealthCheck, setShowHealthCheck] = useState(true)
 
   useEffect(() => {
     if (currentView === 'pipeline') setPipelineActivated(true)
@@ -76,6 +78,9 @@ export function AppLayout(): React.JSX.Element {
       )}
 
       <SettingsModal />
+      {showHealthCheck && (
+        <HealthCheckModal onDismiss={() => setShowHealthCheck(false)} />
+      )}
     </div>
   )
 }
