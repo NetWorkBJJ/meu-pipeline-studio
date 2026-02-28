@@ -6,6 +6,13 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Ensure script directory is in sys.path.
+# Python embeddable on Windows uses a ._pth file that ignores PYTHONPATH,
+# so local modules (capcut_writer, draft_io, etc.) won't be found without this.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+
 
 # ---------------------------------------------------------------------------
 # Logging setup

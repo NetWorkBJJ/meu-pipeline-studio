@@ -194,16 +194,16 @@
     // Mode mapping: imagem -> IMAGE tab, texto/elementos -> VIDEO tab
     getModeTab: (mode) => {
       if (mode === 'imagem') {
-        return document.querySelector('[role="tab"][aria-controls*="-content-IMAGE"]');
+        return document.querySelector('[role="tab"][aria-controls$="-content-IMAGE"]');
       }
-      // texto and elementos both use VIDEO mode
-      return document.querySelector('[role="tab"][aria-controls*="-content-VIDEO"]');
+      // texto and elementos both use VIDEO mode (use $= to avoid matching VIDEO_FRAMES / VIDEO_REFERENCES sub-tabs)
+      return document.querySelector('[role="tab"][aria-controls$="-content-VIDEO"]');
     },
 
     // --- Settings tabs (Radix UI with semantic aria-controls) ---
     // These appear inside the dropdown menu opened by the settings button
-    tabVideo: '[role="tab"][aria-controls*="-content-VIDEO"]',
-    tabImage: '[role="tab"][aria-controls*="-content-IMAGE"]',
+    tabVideo: '[role="tab"][aria-controls$="-content-VIDEO"]',
+    tabImage: '[role="tab"][aria-controls$="-content-IMAGE"]',
     tabIngredients: '[role="tab"][aria-controls*="-content-VIDEO_REFERENCES"]',
     tabFrames: '[role="tab"][aria-controls*="-content-VIDEO_FRAMES"]',
     tabLandscape: '[role="tab"][aria-controls*="-content-LANDSCAPE"]',

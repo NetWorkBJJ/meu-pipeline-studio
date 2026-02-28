@@ -673,6 +673,14 @@
     var failCount = 0;
     var failedNames = [];
 
+    // Ensure "Ingredients" (VIDEO_REFERENCES) tab is active, never "Frames" (VIDEO_FRAMES)
+    const ingredientsTab = document.querySelector(window.veo3Selectors.tabIngredients);
+    if (ingredientsTab && ingredientsTab.getAttribute('data-state') !== 'active') {
+      console.log(tag + '   > Switching to Ingredients tab...');
+      await window.veo3RobustClick(ingredientsTab);
+      await sleep(TIMING.SHORT);
+    }
+
     for (const charImg of characterImages) {
       if (!automationState.running) break;
 
