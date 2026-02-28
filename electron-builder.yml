@@ -2,6 +2,9 @@ appId: com.workflowaa.app
 productName: WorkFlowAA
 directories:
   buildResources: build
+electronLanguages:
+  - en-US
+  - pt-BR
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -13,6 +16,8 @@ files:
   - '!executions/**'
   - '!scripts/**'
   - '!directives/**'
+  - '!.claude/**'
+  - '!*.md'
 asarUnpack:
   - resources/**
 extraResources:
@@ -58,6 +63,3 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
