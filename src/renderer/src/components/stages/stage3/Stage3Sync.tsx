@@ -8,7 +8,8 @@ import {
   Loader2,
   ArrowRight,
   Circle,
-  XCircle
+  XCircle,
+  RefreshCw
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
@@ -31,10 +32,11 @@ export function Stage3Sync(): React.JSX.Element {
   const audioBlocks = useProjectStore((s) => s.audioBlocks)
   const capCutDraftPath = useProjectStore((s) => s.capCutDraftPath)
   const projectLoaded = useProjectStore((s) => s.projectLoaded)
-  const { setStoryBlocks, reloadAudioBlocks } = useProjectStore()
+  const { setStoryBlocks, reloadAudioBlocks, loadFullProject } = useProjectStore()
   const { completeStage, setCurrentStage } = useStageStore()
   const completedStages = useStageStore((s) => s.completedStages)
   const { addToast } = useUIStore()
+  const [reloading, setReloading] = useState(false)
 
   const [phase, setPhase] = useState<SyncPhase>('summary')
   const [analysis, setAnalysis] = useState<AudioAnalysis | null>(null)
@@ -271,6 +273,19 @@ export function Stage3Sync(): React.JSX.Element {
     setConfirmed(false)
   }
 
+  const handleReloadFromCapCut = async (): Promise<void> => {
+    if (!capCutDraftPath || reloading) return
+    setReloading(true)
+    try {
+      await loadFullProject(capCutDraftPath)
+      addToast({ type: 'info', message: 'Timeline recarregada do CapCut.' })
+    } catch {
+      addToast({ type: 'error', message: 'Erro ao recarregar dados do CapCut.' })
+    } finally {
+      setReloading(false)
+    }
+  }
+
   // --- Render ---
   return (
     <AnimatePresence mode="wait">
@@ -333,8 +348,11 @@ export function Stage3Sync(): React.JSX.Element {
             storyBlockCount={storyBlocks.length}
             audioBlockCount={audioBlocks.length}
             loading={loading}
+            reloading={reloading}
+            hasDraftPath={!!capCutDraftPath}
             onSync={handleSyncClick}
             onAccept={handleAcceptExisting}
+            onReload={handleReloadFromCapCut}
           />
         </motion.div>
       )}
@@ -374,8 +392,11 @@ function SummaryView({
   storyBlockCount,
   audioBlockCount,
   loading,
+  reloading,
+  hasDraftPath,
   onSync,
-  onAccept
+  onAccept,
+  onReload
 }: {
   analysis: AudioAnalysis | null
   hasAudio: boolean
@@ -385,8 +406,11 @@ function SummaryView({
   storyBlockCount: number
   audioBlockCount: number
   loading: boolean
+  reloading: boolean
+  hasDraftPath: boolean
   onSync: () => void
   onAccept: () => void
+  onReload: () => void
 }): React.JSX.Element {
   const canSync = hasAudio && hasText && !loading
 
@@ -478,6 +502,17 @@ function SummaryView({
           </p>
         </div>
         <div className="flex gap-2">
+          {hasDraftPath && (
+            <button
+              onClick={onReload}
+              disabled={reloading}
+              title="Recarregar dados do CapCut"
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-muted transition-all duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98] disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${reloading ? 'animate-spin' : ''}`} />
+              Recarregar
+            </button>
+          )}
           {hasExistingSync && !stageAlreadyComplete && (
             <button
               onClick={onAccept}

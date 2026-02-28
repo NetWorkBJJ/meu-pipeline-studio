@@ -13,8 +13,7 @@ interface WorkspaceCreateModalProps {
   }) => Promise<void>
 }
 
-const DEFAULT_CAPCUT_PATH =
-  'C:/Users/ander/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft'
+const DEFAULT_CAPCUT_PATH = ''
 
 export function WorkspaceCreateModal({
   open,

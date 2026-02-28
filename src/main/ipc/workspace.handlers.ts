@@ -43,6 +43,10 @@ function getRegistryPath(): string {
 }
 
 function getDefaultCapCutPath(): string {
+  if (process.platform === 'darwin') {
+    const home = require('os').homedir()
+    return `${home}/Movies/CapCut/User Data/Projects/com.lveditor.draft`
+  }
   const localAppData = process.env.LOCALAPPDATA || ''
   return `${localAppData}/CapCut/User Data/Projects/com.lveditor.draft`.replace(/\\/g, '/')
 }
@@ -102,11 +106,14 @@ async function countCapCutProjects(capCutPath: string): Promise<number> {
   try {
     const entries = await readdir(capCutPath, { withFileTypes: true })
     let count = 0
+    const draftCandidates = ['draft_info.json', 'draft_content.json', 'template.tmp']
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        const draftFile = join(capCutPath, entry.name, 'draft_content.json')
-        if (await fileExists(draftFile)) {
-          count++
+        for (const candidate of draftCandidates) {
+          if (await fileExists(join(capCutPath, entry.name, candidate))) {
+            count++
+            break
+          }
         }
       }
     }
@@ -145,10 +152,20 @@ async function scanCapCutProjects(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const projectPath = join(capCutProjectsPath, entry.name)
-    const draftPath = join(projectPath, 'draft_content.json')
     const metaPath = join(projectPath, 'draft_meta_info.json')
 
-    if (!(await fileExists(draftPath))) continue
+    // On macOS, CapCut uses draft_info.json as the working file (most up-to-date).
+    // Prefer draft_info.json over draft_content.json to get the latest data.
+    const draftCandidates = ['draft_info.json', 'draft_content.json', 'template.tmp']
+    let draftPath = ''
+    for (const candidate of draftCandidates) {
+      const candidatePath = join(projectPath, candidate)
+      if (await fileExists(candidatePath)) {
+        draftPath = candidatePath
+        break
+      }
+    }
+    if (!draftPath) continue
 
     let name = entry.name
     let modifiedUs = 0
@@ -191,9 +208,9 @@ async function scanCapCutProjects(
   return projects
 }
 
-async function createDefaultWorkspace(): Promise<WorkspaceRegistryEntry | null> {
+async function createDefaultWorkspace(): Promise<WorkspaceRegistryEntry> {
   const capCutPath = getDefaultCapCutPath()
-  if (!(await fileExists(capCutPath))) return null
+  const capCutExists = await fileExists(capCutPath)
 
   const id = randomUUID()
   const now = new Date().toISOString()
@@ -222,7 +239,7 @@ async function createDefaultWorkspace(): Promise<WorkspaceRegistryEntry | null> 
   }
   await writeWorkspaceConfig(workspacePath, config)
 
-  const projectCount = await countCapCutProjects(capCutPath)
+  const projectCount = capCutExists ? await countCapCutProjects(capCutPath) : 0
 
   const entry: WorkspaceRegistryEntry = {
     id,
@@ -249,9 +266,7 @@ export function registerWorkspaceHandlers(): void {
     // Auto-create default CapCut workspace if registry is empty
     if (entries.length === 0) {
       const defaultEntry = await createDefaultWorkspace()
-      if (defaultEntry) {
-        entries = [defaultEntry]
-      }
+      entries = [defaultEntry]
     }
 
     const validated: WorkspaceRegistryEntry[] = []
@@ -328,8 +343,18 @@ export function registerWorkspaceHandlers(): void {
     // Backward compat: initialize projects array if missing
     if (!config.projects) {
       config.projects = []
-      await writeWorkspaceConfig(entry.path, config)
     }
+
+    // Auto-fix: if capCutProjectsPath is a Windows path on macOS, use workspace path
+    if (
+      process.platform === 'darwin' &&
+      config.capCutProjectsPath &&
+      /^[A-Z]:[\\/]/.test(config.capCutProjectsPath)
+    ) {
+      config.capCutProjectsPath = entry.path
+    }
+
+    await writeWorkspaceConfig(entry.path, config)
 
     const projectCount = await countWorkspaceProjects(
       entry.path,

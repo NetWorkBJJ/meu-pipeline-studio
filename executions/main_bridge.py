@@ -13,9 +13,12 @@ from pathlib import Path
 
 def _setup_logging():
     """Configure structured logging to file and stderr."""
-    log_dir = Path(
-        os.environ.get("APPDATA", "")
-    ) / "workflowaa" / "logs"
+    if sys.platform == "darwin":
+        log_dir = Path.home() / "Library" / "Application Support" / "workflowaa" / "logs"
+    elif sys.platform == "win32":
+        log_dir = Path(os.environ.get("APPDATA", "")) / "workflowaa" / "logs"
+    else:
+        log_dir = Path.home() / ".config" / "workflowaa" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Cleanup old logs (keep last 7 days)
