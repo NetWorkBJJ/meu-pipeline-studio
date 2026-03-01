@@ -63,3 +63,8 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+publish:
+  provider: github
+  owner: NetWorkBJJ
+  repo: meu-pipeline-studio
+  releaseType: release

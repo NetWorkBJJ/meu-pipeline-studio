@@ -289,6 +289,13 @@ interface ElectronAppAPI {
     capcut: { ok: boolean; path?: string }
     capcutProjects: { ok: boolean; path?: string }
   }>
+
+  // Updater
+  updaterCheck: () => Promise<{ success: boolean; version?: string | null; error?: string }>
+  updaterDownload: () => Promise<{ success: boolean; error?: string }>
+  updaterInstall: () => Promise<{ success: boolean }>
+  updaterGetVersion: () => Promise<string>
+  onUpdaterStatus: (callback: (data: unknown) => void) => () => void
 }
 
 declare global {

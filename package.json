@@ -1,6 +1,6 @@
 {
   "name": "workflowaa",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Studio de pre-edicao automatizada para CapCut",
   "main": "./out/main/index.js",
   "author": "Anderson",
@@ -21,18 +21,20 @@
     "postbuild:dist": "node scripts/verify-dist.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "npx playwright test"
+    "test:e2e": "npx playwright test",
+    "test:python": "python -m pytest test/python -v --junitxml=test-results/python-results.xml",
+    "test:all": "npm run test && npm run test:python && npm run test:e2e",
+    "test:ci": "npm run test -- --reporter=junit --outputFile=test-results/vitest-results.xml && npm run test:python && npm run test:e2e"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "adm-zip": "^0.5.16",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "uuid": "^11.0.0"
   },
   "devDependencies": {
-    "framer-motion": "^11.0.0",
-    "lucide-react": "^0.574.0",
-    "zustand": "^5.0.0",
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
@@ -51,12 +53,15 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^0.574.0",
     "prettier": "^3.7.4",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.6",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "zustand": "^5.0.0"
   }
 }

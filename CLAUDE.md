@@ -301,5 +301,5 @@ npm run format         # Prettier
 
 - `Agents.md` - Framework DOE (Directives, Orchestration, Executions) - governanca do projeto
 - `directives/regras_do_projeto.md` - Regras de negocio, visao estrategica e playbook do projeto
-- `spec.md` - Especificacao tecnica e roadmap de implementacao (ferramentas, dependencias, ordem de prioridade)
-- `prd.md` - Documento de pesquisa completo (referencia bruta, nao filtrado)
+- `TODO.md` - Lista de tarefas futuras com prioridades (P0-P3)
+- `TOKEN_COST_LOG.md` - Registro detalhado de consumo de tokens por sessao

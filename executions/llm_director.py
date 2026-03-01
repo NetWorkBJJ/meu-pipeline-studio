@@ -8,8 +8,19 @@ import logging
 import sys
 import tempfile
 import os
+import time
 
 log = logging.getLogger("bridge")
+
+
+def _send_progress(data: dict) -> None:
+    """Send a progress side-channel message to Node bridge via stdout."""
+    try:
+        msg = json.dumps({"type": "progress", "data": data}, ensure_ascii=False)
+        sys.stdout.write(msg + "\n")
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 # Maps provider name to (cli_binary, non-interactive base args)
 CLI_COMMANDS = {
@@ -26,7 +37,7 @@ def _find_cli(provider: str) -> str | None:
     return shutil.which(cmd_name)
 
 
-def _call_llm(provider: str, prompt: str, model: str = None, timeout: int = 600) -> str:
+def _call_llm(provider: str, prompt: str, model: str = None, timeout: int = 1200) -> str:
     """Call an LLM CLI tool in non-interactive mode and return the text response."""
     if provider not in CLI_COMMANDS:
         raise ValueError(f"Unknown LLM provider: {provider}")
@@ -267,14 +278,32 @@ def generate_prompts(params):
 
     log.info("[generate_prompts] full_prompt length: %d chars", len(full_prompt))
 
+    _send_progress({
+        "event": "llm_call_start",
+        "provider": provider,
+        "model": model or "default",
+        "prompt_len": len(full_prompt),
+    })
+    t0 = time.time()
+
     try:
-        response = _call_llm(provider, full_prompt, model, timeout=600)
+        response = _call_llm(provider, full_prompt, model, timeout=1200)
+        elapsed = round(time.time() - t0, 1)
         takes = parse_takes(response)
 
-        log.info("[generate_prompts] parse_takes returned %d takes", len(takes))
+        log.info("[generate_prompts] parse_takes returned %d takes in %.1fs", len(takes), elapsed)
         if takes:
             log.info("[generate_prompts] first take: %s", {k: str(v)[:80] for k, v in takes[0].items()})
             log.info("[generate_prompts] last take: %s", {k: str(v)[:80] for k, v in takes[-1].items()})
+
+        _send_progress({
+            "event": "llm_call_end",
+            "provider": provider,
+            "duration_s": elapsed,
+            "success": True,
+            "takes_count": len(takes),
+            "response_len": len(response),
+        })
 
         return {
             "takes": takes,
@@ -283,7 +312,17 @@ def generate_prompts(params):
             "success": True,
         }
     except Exception as e:
-        log.error("[generate_prompts] FAILED: %s", str(e), exc_info=True)
+        elapsed = round(time.time() - t0, 1)
+        log.error("[generate_prompts] FAILED after %.1fs: %s", elapsed, str(e), exc_info=True)
+
+        _send_progress({
+            "event": "llm_call_end",
+            "provider": provider,
+            "duration_s": elapsed,
+            "success": False,
+            "error": str(e),
+        })
+
         return {
             "takes": [],
             "total": 0,

@@ -1,0 +1,147 @@
+{
+  "canvas_config": {
+    "width": 1080,
+    "height": 1920,
+    "ratio": "9:16"
+  },
+  "duration": 25000000,
+  "tracks": [
+    {
+      "id": "track-audio-1",
+      "type": "audio",
+      "flag": 0,
+      "attribute": 0,
+      "segments": [
+        {
+          "id": "audio-seg-001",
+          "material_id": "audio-mat-001",
+          "target_timerange": { "start": 0, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true,
+          "volume": 1.0
+        },
+        {
+          "id": "audio-seg-002",
+          "material_id": "audio-mat-002",
+          "target_timerange": { "start": 5000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true,
+          "volume": 1.0
+        },
+        {
+          "id": "audio-seg-003",
+          "material_id": "audio-mat-003",
+          "target_timerange": { "start": 10000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true,
+          "volume": 1.0
+        },
+        {
+          "id": "audio-seg-004",
+          "material_id": "audio-mat-004",
+          "target_timerange": { "start": 15000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true,
+          "volume": 1.0
+        },
+        {
+          "id": "audio-seg-005",
+          "material_id": "audio-mat-005",
+          "target_timerange": { "start": 20000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true,
+          "volume": 1.0
+        }
+      ]
+    },
+    {
+      "id": "track-text-1",
+      "type": "text",
+      "flag": 0,
+      "attribute": 0,
+      "segments": [
+        {
+          "id": "text-seg-001",
+          "material_id": "text-mat-001",
+          "target_timerange": { "start": 0, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true
+        },
+        {
+          "id": "text-seg-002",
+          "material_id": "text-mat-002",
+          "target_timerange": { "start": 5000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true
+        },
+        {
+          "id": "text-seg-003",
+          "material_id": "text-mat-003",
+          "target_timerange": { "start": 10000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true
+        },
+        {
+          "id": "text-seg-004",
+          "material_id": "text-mat-004",
+          "target_timerange": { "start": 15000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true
+        },
+        {
+          "id": "text-seg-005",
+          "material_id": "text-mat-005",
+          "target_timerange": { "start": 20000000, "duration": 5000000 },
+          "source_timerange": { "start": 0, "duration": 5000000 },
+          "visible": true
+        }
+      ]
+    },
+    {
+      "id": "track-video-1",
+      "type": "video",
+      "flag": 0,
+      "attribute": 0,
+      "segments": [
+        {
+          "id": "video-seg-001",
+          "material_id": "video-mat-001",
+          "target_timerange": { "start": 0, "duration": 12000000 },
+          "source_timerange": { "start": 0, "duration": 12000000 },
+          "visible": true
+        },
+        {
+          "id": "video-seg-002",
+          "material_id": "video-mat-002",
+          "target_timerange": { "start": 12000000, "duration": 13000000 },
+          "source_timerange": { "start": 0, "duration": 13000000 },
+          "visible": true
+        }
+      ]
+    }
+  ],
+  "materials": {
+    "audios": [
+      { "id": "audio-mat-001", "path": "##tts_audio_1.mp3", "duration": 5000000, "tone_type": "BV700_streaming", "tone_platform": "volcengine", "type": "extract_music" },
+      { "id": "audio-mat-002", "path": "##tts_audio_2.mp3", "duration": 5000000, "tone_type": "BV700_streaming", "tone_platform": "volcengine", "type": "extract_music" },
+      { "id": "audio-mat-003", "path": "##tts_audio_3.mp3", "duration": 5000000, "tone_type": "BV700_streaming", "tone_platform": "volcengine", "type": "extract_music" },
+      { "id": "audio-mat-004", "path": "##tts_audio_4.mp3", "duration": 5000000, "tone_type": "BV700_streaming", "tone_platform": "volcengine", "type": "extract_music" },
+      { "id": "audio-mat-005", "path": "##tts_audio_5.mp3", "duration": 5000000, "tone_type": "BV700_streaming", "tone_platform": "volcengine", "type": "extract_music" }
+    ],
+    "texts": [
+      { "id": "text-mat-001", "recognize_text": "First subtitle block text.", "type": "subtitle", "text_color": "#FFFFFF", "text_size": 30 },
+      { "id": "text-mat-002", "recognize_text": "Second subtitle block text.", "type": "subtitle", "text_color": "#FFFFFF", "text_size": 30 },
+      { "id": "text-mat-003", "recognize_text": "Third subtitle block text.", "type": "subtitle", "text_color": "#FFFFFF", "text_size": 30 },
+      { "id": "text-mat-004", "recognize_text": "Fourth subtitle block text.", "type": "subtitle", "text_color": "#FFFFFF", "text_size": 30 },
+      { "id": "text-mat-005", "recognize_text": "Fifth subtitle block text.", "type": "subtitle", "text_color": "#FFFFFF", "text_size": 30 }
+    ],
+    "videos": [
+      { "id": "video-mat-001", "path": "/media/scene_1.mp4", "type": "video", "width": 1080, "height": 1920, "duration": 12000000 },
+      { "id": "video-mat-002", "path": "/media/scene_2.mp4", "type": "video", "width": 1080, "height": 1920, "duration": 13000000 }
+    ],
+    "speeds": [],
+    "canvases": [],
+    "material_colors": [],
+    "sound_channel_mappings": []
+  }
+}

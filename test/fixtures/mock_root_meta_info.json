@@ -1,0 +1,12 @@
+{
+  "all_draft_store": [
+    {
+      "draft_id": "test-draft-fixture-001",
+      "draft_name": "Test Draft Fixture",
+      "draft_timeline_materials_size": 0,
+      "tm_draft_modified": 0,
+      "tm_duration": 25000000,
+      "cloud_draft_sync": false
+    }
+  ]
+}

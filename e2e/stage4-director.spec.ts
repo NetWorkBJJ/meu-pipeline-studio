@@ -1,28 +1,17 @@
-import { test, expect, _electron, type ElectronApplication, type Page } from '@playwright/test'
-import path from 'path'
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { launchElectron, dismissHealthCheckModal } from './helpers'
 
-const ROOT = path.join(__dirname, '..')
 const SCREENSHOT_DIR = 'e2e/screenshots/stage4'
 
 let electronApp: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
-  const electronPath = path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-
-  const env = { ...process.env }
-  delete env.ELECTRON_RUN_AS_NODE
-
-  electronApp = await _electron.launch({
-    executablePath: electronPath,
-    args: [path.join(ROOT, 'out', 'main', 'index.js')],
-    env,
-    timeout: 30_000
-  })
-
-  page = await electronApp.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
+  const app = await launchElectron()
+  electronApp = app.electronApp
+  page = app.page
   await page.waitForTimeout(2000)
+  await dismissHealthCheckModal(page)
 })
 
 test.afterAll(async () => {
