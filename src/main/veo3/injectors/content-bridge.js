@@ -569,6 +569,20 @@
       await sleep(TIMING.MICRO);
     }
 
+    // Recovery: if settings button not found, UI may be in a broken state
+    // (lightbox/overlay from accidental thumbnail click, or "Frame" tab active).
+    // Press Escape to dismiss and restore normal state.
+    if (!window.veo3Selectors.settingsButton()) {
+      console.log(tag + ' Recovery: settings button not found, pressing Escape...');
+      await cdpDismiss();
+      await sleep(TIMING.STANDARD);
+      if (!window.veo3Selectors.settingsButton()) {
+        console.log(tag + ' Recovery: second Escape attempt...');
+        await cdpDismiss();
+        await sleep(TIMING.MEDIUM);
+      }
+    }
+
     // Step 1/4: Mode switch via settings dropdown tabs
     window.__veo3_phase = 'MODE_SWITCH';
     console.log(tag + ' Step 1/4: Switching mode to "' + cmd.mode + '"...');
@@ -721,8 +735,30 @@
     console.log('[MODE] Current: ' + (currentMode || 'unknown') + ', Target: ' + targetMode +
       (settingsApplied ? '' : ' (first run, will apply Landscape+x1)'));
 
-    // If mode is already correct AND settings were already applied, skip entirely
+    // If mode is already correct AND settings were already applied, check Ingredients sub-tab
     if (!needsModeSwitch && settingsApplied) {
+      // For VIDEO mode: verify Ingredients sub-tab is still active (can drift to "Frame")
+      if (!targetIsImage) {
+        const ingredientsTab = document.querySelector(window.veo3Selectors.tabIngredients);
+        if (ingredientsTab && ingredientsTab.getAttribute('data-state') !== 'active') {
+          console.log('[MODE] Mode correct but Ingredients sub-tab not active, opening dropdown to fix...');
+          const settingsBtn = window.veo3Selectors.settingsButton();
+          if (settingsBtn) {
+            await window.veo3RadixClick(settingsBtn);
+            await sleep(TIMING.STANDARD);
+            const freshIngredientsTab = document.querySelector(window.veo3Selectors.tabIngredients);
+            if (freshIngredientsTab && freshIngredientsTab.getAttribute('data-state') !== 'active') {
+              await cdpClickElementByRect(freshIngredientsTab);
+              await sleep(TIMING.SHORT);
+              console.log('[MODE] Clicked Ingredients sub-tab (drift recovery)');
+            }
+            // Close dropdown
+            const closeBtn = window.veo3Selectors.settingsButton();
+            if (closeBtn) await window.veo3RadixClick(closeBtn);
+            await sleep(TIMING.STANDARD);
+          }
+        }
+      }
       console.log('[MODE] Already in correct mode (' + currentMode + '), no action needed');
       return true;
     }
@@ -820,6 +856,17 @@
         }
 
         settingsApplied = true;
+
+        // Ensure Ingredients sub-tab (not Frame) for VIDEO mode on first run
+        if (!targetIsImage) {
+          const ingredientsTab = document.querySelector(window.veo3Selectors.tabIngredients);
+          if (ingredientsTab && ingredientsTab.getAttribute('data-state') !== 'active') {
+            window.veo3ClickLogger?.logNativeClick(ingredientsTab, 'SETTINGS', 'Ingredients sub-tab');
+            await cdpClickElementByRect(ingredientsTab);
+            await sleep(TIMING.SHORT);
+            console.log('[MODE] Clicked Ingredients sub-tab (first run)');
+          }
+        }
       }
 
       // Step 3: Switch mode tab if needed (IMAGE or VIDEO)
@@ -858,6 +905,17 @@
           }
         } else {
           console.log('[MODE] Mode tab already active, no click needed');
+        }
+
+        // Step 3c: Ensure Ingredients sub-tab (not Frame) after VIDEO mode switch
+        if (!targetIsImage) {
+          const ingredientsTab = document.querySelector(window.veo3Selectors.tabIngredients);
+          if (ingredientsTab && ingredientsTab.getAttribute('data-state') !== 'active') {
+            window.veo3ClickLogger?.logNativeClick(ingredientsTab, 'SETTINGS', 'Ingredients sub-tab');
+            await cdpClickElementByRect(ingredientsTab);
+            await sleep(TIMING.SHORT);
+            console.log('[MODE] Clicked Ingredients sub-tab (after mode switch)');
+          }
         }
       }
 
