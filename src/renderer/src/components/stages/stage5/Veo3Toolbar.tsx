@@ -15,7 +15,8 @@ import {
   Square,
   TextCursorInput,
   Loader2,
-  XCircle
+  XCircle,
+  Download
 } from 'lucide-react'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import type { WebviewElement } from '@/types/veo3'
@@ -46,6 +47,8 @@ export function Veo3Toolbar({
 }: Veo3ToolbarProps): React.JSX.Element {
   const { zoomFactor, setZoomFactor } = useVeo3Store()
   const [isRenaming, setIsRenaming] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadStatus, setDownloadStatus] = useState('')
 
   const { isLoading, currentUrl, canGoBack, canGoForward } = webviewState
 
@@ -146,6 +149,222 @@ export function Veo3Toolbar({
       await navigator.clipboard.writeText(logs)
     } catch {
       // Silently fail if clipboard not available
+    }
+  }
+
+  const handleStopDownload = async (): Promise<void> => {
+    const wv = webviewRef.current
+    if (!wv) return
+    try {
+      await wv.executeJavaScript('window.__downloadCancelled = true')
+    } catch {
+      // ignore
+    }
+    setIsDownloading(false)
+    setDownloadStatus('')
+  }
+
+  const handleDownloadMedia = async (): Promise<void> => {
+    const wv = webviewRef.current
+    if (!wv) return
+    setIsDownloading(true)
+    setDownloadStatus('Mapeando midias...')
+    try {
+      await wv.executeJavaScript('window.__downloadCancelled = false')
+
+      // Passo 1: mapeia videos E imagens em um unico scroll
+      const resultJson = (await wv.executeJavaScript(`(async function() {
+        var container = document.querySelector('[data-testid="virtuoso-scroller"]');
+        var videos = new Map();
+        var imagens = new Map();
+        var lastScroll = -1;
+        var sameCount = 0;
+
+        console.log("Mapeando videos e imagens...");
+
+        while (sameCount < 8) {
+          if (window.__downloadCancelled) return JSON.stringify({ videos: 0, imagens: 0 });
+
+          var cards = [...document.querySelectorAll("div")]
+            .filter(function(el) { return el.innerText.includes("(TAKE"); });
+
+          for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            var match = card.innerText.match(/\\(TAKE\\s+(\\d+)\\)/);
+            if (!match) continue;
+
+            var take = parseInt(match[1]);
+
+            // Video?
+            var video = card.querySelector("video");
+            if (video && video.src) {
+              if (!videos.has(take)) {
+                videos.set(take, video.src);
+              }
+              continue;
+            }
+
+            // Imagem? (pegar a maior, ignorar icones/miniaturas)
+            var imgs = card.querySelectorAll("img");
+            var bestImg = null;
+            var bestSize = 0;
+            for (var j = 0; j < imgs.length; j++) {
+              var img = imgs[j];
+              if (!img.src || img.src.startsWith("data:")) continue;
+              var w = img.naturalWidth || img.width || 0;
+              var h = img.naturalHeight || img.height || 0;
+              if (w * h > bestSize) {
+                bestSize = w * h;
+                bestImg = img;
+              }
+            }
+            if (bestImg && bestSize >= 50 * 50 && !imagens.has(take)) {
+              var src = bestImg.src;
+              if (src.includes("googleusercontent.com")) {
+                src = src.replace(/=w\\d+.*$/, "=s0").replace(/=s\\d+.*$/, "=s0");
+              }
+              imagens.set(take, src);
+            }
+          }
+
+          container.scrollTop += 2000;
+          await new Promise(function(r) { setTimeout(r, 800); });
+
+          if (container.scrollTop === lastScroll) {
+            sameCount++;
+          } else {
+            sameCount = 0;
+            lastScroll = container.scrollTop;
+          }
+        }
+
+        console.log("TOTAL VIDEOS:", videos.size, "| TOTAL IMAGENS:", imagens.size);
+        window.videosMapeados = videos;
+        window.imagensMapeadas = imagens;
+        return JSON.stringify({ videos: videos.size, imagens: imagens.size });
+      })()`)) as string
+
+      const counts = JSON.parse(resultJson)
+      var total = counts.videos + counts.imagens
+
+      if (total === 0) {
+        setDownloadStatus('Nenhuma midia encontrada')
+        setTimeout(() => {
+          setIsDownloading(false)
+          setDownloadStatus('')
+        }, 2000)
+        return
+      }
+
+      // Passo 2: baixa videos
+      if (counts.videos > 0) {
+        setDownloadStatus(`Baixando ${counts.videos} videos...`)
+
+        await wv.executeJavaScript(`(async function() {
+          if (!window.videosMapeados) return;
+
+          console.log("Iniciando download dos videos...");
+
+          for (var entry of window.videosMapeados.entries()) {
+            if (window.__downloadCancelled) {
+              console.log("Download cancelado pelo usuario.");
+              return;
+            }
+
+            var take = entry[0];
+            var videoSrc = entry[1];
+
+            var formatted = take.toString().padStart(4, '0');
+
+            var response = await fetch(videoSrc);
+            var realUrl = response.url;
+
+            var fileResponse = await fetch(realUrl);
+            var blob = await fileResponse.blob();
+
+            var blobUrl = URL.createObjectURL(blob);
+
+            var a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = "TAKE " + formatted + ".mp4";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            URL.revokeObjectURL(blobUrl);
+
+            console.log("Baixado video TAKE", formatted);
+
+            await new Promise(function(r) { setTimeout(r, 1500); });
+          }
+
+          console.log("DOWNLOAD DE VIDEOS COMPLETO");
+        })()`)
+      }
+
+      // Passo 3: baixa imagens
+      if (counts.imagens > 0) {
+        setDownloadStatus(`Baixando ${counts.imagens} imagens...`)
+
+        await wv.executeJavaScript(`(async function() {
+          if (!window.imagensMapeadas) return;
+
+          console.log("Iniciando download das imagens...");
+
+          for (var entry of window.imagensMapeadas.entries()) {
+            if (window.__downloadCancelled) {
+              console.log("Download cancelado pelo usuario.");
+              return;
+            }
+
+            var take = entry[0];
+            var imgSrc = entry[1];
+
+            var formatted = take.toString().padStart(4, '0');
+
+            var response = await fetch(imgSrc);
+            var realUrl = response.url;
+
+            var fileResponse = await fetch(realUrl);
+            var blob = await fileResponse.blob();
+
+            var contentType = fileResponse.headers.get("content-type") || "";
+            var ext = ".png";
+            if (contentType.includes("jpeg") || contentType.includes("jpg")) ext = ".jpg";
+            else if (contentType.includes("webp")) ext = ".webp";
+
+            var blobUrl = URL.createObjectURL(blob);
+
+            var a = document.createElement("a");
+            a.href = blobUrl;
+            a.download = "TAKE " + formatted + ext;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            URL.revokeObjectURL(blobUrl);
+
+            console.log("Baixada imagem TAKE", formatted);
+
+            await new Promise(function(r) { setTimeout(r, 1500); });
+          }
+
+          console.log("DOWNLOAD DE IMAGENS COMPLETO");
+        })()`)
+      }
+
+      setDownloadStatus('Concluido!')
+      setTimeout(() => {
+        setIsDownloading(false)
+        setDownloadStatus('')
+      }, 2000)
+    } catch (err) {
+      console.error('[Veo3Toolbar] Download media failed:', err)
+      setDownloadStatus('Erro!')
+      setTimeout(() => {
+        setIsDownloading(false)
+        setDownloadStatus('')
+      }, 2000)
     }
   }
 
@@ -263,6 +482,28 @@ export function Veo3Toolbar({
         >
           <TextCursorInput className="h-3.5 w-3.5" />
           <span>Renomear Todos</span>
+        </button>
+      )}
+
+      {/* Download media */}
+      {isDownloading ? (
+        <button
+          onClick={handleStopDownload}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-white/5"
+          title="Parar download"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span>{downloadStatus}</span>
+          <XCircle className="h-3 w-3" />
+        </button>
+      ) : (
+        <button
+          onClick={handleDownloadMedia}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-muted transition-colors hover:bg-white/5 hover:text-text"
+          title="Mapear e baixar todos os videos e imagens com TAKE"
+        >
+          <Download className="h-3.5 w-3.5" />
+          <span>Baixar Midias</span>
         </button>
       )}
 
