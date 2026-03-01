@@ -384,7 +384,22 @@ const api = {
     ipcRenderer.invoke('cdp:click-at', x, y, button),
 
   // System
-  systemHealthCheck: (): Promise<unknown> => ipcRenderer.invoke('system:health-check')
+  systemHealthCheck: (): Promise<unknown> => ipcRenderer.invoke('system:health-check'),
+
+  // Updater
+  updaterCheck: (): Promise<{ success: boolean; version?: string | null; error?: string }> =>
+    ipcRenderer.invoke('updater:check'),
+  updaterDownload: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('updater:download'),
+  updaterInstall: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('updater:install'),
+  updaterGetVersion: (): Promise<string> =>
+    ipcRenderer.invoke('updater:get-version'),
+  onUpdaterStatus: (callback: (data: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, data: unknown): void => callback(data)
+    ipcRenderer.on('updater:status', handler)
+    return () => ipcRenderer.removeListener('updater:status', handler)
+  }
 }
 
 if (process.contextIsolated) {

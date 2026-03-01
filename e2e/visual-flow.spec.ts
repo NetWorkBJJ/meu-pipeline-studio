@@ -1,34 +1,14 @@
-import { test, expect, _electron, type ElectronApplication, type Page } from '@playwright/test'
-import path from 'path'
-
-const ROOT = path.join(__dirname, '..')
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test'
+import { launchElectron, clearStateAndReload } from './helpers'
 
 let electronApp: ElectronApplication
 let page: Page
 
 test.beforeAll(async () => {
-  const electronPath = path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-
-  // Remove ELECTRON_RUN_AS_NODE inherited from VSCode (which is an Electron app)
-  // Without this, electron.exe runs as plain Node.js and require('electron') fails
-  const env = { ...process.env }
-  delete env.ELECTRON_RUN_AS_NODE
-
-  electronApp = await _electron.launch({
-    executablePath: electronPath,
-    args: [path.join(ROOT, 'out', 'main', 'index.js')],
-    env,
-    timeout: 30_000
-  })
-
-  page = await electronApp.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-
-  // Clear persisted Zustand state so we always start on WorkspaceSelectorScreen
-  await page.evaluate(() => localStorage.clear())
-  await page.reload()
-  await page.waitForLoadState('domcontentloaded')
-  await page.waitForTimeout(2000)
+  const app = await launchElectron()
+  electronApp = app.electronApp
+  page = app.page
+  await clearStateAndReload(page)
 })
 
 test.afterAll(async () => {
@@ -39,10 +19,10 @@ test.afterAll(async () => {
 
 test('Visual E2E: navega workspace selector, settings e dashboard', async () => {
   // --- STEP 1: Verify WorkspaceSelectorScreen ---
-  const title = page.locator('h1', { hasText: 'MEU PIPELINE STUDIO' })
+  const title = page.locator('h1', { hasText: 'Pipeline Studio' })
   await expect(title).toBeVisible({ timeout: 10_000 })
 
-  const subtitle = page.locator('text=Studio de pre-edicao automatizada para CapCut')
+  const subtitle = page.locator('text=Pre-edicao automatizada para CapCut')
   await expect(subtitle).toBeVisible()
 
   const novoWorkspaceBtn = page.locator('button', { hasText: 'Novo Workspace' })

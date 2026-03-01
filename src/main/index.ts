@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, session } from 'electron'
 import { join, extname, basename } from 'path'
 import { existsSync, mkdirSync, renameSync } from 'fs'
+import { execSync } from 'child_process'
 import icon from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
@@ -11,6 +12,7 @@ import {
   buildCleanFilename
 } from './utils/downloadFilename'
 import { processVeo3Zip } from './utils/zipProcessor'
+import { setupAutoUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -441,10 +443,62 @@ function setupVeo3Downloads(): void {
   }
 }
 
+/**
+ * Fix process.env.PATH for GUI-launched apps.
+ * When Electron is launched from a shortcut (not terminal), PATH may be incomplete --
+ * missing npm global bin, nvm, homebrew, etc. This reads the actual user PATH
+ * dynamically (no hardcoded dirs) and merges missing entries.
+ */
+function fixProcessPath(): void {
+  try {
+    if (process.platform === 'win32') {
+      // Read user-level PATH from Windows Registry (authoritative source)
+      const output = execSync('reg query "HKCU\\Environment" /v Path', {
+        encoding: 'utf-8',
+        timeout: 5000
+      })
+      const match = output.match(/REG_(?:EXPAND_)?SZ\s+(.+)/i)
+      if (match) {
+        const userPath = match[1]
+          .trim()
+          .replace(/%([^%]+)%/g, (_, key: string) => process.env[key] || `%${key}%`)
+        const existing = new Set(
+          (process.env.PATH || '')
+            .split(';')
+            .map((p) => p.toLowerCase().replace(/\\$/, ''))
+        )
+        const missing = userPath
+          .split(';')
+          .filter((p) => p && !existing.has(p.toLowerCase().replace(/\\$/, '')))
+        if (missing.length > 0) {
+          process.env.PATH = `${process.env.PATH};${missing.join(';')}`
+          console.log(`[PATH] Merged ${missing.length} user PATH entries`)
+        }
+      }
+    } else if (process.platform === 'darwin') {
+      // Get full PATH from user's login shell (handles nvm, homebrew, pyenv, etc.)
+      const shell = process.env.SHELL || '/bin/zsh'
+      const shellPath = execSync(`${shell} -ilc 'echo -n "$PATH"'`, {
+        encoding: 'utf-8',
+        timeout: 5000
+      }).trim()
+      if (shellPath && shellPath.length > 0) {
+        process.env.PATH = shellPath
+        console.log('[PATH] Loaded login shell PATH')
+      }
+    }
+  } catch {
+    // Keep existing PATH on any error -- silent fallback
+  }
+}
+
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.workflowaa.app')
   }
+
+  // Fix PATH before spawning any child processes
+  fixProcessPath()
 
   // Initialize download path: use persisted value or default
   const persistedPath = loadPersistedDownloadPath()
@@ -455,6 +509,10 @@ app.whenReady().then(() => {
   startPythonBridge()
   registerAllHandlers()
   createWindow()
+
+  if (mainWindow) {
+    setupAutoUpdater(mainWindow)
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

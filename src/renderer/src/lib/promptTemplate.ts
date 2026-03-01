@@ -491,15 +491,49 @@ TAKE FINAL: ${lastTakeNumber}
     userMessage += `Se o texto nao referencia ninguem da lista, use Character Anchor: \u2014\n`
   }
 
-  // Full script as narrative context (critical for LLM to understand the story)
+  // Script as narrative context -- adaptive: full for small scripts, windowed for large batched scripts
   const fullScript = sorted.map((b) => b.text).join(' ')
-  userMessage += `\nROTEIRO COMPLETO (leia TUDO antes de gerar os takes):\n"""\n${fullScript}\n"""\n`
+  const SCRIPT_SIZE_THRESHOLD = 30_000
+
+  if (fullScript.length < SCRIPT_SIZE_THRESHOLD || !chunkRange) {
+    // Small script or no chunking: send everything (original behavior)
+    userMessage += `\nROTEIRO COMPLETO (leia TUDO antes de gerar os takes):\n"""\n${fullScript}\n"""\n`
+  } else {
+    // Large script with chunking: send only relevant portion + context window
+    const CONTEXT_BLOCKS = 5
+    const chunkBlockIds = new Set(
+      scenes.slice(chunkRange.startIndex, chunkRange.endIndex).flatMap((s) => s.blockIds)
+    )
+
+    // Find index bounds of chunk blocks in sorted array
+    let firstBlockIdx = sorted.length
+    let lastBlockIdx = 0
+    for (let bi = 0; bi < sorted.length; bi++) {
+      if (chunkBlockIds.has(sorted[bi].id)) {
+        if (bi < firstBlockIdx) firstBlockIdx = bi
+        if (bi > lastBlockIdx) lastBlockIdx = bi
+      }
+    }
+
+    const windowStart = Math.max(0, firstBlockIdx - CONTEXT_BLOCKS)
+    const windowEnd = Math.min(sorted.length, lastBlockIdx + CONTEXT_BLOCKS + 1)
+    const windowBlocks = sorted.slice(windowStart, windowEnd)
+    const windowScript = windowBlocks.map((b) => b.text).join(' ')
+
+    userMessage += `\nTRECHO DO ROTEIRO (contexto para este lote de takes, blocos ${windowStart + 1}-${windowEnd} de ${sorted.length}):\n"""\n${windowScript}\n"""\n`
+    if (windowStart > 0) {
+      userMessage += `(${windowStart} blocos anteriores omitidos)\n`
+    }
+    if (windowEnd < sorted.length) {
+      userMessage += `(${sorted.length - windowEnd} blocos posteriores omitidos)\n`
+    }
+  }
 
   // Directorial instruction
   if (characters.length > 0) {
     userMessage += `\nINSTRUCAO DE DIRECAO:
 Voce e o diretor deste filme. ANTES de gerar os takes:
-1. Leia o roteiro completo acima
+1. Leia o trecho do roteiro acima (contexto narrativo para este lote)
 2. Identifique em quais partes da historia cada personagem aparece ou e referido
 3. Mapeie pronomes (he, she, they) e descricoes (the woman, the businessman) ao personagem correto do elenco
 4. Gere cada TAKE com o personagem que DE FATO esta naquela cena da historia
@@ -531,7 +565,7 @@ Voce e o diretor deste filme. ANTES de gerar os takes:
 Cada TAKE deve corresponder EXATAMENTE a cena indicada acima.
 O conteudo visual de cada TAKE deve refletir diretamente o texto sincronizado da sua cena.
 Lembre: sem Duration, sem [FOTO]. Character Anchor usa APENAS identificadores da lista de elenco, copiados EXATAMENTE. Separe multiplos com |. Nunca invente identificadores.
-IMPORTANTE: Analise o roteiro completo e distribua os personagens conforme a narrativa -- NAO repita o mesmo personagem em todas as cenas.`
+IMPORTANTE: Analise o trecho do roteiro fornecido e distribua os personagens conforme a narrativa -- NAO repita o mesmo personagem em todas as cenas.`
 
   return {
     systemPrompt: MASTER_PROMPT,

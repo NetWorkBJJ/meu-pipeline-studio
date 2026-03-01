@@ -8,5 +8,12 @@ export default defineConfig({
   },
   retries: 0,
   workers: 1,
-  reporter: [['list']]
+  reporter: [
+    ['list'],
+    ['junit', { outputFile: 'test-results/e2e-results.xml' }]
+  ],
+  use: {
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure'
+  }
 })

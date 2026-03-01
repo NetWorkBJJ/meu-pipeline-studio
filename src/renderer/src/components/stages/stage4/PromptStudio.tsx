@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   Sparkles,
@@ -85,7 +85,12 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
   const [startingTakeNumber, setStartingTakeNumber] = useState(1)
   const [qualityReport, setQualityReport] = useState<QualityReport | null>(null)
   const [showQualityDetails, setShowQualityDetails] = useState(false)
-  const [chunkSize, setChunkSize] = useState(60)
+  const [chunkSize, setChunkSize] = useState(() => {
+    const totalBlocks = useProjectStore.getState().storyBlocks.length
+    if (totalBlocks > 500) return 20
+    if (totalBlocks > 200) return 30
+    return 60
+  })
   const abortRef = useRef<AbortController | null>(null)
 
   const promptsGenerated = scenes.filter((s) => s.prompt.trim()).length
@@ -117,6 +122,24 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
     if (!progress.startedAt || !progress.isGeneratingPrompts) return 0
     return Date.now() - progress.startedAt
   }, [progress.startedAt, progress.isGeneratingPrompts, progress.completedTakes])
+
+  // Listen for LLM progress events from Python bridge
+  useEffect(() => {
+    const unsubscribe = window.api.onTtsProgress((data) => {
+      const evt = data as { event?: string; provider?: string; prompt_len?: number; duration_s?: number; success?: boolean; takes_count?: number; error?: string; model?: string; response_len?: number }
+      if (evt.event === 'llm_call_start') {
+        console.log(`[Director] LLM chamada iniciada: provider=${evt.provider} model=${evt.model} prompt=${evt.prompt_len} chars`)
+      }
+      if (evt.event === 'llm_call_end') {
+        if (evt.success) {
+          console.log(`[Director] LLM chamada finalizada: ${evt.duration_s}s | ${evt.takes_count} takes parseados | resposta ${evt.response_len} chars`)
+        } else {
+          console.error(`[Director] LLM chamada falhou apos ${evt.duration_s}s: ${evt.error}`)
+        }
+      }
+    })
+    return unsubscribe
+  }, [])
 
   const handleCancel = (): void => {
     if (abortRef.current) {
@@ -241,7 +264,7 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
             { batchNumber: batchIdx + 1, totalBatches: chunks.length }
           )
 
-          console.log(`[Director] Lote ${batchIdx + 1}/${chunks.length}: takes ${chunkStartTake}-${chunkEndTake} | payload ${userMessage.length} chars`)
+          console.log(`[Director] Lote ${batchIdx + 1}/${chunks.length}: takes ${chunkStartTake}-${chunkEndTake} | systemPrompt ${systemPrompt.length} chars | userMessage ${userMessage.length} chars | total ${(systemPrompt.length + userMessage.length).toLocaleString()} chars`)
 
           const result = (await withAbort(window.api.directorGeneratePrompts({
             provider: config.llmProvider,
@@ -254,6 +277,8 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
             error?: string
             raw_response?: string
           }
+
+          console.log(`[Director] Lote ${batchIdx + 1} resultado: success=${result.success} takes=${result.takes?.length ?? 0} error=${result.error || 'none'}`)
 
           let batchTakes: TakeRecord[] = []
 
@@ -303,15 +328,22 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
               bulkUpdateScenes(promptUpdates)
             }
 
+            const batchDuration = Date.now() - batchStart
+            console.log(`[Director] Lote ${batchIdx + 1} OK: ${batchTakes.length} takes em ${(batchDuration / 1000).toFixed(0)}s`)
             currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
               status: 'success',
               takesGenerated: batchTakes.length,
-              durationMs: Date.now() - batchStart
+              durationMs: batchDuration
             })
           } else {
+            const errorMsg = result.error || 'Nenhum take parseado'
+            console.error(`[Director] Lote ${batchIdx + 1} erro: ${errorMsg}`)
+            if (result.raw_response) {
+              console.warn(`[Director] Lote ${batchIdx + 1} raw_response (500 chars):`, result.raw_response.substring(0, 500))
+            }
             currentBatchResults = updateBatchResult(currentBatchResults, batchIdx, {
               status: 'error',
-              error: result.error || 'Nenhum take parseado',
+              error: errorMsg,
               durationMs: Date.now() - batchStart
             })
           }
