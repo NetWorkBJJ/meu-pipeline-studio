@@ -20,8 +20,8 @@
       "Bash(xargs:*)"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "figma"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

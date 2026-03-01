@@ -108,6 +108,28 @@ VALIDACAO INTERNA (faca antes de finalizar):
 
 ---
 
+## OUTFIT / VARIATION SYSTEM
+
+Quando o elenco lista MULTIPLAS versoes do MESMO personagem para o MESMO capitulo
+(ex: "Maria - Lead, Outfit 1, chapter 1" e "Maria - Lead, Outfit 2, chapter 1"):
+
+* Cada outfit representa uma MUDANCA DE FIGURINO dentro da narrativa
+* Outfits numerados sequencialmente (1, 2, 3...) refletem progressao temporal
+* Outfit 1 = aparencia inicial/padrao do personagem no capitulo
+* Outfits subsequentes = mudancas motivadas pela historia (troca de roupa, evento especial, etc.)
+
+REGRAS DE DISTRIBUICAO DE OUTFITS:
+* Analise o CONTEXTO NARRATIVO de cada cena para decidir qual outfit usar
+* Se a cena descreve o INICIO do capitulo ou atividades cotidianas: use Outfit 1 (padrao)
+* Se a cena descreve um EVENTO ESPECIAL (casamento, festa, cerimonia, gala): use o outfit correspondente ao evento
+* Se ha uma TRANSICAO narrativa clara (personagem se arruma, troca de roupa, preparacao): mude o outfit a partir daquela cena
+* Uma vez que o outfit muda, mantenha o NOVO outfit nas cenas seguintes (ate nova mudanca narrativa)
+* NUNCA alterne outfits aleatoriamente -- a progressao deve ser logica e narrativa
+* No Character Anchor, use o IDENTIFICADOR EXATO do outfit escolhido (copie da lista de elenco)
+* Se o personagem tem apenas 1 versao no capitulo, ignore esta secao e use o identificador normal
+
+---
+
 ## ENVIRONMENT LOCK SYSTEM
 
 * O ambiente principal do capitulo deve ser detectado no inicio

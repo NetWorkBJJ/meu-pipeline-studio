@@ -295,10 +295,8 @@ export function Stage5Veo3(): React.JSX.Element {
             automationStore.setRetryState(tabId, {
               tileId: '',
               attempt: 0,
-              maxAttempts: 3,
-              failedCount: d.failedCount,
-              totalMs: 13000,
-              startedAt: Date.now()
+              maxAttempts: 1,
+              failedCount: d.failedCount
             })
           }
           break
@@ -309,10 +307,8 @@ export function Stage5Veo3(): React.JSX.Element {
             automationStore.setRetryState(tabId, {
               tileId: d.tileId,
               attempt: d.attempt ?? 1,
-              maxAttempts: d.maxAttempts ?? 3,
-              failedCount: automationStore.getTabState(tabId).retryState?.failedCount ?? 1,
-              totalMs: 13000,
-              startedAt: Date.now()
+              maxAttempts: d.maxAttempts ?? 1,
+              failedCount: automationStore.getTabState(tabId).retryState?.failedCount ?? 1
             })
           }
           break

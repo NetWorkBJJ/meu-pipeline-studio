@@ -95,8 +95,6 @@ export interface RetryStateInfo {
   attempt: number
   maxAttempts: number
   failedCount: number
-  totalMs: number
-  startedAt: number
 }
 
 export interface FlowAutomationState {
