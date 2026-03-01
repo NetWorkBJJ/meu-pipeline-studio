@@ -35,7 +35,7 @@ function extractKeywords(name: string): string[] {
 
 /**
  * Parse the "Character Anchor:" line from a Stage 4 prompt.
- * Returns character names (before the " - " description).
+ * Returns full anchor labels (including role, outfit, chapter) for exact matching.
  * Returns empty array if anchor is absent or is the em-dash placeholder.
  */
 function parseCharacterAnchor(prompt: string): string[] {
@@ -47,21 +47,28 @@ function parseCharacterAnchor(prompt: string): string[] {
     return []
   }
 
-  const parts = anchorText
+  return anchorText
     .split('|')
-    .map((p) => p.trim())
+    .map((p) => p.replace(/\.$/, '').trim())
     .filter(Boolean)
+}
 
-  return parts.map((part) => {
-    const clean = part.replace(/\.$/, '').trim()
-    const dashIndex = clean.indexOf(' - ')
-    return (dashIndex > 0 ? clean.substring(0, dashIndex) : clean).trim()
-  })
+/**
+ * Extract just the name portion from a full anchor label.
+ * "Roger Ceou - Lead, Outfit 2, chapter 1" → "Roger Ceou"
+ */
+function extractNameFromAnchor(anchor: string): string {
+  const dashIndex = anchor.indexOf(' - ')
+  return (dashIndex > 0 ? anchor.substring(0, dashIndex) : anchor).trim()
 }
 
 /**
  * Match characters from the prompt's Character Anchor line to CharacterRef entries.
- * Each unique character name produces exactly ONE match (no duplicates).
+ * Uses 3-level matching strategy:
+ *   1. Exact label match (handles outfits correctly)
+ *   2. Label substring match
+ *   3. Fallback by name only (before " - ")
+ * Each unique anchor produces exactly ONE match (no duplicates).
  */
 export function matchCharactersToPrompt(
   prompt: string,
@@ -69,43 +76,69 @@ export function matchCharactersToPrompt(
 ): FlowCharacterImageRef[] {
   if (!prompt || characters.length === 0) return []
 
-  const anchorNames = parseCharacterAnchor(prompt)
-  if (anchorNames.length === 0) return []
+  const anchors = parseCharacterAnchor(prompt)
+  if (anchors.length === 0) return []
 
   const result: FlowCharacterImageRef[] = []
-  const usedNames = new Set<string>()
+  const usedIds = new Set<string>()
 
-  for (const anchorName of anchorNames) {
-    const normalized = anchorName.toLowerCase().trim()
-    if (usedNames.has(normalized)) continue
-
+  for (const anchor of anchors) {
+    const anchorLower = anchor.toLowerCase().trim()
     let bestRef: CharacterRef | null = null
-    let bestScore = 0
 
+    // Level 1: Exact label match (case-insensitive)
     for (const char of characters) {
-      const charLower = char.name.toLowerCase().trim()
-      if (charLower === normalized) {
+      if (char.label.toLowerCase().trim() === anchorLower) {
         bestRef = char
         break
       }
-      if (charLower.includes(normalized) || normalized.includes(charLower)) {
-        const score = Math.min(charLower.length, normalized.length)
-        if (score > bestScore) {
-          bestScore = score
-          bestRef = char
+    }
+
+    // Level 2: Label substring match (anchor contains label or vice-versa)
+    if (!bestRef) {
+      let bestScore = 0
+      for (const char of characters) {
+        const labelLower = char.label.toLowerCase().trim()
+        if (anchorLower.includes(labelLower) || labelLower.includes(anchorLower)) {
+          const score = Math.min(labelLower.length, anchorLower.length)
+          if (score > bestScore) {
+            bestScore = score
+            bestRef = char
+          }
         }
       }
     }
 
-    if (bestRef) {
+    // Level 3: Fallback by name only (before " - ")
+    if (!bestRef) {
+      const anchorName = extractNameFromAnchor(anchor).toLowerCase()
+      let bestScore = 0
+      for (const char of characters) {
+        const charName = char.name.toLowerCase().trim()
+        if (charName === anchorName) {
+          bestRef = char
+          break
+        }
+        if (charName.includes(anchorName) || anchorName.includes(charName)) {
+          const score = Math.min(charName.length, anchorName.length)
+          if (score > bestScore) {
+            bestScore = score
+            bestRef = char
+          }
+        }
+      }
+    }
+
+    if (bestRef && !usedIds.has(bestRef.id)) {
+      const displayName = extractNameFromAnchor(anchor)
       result.push({
         characterId: bestRef.id,
-        name: anchorName,
-        keywords: extractKeywords(anchorName),
+        name: displayName,
+        keywords: extractKeywords(displayName),
         imagePath: bestRef.imagePath || null,
         galleryItemName: null
       })
-      usedNames.add(normalized)
+      usedIds.add(bestRef.id)
     }
   }
 
