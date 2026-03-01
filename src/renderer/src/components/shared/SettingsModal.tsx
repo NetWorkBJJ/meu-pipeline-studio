@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, FolderOpen, Check, Trash2, Loader2, ExternalLink, Pin } from 'lucide-react'
+import { X, FolderOpen, Check, Trash2, Loader2, ExternalLink, Pin, HardDriveDownload } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -667,12 +667,7 @@ export function SettingsModal(): React.JSX.Element | null {
                 )}
 
                 {activeTab === 'sobre' && (
-                  <div className="flex flex-col gap-3">
-                    <label className="text-xs font-medium uppercase tracking-wider text-text-muted">
-                      Sobre
-                    </label>
-                    <span className="text-xs text-text-muted/70">MEU PIPELINE STUDIO v0.1.0</span>
-                  </div>
+                  <SobreTab addToast={addToast} />
                 )}
               </div>
             </div>
@@ -680,5 +675,71 @@ export function SettingsModal(): React.JSX.Element | null {
         </motion.div>
       )}
     </AnimatePresence>
+  )
+}
+
+function SobreTab({ addToast }: { addToast: (t: { type: string; message: string }) => void }): React.JSX.Element {
+  const [appVersion, setAppVersion] = useState('')
+  const [clearing, setClearing] = useState(false)
+
+  useEffect(() => {
+    window.api.updaterGetVersion().then(setAppVersion).catch(() => {})
+  }, [])
+
+  const handleClearCache = async (): Promise<void> => {
+    setClearing(true)
+    try {
+      await window.api.systemClearCache()
+      addToast({ type: 'success', message: 'Cache limpo. Reinicie o app para aplicar.' })
+    } catch {
+      addToast({ type: 'error', message: 'Erro ao limpar cache.' })
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <label className="text-xs font-medium uppercase tracking-wider text-text-muted">
+          Sobre
+        </label>
+        <span className="text-sm text-text">
+          WorkFlowAA {appVersion ? `v${appVersion}` : ''}
+        </span>
+        <span className="text-xs text-text-muted/70">
+          Studio de pre-edicao automatizada para CapCut
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label className="text-xs font-medium uppercase tracking-wider text-text-muted">
+          Manutencao
+        </label>
+        <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-bg p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-text">Limpar cache</span>
+              <span className="text-[10px] text-text-muted">
+                Remove cache do navegador Veo3 e dados temporarios. Util para resolver problemas apos atualizacoes.
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={clearing}
+              onClick={handleClearCache}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-text transition-colors hover:bg-surface-hover disabled:opacity-40"
+            >
+              {clearing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <HardDriveDownload className="h-3.5 w-3.5" />
+              )}
+              Limpar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }

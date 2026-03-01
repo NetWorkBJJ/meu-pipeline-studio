@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, session } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -55,5 +55,21 @@ export function registerSystemHandlers(): void {
     }
 
     return result
+  })
+
+  ipcMain.handle('system:clear-cache', async (): Promise<{ success: boolean }> => {
+    // Clear all veo3 webview session caches
+    for (let i = 1; i <= 5; i++) {
+      const sess = session.fromPartition(`persist:veo3-account-${i}`)
+      await sess.clearCache()
+      await sess.clearStorageData({
+        storages: ['cachestorage', 'localstorage', 'sessionstorage']
+      })
+    }
+
+    // Clear default session cache
+    await session.defaultSession.clearCache()
+
+    return { success: true }
   })
 }
