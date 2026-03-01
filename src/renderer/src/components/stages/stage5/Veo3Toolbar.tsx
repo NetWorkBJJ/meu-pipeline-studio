@@ -13,7 +13,6 @@ import {
   Users,
   LayoutGrid,
   Square,
-  TextCursorInput,
   Loader2,
   XCircle,
   Download
@@ -46,7 +45,6 @@ export function Veo3Toolbar({
   onOpenAccountManager
 }: Veo3ToolbarProps): React.JSX.Element {
   const { zoomFactor, setZoomFactor } = useVeo3Store()
-  const [isRenaming, setIsRenaming] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadStatus, setDownloadStatus] = useState('')
 
@@ -92,53 +90,6 @@ export function Veo3Toolbar({
 
   const handleDevTools = (): void => {
     webviewRef.current?.openDevTools()
-  }
-
-  const handleRenameAll = async (): Promise<void> => {
-    const wv = webviewRef.current
-    if (!wv) return
-    setIsRenaming(true)
-    try {
-      // Attach CDP first so isTrusted input events work (right-click, type, press)
-      const wcId = wv.getWebContentsId()
-      const attachResult = await window.api.cdpAttach(wcId)
-      if (!attachResult.success) {
-        console.warn(`[Veo3Toolbar] CDP attach failed: ${attachResult.error} (will use DOM fallback)`)
-      } else {
-        console.log('[Veo3Toolbar] CDP attached for rename automation')
-      }
-
-      await wv.executeJavaScript(
-        `window.postMessage({ type: 'SIDEPANEL_TO_CONTENT', action: 'RENAME_ALL_MEDIA' }, '*')`
-      )
-      // Listen for completion via polling (rename-automator reports back)
-      const checkDone = async (): Promise<void> => {
-        const running = (await wv.executeJavaScript(
-          'window.veo3RenameAutomator?.isRunning() || false'
-        )) as boolean
-        if (running) {
-          setTimeout(checkDone, 2000)
-        } else {
-          setIsRenaming(false)
-        }
-      }
-      setTimeout(checkDone, 3000)
-    } catch {
-      setIsRenaming(false)
-    }
-  }
-
-  const handleStopRename = async (): Promise<void> => {
-    const wv = webviewRef.current
-    if (!wv) return
-    try {
-      await wv.executeJavaScript(
-        `window.postMessage({ type: 'SIDEPANEL_TO_CONTENT', action: 'STOP_RENAME' }, '*')`
-      )
-    } catch {
-      // ignore
-    }
-    setIsRenaming(false)
   }
 
   const handleCopyDebugLogs = async (): Promise<void> => {
@@ -462,28 +413,6 @@ export function Veo3Toolbar({
       </button>
 
       <div className="mx-1 h-4 w-px bg-border" />
-
-      {/* Rename all */}
-      {isRenaming ? (
-        <button
-          onClick={handleStopRename}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-white/5"
-          title="Parar rename"
-        >
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>Renomeando...</span>
-          <XCircle className="h-3 w-3" />
-        </button>
-      ) : (
-        <button
-          onClick={handleRenameAll}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-muted transition-colors hover:bg-white/5 hover:text-text"
-          title="Renomear todos os cards com o texto do prompt"
-        >
-          <TextCursorInput className="h-3.5 w-3.5" />
-          <span>Renomear Todos</span>
-        </button>
-      )}
 
       {/* Download media */}
       {isDownloading ? (
