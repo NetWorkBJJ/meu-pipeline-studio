@@ -6,7 +6,8 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
-  Trash2
+  Trash2,
+  Wand2
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
@@ -45,6 +46,9 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
   const { updateStoryBlock } = useProjectStore()
   const { completeStage } = useStageStore()
   const { addToast } = useUIStore()
+
+  const [animStatus, setAnimStatus] = useState<'idle' | 'applying' | 'done'>('idle')
+  const [animCount, setAnimCount] = useState(0)
 
   const gapReport = useMemo(() => detectGaps(scenes), [scenes])
   const hasGaps = gapReport.missingScenes.length > 0
@@ -190,6 +194,26 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
     }
   }
 
+  const handleApplyAnimations = async (): Promise<void> => {
+    if (!capCutDraftPath) return
+    setAnimStatus('applying')
+    try {
+      const result = (await window.api.applyAnimations(capCutDraftPath)) as {
+        applied: number
+      }
+      setAnimCount(result.applied)
+      setAnimStatus('done')
+      addToast({
+        type: 'success',
+        message: `Ken Burns aplicado em ${result.applied} imagens.`
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao aplicar animacoes'
+      addToast({ type: 'error', message })
+      setAnimStatus('idle')
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -275,6 +299,24 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
               Concluido com backup!
             </span>
             <button
+              onClick={handleApplyAnimations}
+              disabled={animStatus === 'applying'}
+              className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+            >
+              {animStatus === 'applying' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : animStatus === 'done' ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5" />
+              )}
+              {animStatus === 'applying'
+                ? 'Aplicando...'
+                : animStatus === 'done'
+                  ? `Ken Burns (${animCount})`
+                  : 'Ken Burns'}
+            </button>
+            <button
               onClick={async () => {
                 const result = await window.api.openCapCut()
                 if (!result.success) {
@@ -319,7 +361,9 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
               <p className="text-sm font-semibold text-success">Pipeline concluido!</p>
               <p className="text-xs text-text-muted mt-0.5">
                 {storyBlocks.length} legendas + {scenes.filter((s) => s.mediaPath).length} midias
-                inseridas no CapCut. Abra o projeto para verificar.
+                inseridas no CapCut.
+                {animStatus === 'done' && ` Ken Burns aplicado em ${animCount} imagens.`}
+                {' '}Abra o projeto para verificar.
               </p>
             </div>
           </div>

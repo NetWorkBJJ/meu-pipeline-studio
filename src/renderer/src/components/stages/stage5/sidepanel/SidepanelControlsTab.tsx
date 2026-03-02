@@ -382,7 +382,7 @@ export function SidepanelControlsTab({
                   {Math.floor(countdownSeconds / 60)}:{String(countdownSeconds % 60).padStart(2, '0')}
                 </span>
                 <span className="text-[10px] text-text-muted">
-                  45s fixo
+                  30s fixo
                 </span>
               </div>
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-amber-500/10">

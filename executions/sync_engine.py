@@ -28,12 +28,13 @@ def _generate_uuid() -> str:
 
 def _keyframe_entry(time_offset: int, values: list) -> dict:
     return {
-        "id": _generate_uuid(),
-        "time_offset": time_offset,
-        "values": values,
         "curveType": "Line",
+        "graphID": "",
+        "id": _generate_uuid(),
         "left_control": {"x": 0.0, "y": 0.0},
         "right_control": {"x": 0.0, "y": 0.0},
+        "time_offset": time_offset,
+        "values": values,
     }
 
 
@@ -42,6 +43,7 @@ def criar_keyframe_zoom_in_suave(duration: int) -> list:
     return [
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleX",
             "keyframe_list": [
                 _keyframe_entry(0, [1.02]),
@@ -50,6 +52,7 @@ def criar_keyframe_zoom_in_suave(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleY",
             "keyframe_list": [
                 _keyframe_entry(0, [1.02]),
@@ -64,6 +67,7 @@ def criar_keyframe_zoom_in_forte(duration: int) -> list:
     return [
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleX",
             "keyframe_list": [
                 _keyframe_entry(0, [1.0]),
@@ -72,6 +76,7 @@ def criar_keyframe_zoom_in_forte(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleY",
             "keyframe_list": [
                 _keyframe_entry(0, [1.0]),
@@ -86,6 +91,7 @@ def criar_keyframe_zoom_out(duration: int) -> list:
     return [
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleX",
             "keyframe_list": [
                 _keyframe_entry(0, [1.18]),
@@ -94,6 +100,7 @@ def criar_keyframe_zoom_out(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleY",
             "keyframe_list": [
                 _keyframe_entry(0, [1.18]),
@@ -108,6 +115,7 @@ def criar_keyframe_pan_down(duration: int) -> list:
     return [
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleX",
             "keyframe_list": [
                 _keyframe_entry(0, [1.15]),
@@ -116,6 +124,7 @@ def criar_keyframe_pan_down(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleY",
             "keyframe_list": [
                 _keyframe_entry(0, [1.15]),
@@ -124,6 +133,7 @@ def criar_keyframe_pan_down(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypePositionY",
             "keyframe_list": [
                 _keyframe_entry(0, [-0.12]),
@@ -138,6 +148,7 @@ def criar_keyframe_pan_down_forte(duration: int) -> list:
     return [
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleX",
             "keyframe_list": [
                 _keyframe_entry(0, [1.2]),
@@ -146,6 +157,7 @@ def criar_keyframe_pan_down_forte(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleY",
             "keyframe_list": [
                 _keyframe_entry(0, [1.2]),
@@ -154,6 +166,7 @@ def criar_keyframe_pan_down_forte(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypePositionY",
             "keyframe_list": [
                 _keyframe_entry(0, [-0.15]),
@@ -168,6 +181,7 @@ def criar_keyframe_pan_horizontal(duration: int) -> list:
     return [
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleX",
             "keyframe_list": [
                 _keyframe_entry(0, [1.15]),
@@ -176,6 +190,7 @@ def criar_keyframe_pan_horizontal(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypeScaleY",
             "keyframe_list": [
                 _keyframe_entry(0, [1.15]),
@@ -184,6 +199,7 @@ def criar_keyframe_pan_horizontal(duration: int) -> list:
         },
         {
             "id": _generate_uuid(),
+            "material_id": "",
             "property_type": "KFTypePositionX",
             "keyframe_list": [
                 _keyframe_entry(0, [-0.1]),
@@ -193,14 +209,85 @@ def criar_keyframe_pan_horizontal(duration: int) -> list:
     ]
 
 
+def criar_keyframe_pan_right(duration: int) -> list:
+    """Pan right: scale 1.12, X 0.0 -> 0.08."""
+    return [
+        {
+            "id": _generate_uuid(),
+            "material_id": "",
+            "property_type": "KFTypeScaleX",
+            "keyframe_list": [
+                _keyframe_entry(0, [1.12]),
+                _keyframe_entry(duration, [1.12]),
+            ],
+        },
+        {
+            "id": _generate_uuid(),
+            "material_id": "",
+            "property_type": "KFTypeScaleY",
+            "keyframe_list": [
+                _keyframe_entry(0, [1.12]),
+                _keyframe_entry(duration, [1.12]),
+            ],
+        },
+        {
+            "id": _generate_uuid(),
+            "material_id": "",
+            "property_type": "KFTypePositionX",
+            "keyframe_list": [
+                _keyframe_entry(0, [0.0]),
+                _keyframe_entry(duration, [0.08]),
+            ],
+        },
+    ]
+
+
+def criar_keyframe_pan_left(duration: int) -> list:
+    """Pan left: scale 1.12, X 0.0 -> -0.08."""
+    return [
+        {
+            "id": _generate_uuid(),
+            "material_id": "",
+            "property_type": "KFTypeScaleX",
+            "keyframe_list": [
+                _keyframe_entry(0, [1.12]),
+                _keyframe_entry(duration, [1.12]),
+            ],
+        },
+        {
+            "id": _generate_uuid(),
+            "material_id": "",
+            "property_type": "KFTypeScaleY",
+            "keyframe_list": [
+                _keyframe_entry(0, [1.12]),
+                _keyframe_entry(duration, [1.12]),
+            ],
+        },
+        {
+            "id": _generate_uuid(),
+            "material_id": "",
+            "property_type": "KFTypePositionX",
+            "keyframe_list": [
+                _keyframe_entry(0, [0.0]),
+                _keyframe_entry(duration, [-0.08]),
+            ],
+        },
+    ]
+
+
 ANIMATION_PATTERNS = [
     criar_keyframe_zoom_in_suave,
-    criar_keyframe_zoom_in_forte,
     criar_keyframe_zoom_out,
-    criar_keyframe_pan_down,
-    criar_keyframe_pan_down_forte,
-    criar_keyframe_pan_horizontal,
+    criar_keyframe_pan_right,
+    criar_keyframe_pan_left,
 ]
+
+PATTERN_BASE_SCALES = {
+    criar_keyframe_zoom_in_suave: 1.02,
+    criar_keyframe_zoom_out: 1.18,
+    criar_keyframe_pan_right: 1.12,
+    criar_keyframe_pan_left: 1.12,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -342,14 +429,30 @@ def sync_project(draft_path: str, audio_track_index: int = 0,
     return {"success": True, "stats": stats}
 
 
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif", ".gif"}
+
+
+def _is_photo_material(mat: dict) -> bool:
+    """Check if a material is a photo (by type field or file extension)."""
+    if mat.get("type") == "photo":
+        return True
+    mat_path = mat.get("path", "")
+    if mat_path:
+        ext = os.path.splitext(mat_path)[1].lower()
+        if ext in _IMAGE_EXTENSIONS:
+            return True
+    return False
+
+
 def _apply_animations(draft: dict, video_segs: list) -> int:
-    """Apply random keyframe animations to photo segments."""
+    """Apply sequential Ken Burns animations to photo segments.
+
+    Cycles through 4 patterns: zoom in, zoom out, pan right, pan left.
+    """
     materials_map = {}
     for mat in draft.get("materials", {}).get("videos", []):
         materials_map[mat.get("id", "")] = mat
 
-    patterns = list(ANIMATION_PATTERNS)
-    random.shuffle(patterns)
     pattern_idx = 0
     applied = 0
 
@@ -357,25 +460,26 @@ def _apply_animations(draft: dict, video_segs: list) -> int:
         mat_id = seg.get("material_id", "")
         mat = materials_map.get(mat_id, {})
 
-        # Only animate photos (not videos)
-        if mat.get("type") != "photo":
+        if not _is_photo_material(mat):
             continue
 
         duration = seg.get("target_timerange", {}).get("duration", 0)
         if duration <= 0:
             continue
 
-        # Pick animation pattern (cycle through)
-        pattern_fn = patterns[pattern_idx % len(patterns)]
+        pattern_fn = ANIMATION_PATTERNS[pattern_idx % len(ANIMATION_PATTERNS)]
+        base_scale = PATTERN_BASE_SCALES.get(pattern_fn, 1.12)
         pattern_idx += 1
 
         keyframes = pattern_fn(duration)
         seg["common_keyframes"] = keyframes
 
-        # Set scale to match animation base
         seg.setdefault("clip", {}).setdefault("scale", {})
-        seg["clip"]["scale"]["x"] = 1.15
-        seg["clip"]["scale"]["y"] = 1.15
+        seg["clip"]["scale"]["x"] = base_scale
+        seg["clip"]["scale"]["y"] = base_scale
+
+        # Disable uniform_scale - mutually exclusive with KFTypeScaleX/Y keyframes
+        seg["uniform_scale"] = {"on": False, "value": 1.0}
 
         applied += 1
 
@@ -383,7 +487,7 @@ def _apply_animations(draft: dict, video_segs: list) -> int:
 
 
 def apply_animations_to_images(draft_path: str) -> dict:
-    """Apply random animations to all photo segments in the project.
+    """Apply sequential Ken Burns animations to all photo segments.
 
     Returns: { applied: number }
     """
