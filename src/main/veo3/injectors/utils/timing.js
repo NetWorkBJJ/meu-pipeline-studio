@@ -20,13 +20,16 @@
     POLL_FAST: 100,
     POLL_NORMAL: 500,
     POLL_SLOW: 1000,
-    // Batch pause (fixed 45s between all slots)
-    BATCH_PAUSE: 45000,
+    // Batch pause (fixed 30s between all slots)
+    BATCH_PAUSE: 30000,
     BETWEEN_COMMANDS: 2000,
     AFTER_SUBMIT: 500,
     AFTER_MODE_SWITCH: 1000,
     MODE_VERIFY_TIMEOUT: 5000,
-    AFTER_FILL: 300
+    AFTER_FILL: 300,
+    RETRY_TILE_DELAY: 1500,
+    SAFETY_DELAY: 500,
+    WATCHDOG_INTERVAL: 2000
   };
 
   function sleep(ms) {

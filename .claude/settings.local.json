@@ -22,6 +22,7 @@
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
+    "playwright",
     "figma"
   ]
 }
