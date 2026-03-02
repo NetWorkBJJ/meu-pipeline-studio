@@ -136,45 +136,54 @@ export function Veo3Toolbar({
         while (sameCount < 8) {
           if (window.__downloadCancelled) return JSON.stringify({ videos: 0, imagens: 0 });
 
-          var cards = [...document.querySelectorAll("div")]
-            .filter(function(el) { return el.innerText.includes("(TAKE"); });
+          // Media-first approach: start from video/img elements and walk UP the DOM
+          // to find the nearest ancestor with "(TAKE N)" text.
+          // This avoids the parent-div problem where innerText aggregates all children.
 
-          for (var i = 0; i < cards.length; i++) {
-            var card = cards[i];
-            var match = card.innerText.match(/\\(TAKE\\s+(\\d+)\\)/);
-            if (!match) continue;
+          // 1. Map videos
+          var allVideoEls = document.querySelectorAll("video");
+          for (var v = 0; v < allVideoEls.length; v++) {
+            var videoEl = allVideoEls[v];
+            if (!videoEl.src) continue;
 
-            var take = parseInt(match[1]);
-
-            // Video?
-            var video = card.querySelector("video");
-            if (video && video.src) {
-              if (!videos.has(take)) {
-                videos.set(take, video.src);
+            var parent = videoEl.parentElement;
+            while (parent && parent !== document.body) {
+              var match = parent.innerText.match(/\\(TAKE\\s+(\\d+)\\)/);
+              if (match) {
+                var take = parseInt(match[1]);
+                if (!videos.has(take)) {
+                  videos.set(take, videoEl.src);
+                }
+                break;
               }
-              continue;
+              parent = parent.parentElement;
             }
+          }
 
-            // Imagem? (pegar a maior, ignorar icones/miniaturas)
-            var imgs = card.querySelectorAll("img");
-            var bestImg = null;
-            var bestSize = 0;
-            for (var j = 0; j < imgs.length; j++) {
-              var img = imgs[j];
-              if (!img.src || img.src.startsWith("data:")) continue;
-              var w = img.naturalWidth || img.width || 0;
-              var h = img.naturalHeight || img.height || 0;
-              if (w * h > bestSize) {
-                bestSize = w * h;
-                bestImg = img;
+          // 2. Map images (largest per card, skip icons/thumbnails)
+          var allImgEls = document.querySelectorAll("img");
+          for (var im = 0; im < allImgEls.length; im++) {
+            var imgEl = allImgEls[im];
+            if (!imgEl.src || imgEl.src.startsWith("data:")) continue;
+            var w = imgEl.naturalWidth || imgEl.width || 0;
+            var h = imgEl.naturalHeight || imgEl.height || 0;
+            if (w * h < 2500) continue;
+
+            var parent = imgEl.parentElement;
+            while (parent && parent !== document.body) {
+              var match = parent.innerText.match(/\\(TAKE\\s+(\\d+)\\)/);
+              if (match) {
+                var take = parseInt(match[1]);
+                if (!videos.has(take) && !imagens.has(take)) {
+                  var src = imgEl.src;
+                  if (src.includes("googleusercontent.com")) {
+                    src = src.replace(/=w\\d+.*$/, "=s0").replace(/=s\\d+.*$/, "=s0");
+                  }
+                  imagens.set(take, src);
+                }
+                break;
               }
-            }
-            if (bestImg && bestSize >= 50 * 50 && !imagens.has(take)) {
-              var src = bestImg.src;
-              if (src.includes("googleusercontent.com")) {
-                src = src.replace(/=w\\d+.*$/, "=s0").replace(/=s\\d+.*$/, "=s0");
-              }
-              imagens.set(take, src);
+              parent = parent.parentElement;
             }
           }
 
@@ -189,7 +198,20 @@ export function Veo3Toolbar({
           }
         }
 
+        console.log("=== MAPEAMENTO COMPLETO ===");
         console.log("TOTAL VIDEOS:", videos.size, "| TOTAL IMAGENS:", imagens.size);
+
+        var debugVideos = [];
+        for (var dv of videos.entries()) {
+          debugVideos.push({ take: dv[0], url: dv[1].substring(0, 80) + "..." });
+        }
+        var debugImagens = [];
+        for (var di of imagens.entries()) {
+          debugImagens.push({ take: di[0], url: di[1].substring(0, 80) + "..." });
+        }
+        if (debugVideos.length > 0) console.table(debugVideos);
+        if (debugImagens.length > 0) console.table(debugImagens);
+
         window.videosMapeados = videos;
         window.imagensMapeadas = imagens;
         return JSON.stringify({ videos: videos.size, imagens: imagens.size });
@@ -216,14 +238,17 @@ export function Veo3Toolbar({
 
           console.log("Iniciando download dos videos...");
 
-          for (var entry of window.videosMapeados.entries()) {
+          var videoEntries = [...window.videosMapeados.entries()];
+          videoEntries.sort(function(a, b) { return a[0] - b[0]; });
+
+          for (var vi = 0; vi < videoEntries.length; vi++) {
             if (window.__downloadCancelled) {
               console.log("Download cancelado pelo usuario.");
               return;
             }
 
-            var take = entry[0];
-            var videoSrc = entry[1];
+            var take = videoEntries[vi][0];
+            var videoSrc = videoEntries[vi][1];
 
             var formatted = take.toString().padStart(4, '0');
 
@@ -262,14 +287,17 @@ export function Veo3Toolbar({
 
           console.log("Iniciando download das imagens...");
 
-          for (var entry of window.imagensMapeadas.entries()) {
+          var imgEntries = [...window.imagensMapeadas.entries()];
+          imgEntries.sort(function(a, b) { return a[0] - b[0]; });
+
+          for (var ii = 0; ii < imgEntries.length; ii++) {
             if (window.__downloadCancelled) {
               console.log("Download cancelado pelo usuario.");
               return;
             }
 
-            var take = entry[0];
-            var imgSrc = entry[1];
+            var take = imgEntries[ii][0];
+            var imgSrc = imgEntries[ii][1];
 
             var formatted = take.toString().padStart(4, '0');
 
