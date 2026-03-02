@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink, RotateCw } from 'lucide-react'
+import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink, RotateCw, SkipForward } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -42,6 +42,7 @@ export function SidepanelControlsTab({
 
   const [elapsed, setElapsed] = useState('0s')
   const [countdownSeconds, setCountdownSeconds] = useState(0)
+  const [startFromIndex, setStartFromIndex] = useState(0)
 
   useEffect(() => {
     if (!isRunning || !startedAt) return
@@ -62,6 +63,10 @@ export function SidepanelControlsTab({
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
   }, [batchPause])
+
+  useEffect(() => {
+    setStartFromIndex(0)
+  }, [chapterFilter])
 
   const progress = getProgress(tabId)
   const filteredCommands = getFilteredCommands(tabId)
@@ -133,7 +138,15 @@ export function SidepanelControlsTab({
       return
     }
 
-    console.log(`[SidepanelControls] Starting automation: ${tabCmds.length} commands for tab ${tabId}`)
+    // Slice commands from selected start index
+    const startCmds = startFromIndex > 0 ? tabCmds.slice(startFromIndex) : tabCmds
+
+    if (startCmds.length === 0) {
+      stopTab(tabId, 'Nenhum comando a partir do take selecionado.')
+      return
+    }
+
+    console.log(`[SidepanelControls] Starting automation from take ${startFromIndex + 1}: ${startCmds.length} commands for tab ${tabId}`)
 
     // Enrich character images with data URLs before sending to webview
     setIsPreparingImages(true)
@@ -146,13 +159,13 @@ export function SidepanelControlsTab({
       fileName: string
     }> = []
     try {
-      enrichedCmds = await enrichCommandsWithImageData(tabCmds)
+      enrichedCmds = await enrichCommandsWithImageData(startCmds)
       // Load ALL character images from project (not just matched ones)
       allCharacterImages = await loadAllCharacterImages()
       console.log(`[SidepanelControls] Loaded ${allCharacterImages.length} character images for upload`)
     } catch (err) {
       console.error('[SidepanelControls] Failed to enrich images:', err)
-      enrichedCmds = tabCmds
+      enrichedCmds = startCmds
     } finally {
       setIsPreparingImages(false)
     }
@@ -171,7 +184,7 @@ export function SidepanelControlsTab({
       console.warn('[SidepanelControls] CDP attach error:', err, '(will use DOM fallback)')
     }
 
-    startTab(tabId)
+    startTab(tabId, startFromIndex)
 
     try {
       // Step 1: Pre-load images into webview cache (one at a time, ~500KB each)
@@ -308,6 +321,27 @@ export function SidepanelControlsTab({
           <p className="mt-1 text-[10px] text-text-muted">
             {filteredCommands.length} de {commands.length} cenas selecionadas
           </p>
+        </div>
+      )}
+
+      {/* Start from take selector */}
+      {!isRunning && filteredCommands.length > 1 && (
+        <div>
+          <div className="flex items-center gap-1.5">
+            <SkipForward className="h-3 w-3 text-text-muted" />
+            <span className="text-[11px] font-medium text-text-muted">Iniciar a partir de</span>
+          </div>
+          <select
+            value={startFromIndex}
+            onChange={(e) => setStartFromIndex(Number(e.target.value))}
+            className="mt-1.5 w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-[11px] text-text transition-colors hover:border-primary/40 focus:border-primary focus:outline-none"
+          >
+            {filteredCommands.map((cmd, idx) => (
+              <option key={cmd.id} value={idx}>
+                Take {cmd.sceneIndex + 1} — {cmd.prompt.slice(0, 40)}{cmd.prompt.length > 40 ? '...' : ''}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

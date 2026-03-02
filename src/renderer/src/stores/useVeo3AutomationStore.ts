@@ -37,7 +37,7 @@ interface Veo3AutomationState {
 
   // Per-tab
   getTabState: (tabId: string) => TabAutomationState
-  startTab: (tabId: string) => void
+  startTab: (tabId: string, startIndex?: number) => void
   pauseTab: (tabId: string) => void
   resumeTab: (tabId: string) => void
   stopTab: (tabId: string, error?: string) => void
@@ -120,7 +120,7 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
     return get().tabStates[tabId] || DEFAULT_TAB_AUTOMATION
   },
 
-  startTab: (tabId) => {
+  startTab: (tabId, startIndex) => {
     set((s) => ({
       tabStates: {
         ...s.tabStates,
@@ -128,7 +128,7 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
           ...(s.tabStates[tabId] || DEFAULT_TAB_AUTOMATION),
           isRunning: true,
           isPaused: false,
-          currentCommandIndex: 0,
+          currentCommandIndex: startIndex ?? 0,
           startedAt: Date.now(),
           error: null,
           batchPause: null,
