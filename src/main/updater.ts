@@ -39,7 +39,18 @@ export function setupAutoUpdater(mainWindow: BrowserWindow): void {
   })
 
   autoUpdater.on('error', (err) => {
-    send('updater:status', { status: 'error', error: err.message })
+    const msg = err.message ?? ''
+    const isNetworkError =
+      msg.includes('HttpError') ||
+      msg.includes('net::') ||
+      msg.includes('ENOTFOUND') ||
+      msg.includes('ETIMEDOUT') ||
+      msg.includes('Cannot find latest')
+    if (isNetworkError) {
+      log.warn('Update check network error (suppressed):', msg.slice(0, 200))
+      return
+    }
+    send('updater:status', { status: 'error', error: msg })
   })
 
   ipcMain.handle('updater:check', async () => {

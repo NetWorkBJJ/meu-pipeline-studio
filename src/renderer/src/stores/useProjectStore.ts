@@ -15,6 +15,7 @@ import type {
   CharacterRef,
   ClickUpTaskRef
 } from '@/types/project'
+import type { ElevenLabsVoiceTemplate } from '@/types/ai33'
 
 interface RecentProject {
   name: string
@@ -121,6 +122,7 @@ interface ProjectState {
   directorProgress: DirectorProgress
   characterRefs: CharacterRef[]
   clickUpTaskRef: ClickUpTaskRef | null
+  elevenLabsVoiceTemplates: ElevenLabsVoiceTemplate[]
 
   setCapCutDraftPath: (path: string | null) => void
   setRawScript: (script: string) => void
@@ -151,6 +153,8 @@ interface ProjectState {
   setCharacterRefs: (refs: CharacterRef[]) => void
   setClickUpTaskRef: (ref: ClickUpTaskRef | null) => void
   loadDirectorState: (snapshot: DirectorStateSnapshot) => void
+  addElevenLabsVoiceTemplate: (template: ElevenLabsVoiceTemplate) => void
+  removeElevenLabsVoiceTemplate: (id: string) => void
 }
 
 const initialState = {
@@ -203,7 +207,23 @@ const initialState = {
     startedAt: null
   } as DirectorProgress,
   characterRefs: [] as CharacterRef[],
-  clickUpTaskRef: null as ClickUpTaskRef | null
+  clickUpTaskRef: null as ClickUpTaskRef | null,
+  elevenLabsVoiceTemplates: [
+    {
+      id: 'preset-lena',
+      name: 'Lena',
+      voiceId: 'KoVIHoyLDrQyd4pGalbs',
+      voiceName: 'Autumn Veil - Warm and Reflective',
+      modelId: 'eleven_multilingual_v2',
+      voiceSettings: {
+        stability: 0.5,
+        similarity_boost: 0.75,
+        style: 0.0,
+        use_speaker_boost: true
+      },
+      createdAt: 1740000000000
+    }
+  ] as ElevenLabsVoiceTemplate[]
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -465,6 +485,16 @@ export const useProjectStore = create<ProjectState>()(
           useStageStore.getState().setFreeNavigation(true)
         }
       },
+      addElevenLabsVoiceTemplate: (template) => {
+        set((state) => ({
+          elevenLabsVoiceTemplates: [...state.elevenLabsVoiceTemplates, template]
+        }))
+      },
+      removeElevenLabsVoiceTemplate: (id) => {
+        set((state) => ({
+          elevenLabsVoiceTemplates: state.elevenLabsVoiceTemplates.filter((t) => t.id !== id)
+        }))
+      },
       resetProject: () => {
         set((state) => ({
           ...initialState,
@@ -482,7 +512,8 @@ export const useProjectStore = create<ProjectState>()(
         ttsDefaults: state.ttsDefaults,
         recentProjects: state.recentProjects,
         directorConfig: state.directorConfig,
-        characterRefs: state.characterRefs
+        characterRefs: state.characterRefs,
+        elevenLabsVoiceTemplates: state.elevenLabsVoiceTemplates
       }),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>

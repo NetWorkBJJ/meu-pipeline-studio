@@ -144,6 +144,7 @@ export function registerAi33Handlers(): void {
         model_id?: string
         with_transcript?: boolean
         output_format?: string
+        voice_settings?: Record<string, unknown>
       }
     ) => {
       const svc = await getService()
@@ -152,7 +153,8 @@ export function registerAi33Handlers(): void {
         {
           text: params.text,
           model_id: params.model_id,
-          with_transcript: params.with_transcript
+          with_transcript: params.with_transcript,
+          voice_settings: params.voice_settings
         },
         params.output_format
       )

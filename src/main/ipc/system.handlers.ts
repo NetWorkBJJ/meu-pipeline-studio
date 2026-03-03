@@ -63,7 +63,7 @@ export function registerSystemHandlers(): void {
       const sess = session.fromPartition(`persist:veo3-account-${i}`)
       await sess.clearCache()
       await sess.clearStorageData({
-        storages: ['cachestorage', 'localstorage', 'sessionstorage']
+        storages: ['cachestorage', 'localstorage']
       })
     }
 

@@ -164,6 +164,7 @@ interface ElectronAppAPI {
     model_id?: string
     with_transcript?: boolean
     output_format?: string
+    voice_settings?: Record<string, unknown>
   }) => Promise<unknown>
 
   ai33TtsMinimax: (params: {

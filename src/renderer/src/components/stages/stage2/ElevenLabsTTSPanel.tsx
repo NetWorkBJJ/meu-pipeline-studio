@@ -8,7 +8,12 @@ import {
   CheckCircle,
   RefreshCw,
   Volume2,
-  Coins
+  Coins,
+  ChevronDown,
+  ChevronRight,
+  Save,
+  Trash2,
+  BookMarked
 } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -22,7 +27,9 @@ import type {
   Ai33TTSMetadata,
   Ai33CreditsResponse,
   Ai33VoicesResponse,
-  Ai33TaskProgressEvent
+  Ai33TaskProgressEvent,
+  ElevenLabsVoiceSettings,
+  ElevenLabsVoiceTemplate
 } from '@/types/ai33'
 import { ELEVENLABS_MODELS } from '@/types/ai33'
 
@@ -32,12 +39,25 @@ import { ELEVENLABS_MODELS } from '@/types/ai33'
 
 type PanelPhase = 'idle' | 'generating' | 'polling' | 'downloading' | 'done' | 'error'
 
+const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
+  stability: 0.5,
+  similarity_boost: 0.75,
+  style: 0.0,
+  use_speaker_boost: true
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function ElevenLabsTTSPanel(): React.JSX.Element {
-  const { storyBlocks, setAudioBlocks } = useProjectStore()
+  const {
+    storyBlocks,
+    setAudioBlocks,
+    elevenLabsVoiceTemplates,
+    addElevenLabsVoiceTemplate,
+    removeElevenLabsVoiceTemplate
+  } = useProjectStore()
   const { completeStage, setCurrentStage } = useStageStore()
   const { addToast } = useUIStore()
 
@@ -56,6 +76,15 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
 
   // Model
   const [modelId, setModelId] = useState<string>(ELEVENLABS_MODELS[0].id)
+
+  // Voice settings
+  const [voiceSettings, setVoiceSettings] = useState<ElevenLabsVoiceSettings>(DEFAULT_VOICE_SETTINGS)
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false)
+
+  // Template
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
 
   // Transcript
   const [withTranscript, setWithTranscript] = useState(true)
@@ -123,6 +152,60 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     })
     return unsubscribe
   }, [taskId])
+
+  // -----------------------------------------------------------------------
+  // Template handling
+  // -----------------------------------------------------------------------
+
+  const handleSelectTemplate = (templateId: string): void => {
+    setSelectedTemplateId(templateId)
+    if (!templateId) return
+
+    const template = elevenLabsVoiceTemplates.find((t) => t.id === templateId)
+    if (!template) return
+
+    setSelectedVoiceId(template.voiceId)
+    setModelId(template.modelId)
+    setVoiceSettings({ ...template.voiceSettings })
+  }
+
+  const handleSaveTemplate = (): void => {
+    const name = newTemplateName.trim()
+    if (!name) {
+      addToast({ type: 'warning', message: 'Digite um nome para o template.' })
+      return
+    }
+    if (!selectedVoiceId) {
+      addToast({ type: 'warning', message: 'Selecione uma voz primeiro.' })
+      return
+    }
+
+    const voiceName = selectedVoice?.name || selectedVoiceId
+
+    const template: ElevenLabsVoiceTemplate = {
+      id: uuidv4(),
+      name,
+      voiceId: selectedVoiceId,
+      voiceName,
+      modelId,
+      voiceSettings: { ...voiceSettings },
+      createdAt: Date.now()
+    }
+
+    addElevenLabsVoiceTemplate(template)
+    setSelectedTemplateId(template.id)
+    setShowSaveTemplate(false)
+    setNewTemplateName('')
+    addToast({ type: 'success', message: `Template "${name}" salvo.` })
+  }
+
+  const handleDeleteTemplate = (id: string): void => {
+    removeElevenLabsVoiceTemplate(id)
+    if (selectedTemplateId === id) {
+      setSelectedTemplateId('')
+    }
+    addToast({ type: 'info', message: 'Template removido.' })
+  }
 
   // -----------------------------------------------------------------------
   // Data loaders
@@ -232,7 +315,13 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         voiceId: selectedVoiceId,
         text: editableText,
         model_id: modelId,
-        with_transcript: withTranscript
+        with_transcript: withTranscript,
+        voice_settings: {
+          stability: voiceSettings.stability,
+          similarity_boost: voiceSettings.similarity_boost,
+          style: voiceSettings.style,
+          use_speaker_boost: voiceSettings.use_speaker_boost
+        }
       })) as Ai33TaskCreatedResponse
 
       if (!createRes.success || !createRes.task_id) {
@@ -447,6 +536,40 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         </button>
       </div>
 
+      {/* Voice Template selector */}
+      {elevenLabsVoiceTemplates.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-text-muted">Template de voz</span>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <BookMarked className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted" />
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => handleSelectTemplate(e.target.value)}
+                className="w-full appearance-none rounded-lg border border-border bg-bg py-1.5 pl-7 pr-8 text-xs text-text outline-none transition-colors focus:border-primary"
+              >
+                <option value="">Nenhum (manual)</option>
+                {elevenLabsVoiceTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} -- {t.voiceName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedTemplateId && (
+              <button
+                type="button"
+                onClick={() => handleDeleteTemplate(selectedTemplateId)}
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:border-red-500/30 hover:text-red-400"
+                title="Remover template"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Config row: Voice + Model */}
       <div className="grid grid-cols-2 gap-3">
         {/* Voice selector */}
@@ -482,6 +605,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
                         onClick={() => {
                           setSelectedVoiceId(v.voice_id)
                           setVoiceSearch('')
+                          setSelectedTemplateId('')
                         }}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-bg ${
                           v.voice_id === selectedVoiceId ? 'bg-primary/10 text-primary' : 'text-text'
@@ -557,6 +681,160 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
             ))}
           </select>
         </div>
+      </div>
+
+      {/* Voice Settings (collapsible) */}
+      <div className="rounded-lg border border-border">
+        <button
+          type="button"
+          onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+          className="flex w-full items-center justify-between px-3 py-2 text-xs text-text-muted transition-colors hover:text-text"
+        >
+          <span>Voice Settings</span>
+          {showVoiceSettings ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+        </button>
+
+        {showVoiceSettings && (
+          <div className="flex flex-col gap-3 border-t border-border px-3 pb-3 pt-2">
+            {/* Stability */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Stability</span>
+                <span className="text-[11px] font-medium text-text">
+                  {Math.round(voiceSettings.stability * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">Variable</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(voiceSettings.stability * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({ ...s, stability: Number(e.target.value) / 100 }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">Stable</span>
+              </div>
+            </div>
+
+            {/* Similarity */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Similarity</span>
+                <span className="text-[11px] font-medium text-text">
+                  {Math.round(voiceSettings.similarity_boost * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">Low</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(voiceSettings.similarity_boost * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({
+                      ...s,
+                      similarity_boost: Number(e.target.value) / 100
+                    }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">High</span>
+              </div>
+            </div>
+
+            {/* Style Exaggeration */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Style Exaggeration</span>
+                <span className="text-[11px] font-medium text-text">
+                  {Math.round(voiceSettings.style * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">None</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(voiceSettings.style * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({ ...s, style: Number(e.target.value) / 100 }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">Exaggerated</span>
+              </div>
+            </div>
+
+            {/* Speaker Boost */}
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={voiceSettings.use_speaker_boost}
+                onChange={(e) =>
+                  setVoiceSettings((s) => ({ ...s, use_speaker_boost: e.target.checked }))
+                }
+                className="h-3.5 w-3.5 rounded border-border bg-bg accent-primary"
+              />
+              <span className="text-xs text-text-muted">Speaker Boost</span>
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Save as template */}
+      <div className="flex items-center gap-2">
+        {showSaveTemplate ? (
+          <div className="flex flex-1 items-center gap-2">
+            <input
+              type="text"
+              value={newTemplateName}
+              onChange={(e) => setNewTemplateName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveTemplate()}
+              placeholder="Nome do template..."
+              autoFocus
+              className="flex-1 rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none transition-colors focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={handleSaveTemplate}
+              disabled={!newTemplateName.trim()}
+              className="flex h-[30px] items-center gap-1.5 rounded-lg bg-primary px-3 text-[11px] font-medium text-white transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:opacity-40"
+            >
+              <Save className="h-3 w-3" />
+              Salvar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSaveTemplate(false)
+                setNewTemplateName('')
+              }}
+              className="text-[11px] text-text-muted transition-colors hover:text-text"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowSaveTemplate(true)}
+            disabled={!selectedVoiceId}
+            className="flex items-center gap-1.5 text-[11px] text-text-muted transition-colors hover:text-primary disabled:opacity-40"
+          >
+            <Save className="h-3 w-3" />
+            Salvar como template
+          </button>
+        )}
       </div>
 
       {/* With transcript toggle */}

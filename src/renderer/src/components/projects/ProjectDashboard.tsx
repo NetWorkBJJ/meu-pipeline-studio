@@ -216,6 +216,10 @@ export function ProjectDashboard(): React.JSX.Element {
       setCapCutDraftPath(result.draft_path)
       addRecentProject({ name, path: result.draft_path, lastOpened: Date.now() })
 
+      if (!isDefaultWorkspace && activeWorkspaceId) {
+        await linkProjects([{ name, capCutPath: result.project_path }])
+      }
+
       const recent: WorkspaceRecentProject = {
         name,
         path: result.draft_path,

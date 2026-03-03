@@ -262,13 +262,21 @@ export class Ai33Service {
 
   async textToSpeech(
     voiceId: string,
-    request: { text: string; model_id?: string; with_transcript?: boolean },
+    request: {
+      text: string
+      model_id?: string
+      with_transcript?: boolean
+      voice_settings?: Record<string, unknown>
+    },
     outputFormat = 'mp3_44100_128'
   ): Promise<TaskCreatedResponse> {
-    const body = {
+    const body: Record<string, unknown> = {
       text: request.text,
       model_id: request.model_id ?? 'eleven_multilingual_v2',
       with_transcript: request.with_transcript ?? false
+    }
+    if (request.voice_settings) {
+      body.voice_settings = request.voice_settings
     }
     return this.request<TaskCreatedResponse>(
       `/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`,

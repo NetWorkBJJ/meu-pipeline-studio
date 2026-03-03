@@ -232,6 +232,7 @@ const api = {
     model_id?: string
     with_transcript?: boolean
     output_format?: string
+    voice_settings?: Record<string, unknown>
   }): Promise<unknown> => ipcRenderer.invoke('ai33:tts-elevenlabs', params),
 
   ai33TtsMinimax: (params: {

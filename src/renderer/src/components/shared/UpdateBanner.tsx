@@ -62,7 +62,12 @@ export function UpdateBanner(): React.JSX.Element | null {
                 </>
               )}
               {update.status === 'error' && (
-                <span>Erro ao verificar atualizacao: {update.error}</span>
+                <span>
+                  Erro ao verificar atualizacao:{' '}
+                  {update.error && update.error.length > 120
+                    ? update.error.slice(0, 120) + '...'
+                    : update.error}
+                </span>
               )}
             </div>
 

@@ -222,9 +222,7 @@ export function Stage3Sync(): React.JSX.Element {
   }
 
   const handleAcceptExisting = (): void => {
-    completeStage(3)
-    addToast({ type: 'success', message: 'Sincronizacao existente aceita.' })
-    setTimeout(() => setCurrentStage(4), 400)
+    handleSyncClick()
   }
 
   const handleConfirm = async (): Promise<void> => {
