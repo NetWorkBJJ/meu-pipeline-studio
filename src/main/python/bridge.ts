@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process'
 import { join } from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { app, BrowserWindow } from 'electron'
+import { existsSync } from 'fs'
 import { appendFile, mkdir } from 'fs/promises'
 import { StringDecoder } from 'string_decoder'
 
@@ -50,7 +51,9 @@ function getPythonPath(): string {
     if (process.platform === 'win32') {
       return join(process.resourcesPath, 'python', 'python.exe')
     }
-    return join(process.resourcesPath, 'python', 'bin', 'python3')
+    // macOS: use system python3 (PATH fixed by fixProcessPath in index.ts)
+    // Dependencies are bundled as site-packages and loaded via PYTHONPATH
+    return 'python3'
   }
   return process.platform === 'win32' ? 'python' : 'python3'
 }
@@ -75,7 +78,16 @@ export function startPythonBridge(): void {
   }
 
   if (app.isPackaged) {
-    env.PYTHONPATH = join(process.resourcesPath, 'executions')
+    const executionsPath = join(process.resourcesPath, 'executions')
+    if (process.platform === 'darwin') {
+      // macOS: include bundled site-packages so system python3 finds deps
+      const sitePackages = join(process.resourcesPath, 'python', 'site-packages')
+      env.PYTHONPATH = existsSync(sitePackages)
+        ? [sitePackages, executionsPath].join(':')
+        : executionsPath
+    } else {
+      env.PYTHONPATH = executionsPath
+    }
   }
 
   pythonProcess = spawn(pythonPath, [scriptPath], {

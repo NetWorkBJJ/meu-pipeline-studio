@@ -121,6 +121,130 @@ def create_backup(draft_path: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Agency Files (macOS CapCut media registration)
+# ---------------------------------------------------------------------------
+
+def _update_agency_files(draft_dir: str, media_entries: list) -> None:
+    """Register media files in CapCut agency files so they are recognized.
+
+    On macOS, CapCut requires media to be registered in:
+      - draft_agency_config.json (all media: videos + photos)
+      - draft_agency_info.json (only videos, with converter dimensions)
+
+    Without these entries, CapCut shows "Unsupported Media" / "Clips lost".
+
+    Args:
+        draft_dir: Path to the CapCut project directory.
+        media_entries: List of dicts with keys: path, type, width, height.
+    """
+    if not media_entries:
+        return
+
+    dir_path = Path(draft_dir)
+
+    # --- draft_agency_config.json ---
+    config_path = dir_path / "draft_agency_config.json"
+    try:
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        else:
+            config = {
+                "is_auto_agency_enabled": False,
+                "is_auto_agency_popup": False,
+                "is_single_agency_mode": False,
+                "marterials": [],
+                "use_converter": True,
+                "video_resolution": 540,
+            }
+    except (json.JSONDecodeError, OSError):
+        config = {
+            "is_auto_agency_enabled": False,
+            "is_auto_agency_popup": False,
+            "is_single_agency_mode": False,
+            "marterials": [],
+            "use_converter": True,
+            "video_resolution": 540,
+        }
+
+    marterials = config.get("marterials") or []
+    existing_paths = {m.get("source_path", "") for m in marterials}
+
+    for entry in media_entries:
+        src = entry["path"].replace("\\", "/")
+        if src in existing_paths:
+            continue
+        marterials.append({
+            "cancel_in_global_mode": False,
+            "is_manual_disable": False,
+            "source_path": src,
+            "use_converter": True,
+        })
+        existing_paths.add(src)
+
+    config["marterials"] = marterials
+    config["use_converter"] = True
+
+    try:
+        data = json.dumps(config, ensure_ascii=False, separators=(",", ":"))
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError:
+        pass
+
+    # --- draft_agency_info.json (videos only) ---
+    video_resolution = config.get("video_resolution", 540)
+    video_entries = [e for e in media_entries if e.get("type") == "video"]
+    if not video_entries:
+        return
+
+    info_path = dir_path / "draft_agency_info.json"
+    try:
+        if info_path.exists():
+            with open(info_path, "r", encoding="utf-8") as f:
+                info = json.load(f)
+        else:
+            info = {"marterial": []}
+    except (json.JSONDecodeError, OSError):
+        info = {"marterial": []}
+
+    marterial = info.get("marterial") or []
+    existing_info_paths = {m.get("source_path", "") for m in marterial}
+
+    for entry in video_entries:
+        src = entry["path"].replace("\\", "/")
+        if src in existing_info_paths:
+            continue
+        h = entry.get("height", 1080)
+        w = entry.get("width", 1920)
+        if h > 0:
+            conv_height = video_resolution
+            conv_width = round(w * (video_resolution / h))
+        else:
+            conv_height = video_resolution
+            conv_width = round(video_resolution * 16 / 9)
+        marterial.append({
+            "converter_height": conv_height,
+            "converter_width": conv_width,
+            "source_path": src,
+        })
+        existing_info_paths.add(src)
+
+    info["marterial"] = marterial
+
+    try:
+        data = json.dumps(info, ensure_ascii=False, separators=(",", ":"))
+        with open(info_path, "w", encoding="utf-8") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Auxiliary Materials (for video/photo segments)
 # ---------------------------------------------------------------------------
 
@@ -578,6 +702,7 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
         draft.setdefault("tracks", []).insert(0, video_track)
 
     added_segments = []
+    agency_entries = []
 
     for i, scene in enumerate(scenes):
         media_path = scene["media_path"]
@@ -593,6 +718,11 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
         info = get_media_info(media_path)
         width = info["width"]
         height = info["height"]
+
+        agency_entries.append({
+            "path": media_path, "type": media_type,
+            "width": width, "height": height,
+        })
 
         mat_id = _generate_id()
         seg_id = _generate_id()
@@ -711,6 +841,8 @@ def write_video_segments(draft_path: str, scenes: list) -> dict:
     config["maintrack_adsorb"] = False
 
     save_draft(draft, str(path))
+
+    _update_agency_files(str(path.parent), agency_entries)
 
     return {"added_count": len(added_segments), "segments": added_segments}
 
@@ -868,6 +1000,7 @@ def insert_media_batch(draft_path: str, media_files: list,
     image_duration_us = int(image_duration_ms * 1000)
     video_count = 0
     image_count = 0
+    agency_entries = []
 
     for i, file_path in enumerate(media_files):
         if not os.path.exists(file_path):
@@ -877,6 +1010,11 @@ def insert_media_batch(draft_path: str, media_files: list,
         media_type = info["type"]
         width = info["width"]
         height = info["height"]
+
+        agency_entries.append({
+            "path": file_path, "type": media_type,
+            "width": width, "height": height,
+        })
 
         if media_type == "photo":
             dur_us = image_duration_us
@@ -994,6 +1132,8 @@ def insert_media_batch(draft_path: str, media_files: list,
     _recalculate_duration(draft)
 
     save_draft(draft, str(path))
+
+    _update_agency_files(str(path.parent), agency_entries)
 
     return {
         "inserted": video_count + image_count,

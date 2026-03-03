@@ -150,6 +150,25 @@
     return await cdpPressKey('Escape');
   }
 
+  // Detect large overlay covering >70% of viewport (expanded thumbnail/lightbox).
+  // Skips our own injected elements (veo3- prefix).
+  function detectLargeOverlay() {
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var candidates = document.querySelectorAll(
+      '[class*="overlay"], [class*="lightbox"], [class*="modal"], [class*="backdrop"], [class*="scrim"]'
+    );
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      if (el.className && typeof el.className === 'string' && el.className.indexOf('veo3-') >= 0) continue;
+      var rect = el.getBoundingClientRect();
+      if (rect.width >= vw * 0.7 && rect.height >= vh * 0.7) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Check if any dialog, menu, or overlay is currently open in the Google Flow UI.
   // Used to avoid unnecessary Escape presses that can cause unintended UI side-effects.
   function isOverlayOpen() {
@@ -157,7 +176,52 @@
     if (document.querySelector('[role="menu"][data-state="open"]')) return true;
     if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return true;
     if (document.querySelector('[data-radix-popper-content-wrapper]')) return true;
+    if (document.querySelector('[data-radix-overlay]')) return true;
+    if (document.querySelector('[aria-modal="true"]')) return true;
+    if (detectLargeOverlay()) return true;
     return false;
+  }
+
+  // === OVERLAY WATCHDOG ===
+  // Proactive periodic check that detects and dismisses unexpected overlays
+  // (e.g. expanded thumbnail lightbox) during automation.
+
+  var watchdogActive = false;
+
+  function startOverlayWatchdog() {
+    if (watchdogActive) return;
+    watchdogActive = true;
+
+    var interval = window.veo3Timing.TIMING.WATCHDOG_INTERVAL || 2000;
+
+    window.veo3Timing.createTrackedInterval('overlay-watchdog', async function() {
+      if (!automationState.running) {
+        stopOverlayWatchdog();
+        return;
+      }
+      // Skip during phases that intentionally open dialogs
+      var phase = window.__veo3_phase;
+      if (phase === 'GALLERY_SELECT' || phase === 'MODE_SWITCH') return;
+
+      if (isOverlayOpen()) {
+        console.log('[WATCHDOG] Unexpected overlay detected (phase: ' + (phase || 'unknown') + '), dismissing...');
+        await cdpDismiss();
+        await window.veo3Timing.sleep(300);
+        if (isOverlayOpen()) {
+          console.log('[WATCHDOG] Overlay persisted, pressing Escape again...');
+          await cdpDismiss();
+        }
+      }
+    }, interval);
+
+    console.log('[WATCHDOG] Overlay watchdog started (interval: ' + interval + 'ms)');
+  }
+
+  function stopOverlayWatchdog() {
+    if (!watchdogActive) return;
+    watchdogActive = false;
+    window.veo3Timing.stopTrackedInterval('overlay-watchdog');
+    console.log('[WATCHDOG] Overlay watchdog stopped');
   }
 
   // Expose for other injectors (gallery-mapper.js uses Escape, rename-automator.js uses type/right-click)
@@ -304,6 +368,7 @@
 
     window.__veo3_phase = 'INIT';
     window.veo3ClickLogger?.resetClickLog();
+    startOverlayWatchdog();
 
     notifySidepanel('AUTOMATION_STARTED', { total: commandQueue.length });
 
@@ -317,6 +382,7 @@
       console.log('[INIT] ERROR: No prompt field found - page may not be loaded');
       notifySidepanel('AUTOMATION_ERROR', { message: 'Google Flow page not ready (no prompt field found)' });
       automationState.running = false;
+      stopOverlayWatchdog();
       return;
     }
     console.log('[INIT] Page ready: ' + promptField.tagName + ' found');
@@ -520,6 +586,7 @@
     }
 
     automationState.running = false;
+    stopOverlayWatchdog();
     window.__veo3_phase = 'DONE';
     window.veo3ClickLogger?.printClickSummary();
     const totalElapsed = Math.round((Date.now() - automationState.startedAt) / 1000);
@@ -534,6 +601,7 @@
   function stopAutomation() {
     automationState.running = false;
     automationState.paused = false;
+    stopOverlayWatchdog();
     notifySidepanel('AUTOMATION_STOPPED', {});
     console.log('[STOP] Automation stopped');
   }
@@ -596,6 +664,9 @@
       console.log(tag + ' Step 1/4: Mode OK');
     }
 
+    // Safety delay: let UI stabilize after mode switch before next interaction
+    await sleep(TIMING.SAFETY_DELAY);
+
     // Step 2/4: Gallery selection (if command has character images)
     window.__veo3_phase = 'GALLERY_SELECT';
     if (cmd.characterImages && cmd.characterImages.length > 0) {
@@ -616,6 +687,9 @@
     } else {
       console.log(tag + ' Step 2/4: No characters (text-only prompt)');
     }
+
+    // Safety delay: let UI stabilize after gallery selection before filling prompt
+    await sleep(TIMING.SAFETY_DELAY);
 
     // Step 3/4: Fill prompt text via CDP (trusted events) with DOM fallback
     window.__veo3_phase = 'FILL_PROMPT';
@@ -1218,9 +1292,13 @@
         maxAttempts: 1
       });
 
-      // Click retry button and move on immediately
+      // Click retry button with delay between tiles to prevent misclicks
       await window.veo3RobustClick(retryBtn);
       totalRetried++;
+
+      if (t < tileIds.length - 1) {
+        await window.veo3Timing.sleep(window.veo3Timing.TIMING.RETRY_TILE_DELAY);
+      }
     }
 
     console.log('[RETRY] Scan complete: ' + totalRetried + ' tiles retried');

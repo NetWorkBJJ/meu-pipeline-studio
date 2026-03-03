@@ -36,6 +36,11 @@ extraResources:
       - '!tests/**'
   - from: resources/python-embed
     to: python
+    filter:
+      - '**/*'
+      - '!**/__pycache__/**'
+      - '!**/*.pyc'
+      - '!**/*.pyo'
 win:
   executableName: workflowaa
 nsis:
