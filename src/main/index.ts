@@ -1,8 +1,8 @@
-import { app, shell, BrowserWindow, session } from 'electron'
+import { app, shell, BrowserWindow, session, nativeImage } from 'electron'
 import { join, extname, basename } from 'path'
 import { existsSync, mkdirSync, renameSync } from 'fs'
 import { execSync } from 'child_process'
-import icon from '../../resources/icon.png?asset'
+import iconPng from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
 import { loadPersistedDownloadPath } from './ipc/veo3.handlers'
@@ -234,6 +234,14 @@ function resolveFileCollision(dir: string, filename: string): string {
 }
 
 function createWindow(): void {
+  const iconFile = process.platform === 'win32'
+    ? join(app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources'), 'icon.ico')
+    : iconPng
+  const appIcon = nativeImage.createFromPath(iconFile)
+  if (appIcon.isEmpty()) {
+    console.warn('Failed to load app icon from:', iconFile)
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -241,7 +249,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    icon,
+    icon: appIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

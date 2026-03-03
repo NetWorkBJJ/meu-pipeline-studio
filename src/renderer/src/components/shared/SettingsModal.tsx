@@ -678,7 +678,7 @@ export function SettingsModal(): React.JSX.Element | null {
   )
 }
 
-function SobreTab({ addToast }: { addToast: (t: { type: string; message: string }) => void }): React.JSX.Element {
+function SobreTab({ addToast }: { addToast: (t: { type: 'success' | 'error' | 'warning' | 'info'; message: string }) => void }): React.JSX.Element {
   const [appVersion, setAppVersion] = useState('')
   const [clearing, setClearing] = useState(false)
 
