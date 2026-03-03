@@ -1,6 +1,6 @@
 {
   "name": "workflowaa",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "Studio de pre-edicao automatizada para CapCut",
   "main": "./out/main/index.js",
   "author": "Anderson",
