@@ -43,6 +43,7 @@ extraResources:
       - '!**/*.pyo'
 win:
   executableName: workflowaa
+  icon: build/icon.ico
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
