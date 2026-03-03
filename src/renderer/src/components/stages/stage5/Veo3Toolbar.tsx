@@ -136,27 +136,63 @@ export function Veo3Toolbar({
         while (sameCount < 8) {
           if (window.__downloadCancelled) return JSON.stringify({ videos: 0, imagens: 0 });
 
-          // Media-first approach: start from video/img elements and walk UP the DOM
-          // to find the nearest ancestor with "(TAKE N)" text.
-          // This avoids the parent-div problem where innerText aggregates all children.
+          // Resolve take number using data-item-index scoping + direct text content.
+          // Same pattern used by rename-automator.js (proven robust against DOM changes).
+          // Avoids innerText which aggregates all descendant text and causes wrong matches.
+          function resolveTake(mediaEl) {
+            // Strategy 1: Scope to [data-item-index] container (Virtuoso item),
+            // find deepest div whose OWN text nodes contain (TAKE N)
+            var itemContainer = mediaEl.closest("[data-item-index]");
+            if (itemContainer) {
+              var allDivs = itemContainer.querySelectorAll("div");
+              var bestTake = null;
+              var bestDepth = -1;
+              for (var i = 0; i < allDivs.length; i++) {
+                var ownText = "";
+                for (var cn = 0; cn < allDivs[i].childNodes.length; cn++) {
+                  if (allDivs[i].childNodes[cn].nodeType === 3) {
+                    ownText += allDivs[i].childNodes[cn].textContent;
+                  }
+                }
+                var m = ownText.match(/\\(TAKE\\s+(\\d+)\\)/);
+                if (m) {
+                  var depth = 0;
+                  var cur = allDivs[i];
+                  while (cur && cur !== itemContainer) { depth++; cur = cur.parentElement; }
+                  if (depth > bestDepth) {
+                    bestDepth = depth;
+                    bestTake = parseInt(m[1]);
+                  }
+                }
+              }
+              if (bestTake !== null) return bestTake;
+            }
+
+            // Fallback: walk UP checking only own text nodes (not innerText)
+            var p = mediaEl.parentElement;
+            while (p && p !== document.body) {
+              var ownText2 = "";
+              for (var cn2 = 0; cn2 < p.childNodes.length; cn2++) {
+                if (p.childNodes[cn2].nodeType === 3) {
+                  ownText2 += p.childNodes[cn2].textContent;
+                }
+              }
+              var m2 = ownText2.match(/\\(TAKE\\s+(\\d+)\\)/);
+              if (m2) return parseInt(m2[1]);
+              p = p.parentElement;
+            }
+
+            return null;
+          }
 
           // 1. Map videos
           var allVideoEls = document.querySelectorAll("video");
           for (var v = 0; v < allVideoEls.length; v++) {
             var videoEl = allVideoEls[v];
             if (!videoEl.src) continue;
-
-            var parent = videoEl.parentElement;
-            while (parent && parent !== document.body) {
-              var match = parent.innerText.match(/\\(TAKE\\s+(\\d+)\\)/);
-              if (match) {
-                var take = parseInt(match[1]);
-                if (!videos.has(take)) {
-                  videos.set(take, videoEl.src);
-                }
-                break;
-              }
-              parent = parent.parentElement;
+            var take = resolveTake(videoEl);
+            if (take !== null && !videos.has(take)) {
+              videos.set(take, videoEl.src);
             }
           }
 
@@ -168,22 +204,13 @@ export function Veo3Toolbar({
             var w = imgEl.naturalWidth || imgEl.width || 0;
             var h = imgEl.naturalHeight || imgEl.height || 0;
             if (w * h < 2500) continue;
-
-            var parent = imgEl.parentElement;
-            while (parent && parent !== document.body) {
-              var match = parent.innerText.match(/\\(TAKE\\s+(\\d+)\\)/);
-              if (match) {
-                var take = parseInt(match[1]);
-                if (!videos.has(take) && !imagens.has(take)) {
-                  var src = imgEl.src;
-                  if (src.includes("googleusercontent.com")) {
-                    src = src.replace(/=w\\d+.*$/, "=s0").replace(/=s\\d+.*$/, "=s0");
-                  }
-                  imagens.set(take, src);
-                }
-                break;
+            var take = resolveTake(imgEl);
+            if (take !== null && !videos.has(take) && !imagens.has(take)) {
+              var src = imgEl.src;
+              if (src.includes("googleusercontent.com")) {
+                src = src.replace(/=w\\d+.*$/, "=s0").replace(/=s\\d+.*$/, "=s0");
               }
-              parent = parent.parentElement;
+              imagens.set(take, src);
             }
           }
 

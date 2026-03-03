@@ -17,7 +17,9 @@
       "Bash(# Find .db and .sqlite files across all CapCut directories find \"\"/c/Users/ander/AppData/Local/CapCut/\"\" -name \"\"*.db\"\" -o -name \"\"*.sqlite\"\" -o -name \"\"*.sqlite3\"\")",
       "Bash(python -c:*)",
       "WebFetch(domain:docs.byteplus.com)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(npm run typecheck:web)",
+      "Bash(git checkout -b mac-rollback ec67045)"
     ]
   },
   "enableAllProjectMcpServers": true,

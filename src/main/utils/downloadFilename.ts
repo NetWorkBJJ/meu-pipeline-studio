@@ -100,6 +100,13 @@ export function parseFlowEntryName(filename: string): FlowEntryParsed {
     if (takeParenMatch) {
       takeNumber = parseInt(takeParenMatch[1], 10)
       base = base.slice(takeParenMatch[0].length)
+    } else {
+      // Pattern 3: "TAKE NNNN" (toolbar download format, no parentheses)
+      const takeSpaceMatch = base.match(/^TAKE\s+(\d+)$/i)
+      if (takeSpaceMatch) {
+        takeNumber = parseInt(takeSpaceMatch[1], 10)
+        base = base.slice(takeSpaceMatch[0].length)
+      }
     }
   }
 

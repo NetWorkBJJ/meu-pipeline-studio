@@ -108,6 +108,8 @@ const api = {
     ipcRenderer.invoke('capcut:clear-text-segments', draftPath),
   clearVideoSegments: (draftPath: string): Promise<unknown> =>
     ipcRenderer.invoke('capcut:clear-video-segments', draftPath),
+  clearAudioSegments: (draftPath: string): Promise<unknown> =>
+    ipcRenderer.invoke('capcut:clear-audio-segments', draftPath),
   generateSrt: (params: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke('capcut:generate-srt', params),
 
@@ -232,6 +234,7 @@ const api = {
     model_id?: string
     with_transcript?: boolean
     output_format?: string
+    voice_settings?: Record<string, unknown>
   }): Promise<unknown> => ipcRenderer.invoke('ai33:tts-elevenlabs', params),
 
   ai33TtsMinimax: (params: {

@@ -78,6 +78,32 @@ export function autoSyncBlocks(storyBlocks: StoryBlock[], audioBlocks: AudioBloc
   const sorted = [...storyBlocks].sort((a, b) => a.index - b.index)
   const audioSorted = [...audioBlocks].sort((a, b) => a.startMs - b.startMs)
 
+  // Single audio block covering multiple story blocks: distribute proportionally
+  if (audioSorted.length === 1 && sorted.length > 1) {
+    const audio = audioSorted[0]
+    const totalChars = sorted.reduce((sum, b) => sum + Math.max(b.characterCount, 1), 0)
+    let cursor = audio.startMs
+    const synced = sorted.map((block, i) => {
+      const chars = Math.max(block.characterCount, 1)
+      const isLast = i === sorted.length - 1
+      const durationMs = isLast
+        ? audio.endMs - cursor
+        : Math.round((chars / totalChars) * audio.durationMs)
+      const startMs = cursor
+      const endMs = startMs + durationMs
+      cursor = endMs
+      return {
+        ...block,
+        startMs,
+        endMs,
+        durationMs,
+        linkedAudioId: audio.id
+      }
+    })
+    return { syncedBlocks: synced, linkedCount: sorted.length, unlinkedCount: 0 }
+  }
+
+  // Default: 1:1 index matching
   let linkedCount = 0
   const synced = sorted.map((block, i) => {
     if (i < audioSorted.length) {

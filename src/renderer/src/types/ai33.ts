@@ -371,6 +371,27 @@ export interface Ai33TaskProgressEvent {
 }
 
 // ---------------------------------------------------------------------------
+// ElevenLabs Voice Templates
+// ---------------------------------------------------------------------------
+
+export interface ElevenLabsVoiceSettings {
+  stability: number // 0.0-1.0
+  similarity_boost: number // 0.0-1.0
+  style: number // 0.0-1.0
+  use_speaker_boost: boolean
+}
+
+export interface ElevenLabsVoiceTemplate {
+  id: string
+  name: string
+  voiceId: string
+  voiceName: string
+  modelId: string
+  voiceSettings: ElevenLabsVoiceSettings
+  createdAt: number
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 

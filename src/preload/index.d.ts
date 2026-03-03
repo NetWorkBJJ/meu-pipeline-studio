@@ -72,6 +72,7 @@ interface ElectronAppAPI {
 
   clearTextSegments: (draftPath: string) => Promise<unknown>
   clearVideoSegments: (draftPath: string) => Promise<unknown>
+  clearAudioSegments: (draftPath: string) => Promise<unknown>
   generateSrt: (params: Record<string, unknown>) => Promise<unknown>
 
   validateProject: (projectPath: string) => Promise<unknown>
@@ -164,6 +165,7 @@ interface ElectronAppAPI {
     model_id?: string
     with_transcript?: boolean
     output_format?: string
+    voice_settings?: Record<string, unknown>
   }) => Promise<unknown>
 
   ai33TtsMinimax: (params: {

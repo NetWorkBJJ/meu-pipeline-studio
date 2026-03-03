@@ -8,7 +8,12 @@ import {
   CheckCircle,
   RefreshCw,
   Volume2,
-  Coins
+  Coins,
+  ChevronDown,
+  ChevronRight,
+  Save,
+  Trash2,
+  BookMarked
 } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -22,7 +27,8 @@ import type {
   Ai33TTSMetadata,
   Ai33CreditsResponse,
   Ai33VoicesResponse,
-  Ai33TaskProgressEvent
+  ElevenLabsVoiceSettings,
+  ElevenLabsVoiceTemplate
 } from '@/types/ai33'
 import { ELEVENLABS_MODELS } from '@/types/ai33'
 
@@ -30,14 +36,35 @@ import { ELEVENLABS_MODELS } from '@/types/ai33'
 // Internal types
 // ---------------------------------------------------------------------------
 
-type PanelPhase = 'idle' | 'generating' | 'polling' | 'downloading' | 'done' | 'error'
+type PanelPhase = 'idle' | 'generating' | 'done' | 'error'
+
+interface GeneratedPart {
+  index: number
+  text: string
+  localPath: string
+  durationMs: number
+  creditCost: number
+}
+
+const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
+  stability: 0.5,
+  similarity_boost: 0.75,
+  style: 0.0,
+  use_speaker_boost: true
+}
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function ElevenLabsTTSPanel(): React.JSX.Element {
-  const { storyBlocks, setAudioBlocks } = useProjectStore()
+  const {
+    storyBlocks,
+    setAudioBlocks,
+    elevenLabsVoiceTemplates,
+    addElevenLabsVoiceTemplate,
+    removeElevenLabsVoiceTemplate
+  } = useProjectStore()
   const { completeStage, setCurrentStage } = useStageStore()
   const { addToast } = useUIStore()
 
@@ -57,34 +84,34 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   // Model
   const [modelId, setModelId] = useState<string>(ELEVENLABS_MODELS[0].id)
 
+  // Voice settings
+  const [voiceSettings, setVoiceSettings] = useState<ElevenLabsVoiceSettings>(DEFAULT_VOICE_SETTINGS)
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false)
+
+  // Template
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
+
   // Transcript
   const [withTranscript, setWithTranscript] = useState(true)
 
   // Text
   const [editableText, setEditableText] = useState('')
 
-  // Generation state
+  // Generation state (single audio)
   const [phase, setPhase] = useState<PanelPhase>('idle')
-  const [taskId, setTaskId] = useState<string | null>(null)
-  const [pollProgress, setPollProgress] = useState(0)
+  const [generatedAudio, setGeneratedAudio] = useState<GeneratedPart | null>(null)
+  const [totalCreditCost, setTotalCreditCost] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [creditCost, setCreditCost] = useState<number | null>(null)
-  const [remainingCredits, setRemainingCredits] = useState<number | null>(null)
-
-  // Result
-  const [localAudioPath, setLocalAudioPath] = useState<string | null>(null)
-  const [audioDurationMs, setAudioDurationMs] = useState<number | null>(null)
 
   // Audio preview
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
   const [previewPlaying, setPreviewPlaying] = useState(false)
   const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null)
 
-  // Result audio player
-  const resultAudioRef = useRef<HTMLAudioElement | null>(null)
-
-  // Polling ref to track cancellation
-  const pollingRef = useRef(false)
+  // Cancellation ref
+  const cancelledRef = useRef(false)
 
   // -----------------------------------------------------------------------
   // Mount: check API key, load voices, load credits
@@ -113,16 +140,59 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     }
   }, [storyBlocks, editableText])
 
-  // Subscribe to ai33 task progress events
-  useEffect(() => {
-    const unsubscribe = window.api.onAi33TaskProgress((data) => {
-      const evt = data as Ai33TaskProgressEvent
-      if (taskId && evt.taskId === taskId) {
-        setPollProgress(evt.progress)
-      }
-    })
-    return unsubscribe
-  }, [taskId])
+  // -----------------------------------------------------------------------
+  // Template handling
+  // -----------------------------------------------------------------------
+
+  const handleSelectTemplate = (templateId: string): void => {
+    setSelectedTemplateId(templateId)
+    if (!templateId) return
+
+    const template = elevenLabsVoiceTemplates.find((t) => t.id === templateId)
+    if (!template) return
+
+    setSelectedVoiceId(template.voiceId)
+    setModelId(template.modelId)
+    setVoiceSettings({ ...template.voiceSettings })
+  }
+
+  const handleSaveTemplate = (): void => {
+    const name = newTemplateName.trim()
+    if (!name) {
+      addToast({ type: 'warning', message: 'Digite um nome para o template.' })
+      return
+    }
+    if (!selectedVoiceId) {
+      addToast({ type: 'warning', message: 'Selecione uma voz primeiro.' })
+      return
+    }
+
+    const voiceName = selectedVoice?.name || selectedVoiceId
+
+    const template: ElevenLabsVoiceTemplate = {
+      id: uuidv4(),
+      name,
+      voiceId: selectedVoiceId,
+      voiceName,
+      modelId,
+      voiceSettings: { ...voiceSettings },
+      createdAt: Date.now()
+    }
+
+    addElevenLabsVoiceTemplate(template)
+    setSelectedTemplateId(template.id)
+    setShowSaveTemplate(false)
+    setNewTemplateName('')
+    addToast({ type: 'success', message: `Template "${name}" salvo.` })
+  }
+
+  const handleDeleteTemplate = (id: string): void => {
+    removeElevenLabsVoiceTemplate(id)
+    if (selectedTemplateId === id) {
+      setSelectedTemplateId('')
+    }
+    addToast({ type: 'info', message: 'Template removido.' })
+  }
 
   // -----------------------------------------------------------------------
   // Data loaders
@@ -170,7 +240,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     (voice: Ai33ElevenLabsVoice) => {
       if (!voice.preview_url) return
 
-      // If already playing this voice, stop it
       if (previewPlaying && previewVoiceId === voice.voice_id) {
         if (previewAudioRef.current) {
           previewAudioRef.current.pause()
@@ -181,7 +250,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         return
       }
 
-      // Stop any existing preview
       if (previewAudioRef.current) {
         previewAudioRef.current.pause()
       }
@@ -205,12 +273,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   )
 
   // -----------------------------------------------------------------------
-  // Generate TTS
+  // Generate TTS (single audio from all blocks)
   // -----------------------------------------------------------------------
 
   const handleGenerate = async (): Promise<void> => {
-    if (!editableText.trim()) {
-      addToast({ type: 'warning', message: 'Insira texto para gerar audio.' })
+    if (storyBlocks.length === 0) {
+      addToast({ type: 'warning', message: 'Nenhum bloco de legenda encontrado (Stage 1).' })
       return
     }
     if (!selectedVoiceId) {
@@ -218,150 +286,158 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       return
     }
 
+    const fullText = storyBlocks
+      .slice()
+      .sort((a, b) => a.index - b.index)
+      .map((b) => b.text.trim())
+      .filter((t) => t.length > 0)
+      .join('\n\n')
+
+    if (!fullText) {
+      addToast({ type: 'warning', message: 'Todos os blocos estao vazios.' })
+      return
+    }
+
     setPhase('generating')
     setErrorMessage(null)
-    setCreditCost(null)
-    setRemainingCredits(null)
-    setLocalAudioPath(null)
-    setAudioDurationMs(null)
-    setPollProgress(0)
+    setGeneratedAudio(null)
+    setTotalCreditCost(0)
+    cancelledRef.current = false
+
+    const timestamp = Date.now()
 
     try {
-      // Step 1: Submit TTS task
+      // 1. Create single TTS task with full text
       const createRes = (await window.api.ai33TtsElevenlabs({
         voiceId: selectedVoiceId,
-        text: editableText,
+        text: fullText,
         model_id: modelId,
-        with_transcript: withTranscript
+        with_transcript: withTranscript,
+        voice_settings: {
+          stability: voiceSettings.stability,
+          similarity_boost: voiceSettings.similarity_boost,
+          style: voiceSettings.style,
+          use_speaker_boost: voiceSettings.use_speaker_boost
+        }
       })) as Ai33TaskCreatedResponse
 
       if (!createRes.success || !createRes.task_id) {
-        throw new Error('Falha ao criar task de TTS.')
+        throw new Error('Falha ao criar task.')
       }
 
-      const newTaskId = createRes.task_id
-      setTaskId(newTaskId)
-      setRemainingCredits(createRes.ec_remain_credits)
-      setPhase('polling')
-
-      // Step 2: Poll for completion
-      pollingRef.current = true
+      // 2. Poll until done
       let taskResult: Ai33TaskResponse | null = null
-
-      while (pollingRef.current) {
+      while (!cancelledRef.current) {
         await delay(2000)
-        if (!pollingRef.current) break
+        if (cancelledRef.current) break
 
-        const pollRes = (await window.api.ai33PollTask(newTaskId)) as Ai33TaskResponse
-        setPollProgress(pollRes.progress)
+        const pollRes = (await window.api.ai33PollTask(createRes.task_id)) as Ai33TaskResponse
 
         if (pollRes.status === 'done') {
           taskResult = pollRes
           break
         }
-
         if (pollRes.status === 'error') {
-          throw new Error(pollRes.error_message || 'Erro no processamento do audio.')
+          throw new Error(pollRes.error_message || 'Erro no processamento.')
         }
       }
 
-      if (!taskResult) {
-        // Polling was cancelled
-        setPhase('idle')
+      if (!taskResult || cancelledRef.current) {
+        if (cancelledRef.current) setPhase('idle')
         return
       }
 
-      setCreditCost(taskResult.credit_cost)
+      setTotalCreditCost(taskResult.credit_cost)
 
-      // Step 3: Download audio
-      setPhase('downloading')
+      // 3. Download audio
       const metadata = taskResult.metadata as Ai33TTSMetadata
-
       if (!metadata.audio_url) {
         throw new Error('Resposta sem URL de audio.')
       }
 
-      const downloadRes = await window.api.ai33DownloadFile({
+      const dlResult = (await window.api.ai33DownloadFile({
         url: metadata.audio_url,
-        fileName: `elevenlabs_tts_${Date.now()}.mp3`
-      })
-
-      const dlResult = downloadRes as { success: boolean; localPath: string; size: number }
+        fileName: `elevenlabs_tts_${timestamp}_full.mp3`
+      })) as { success: boolean; localPath: string; size: number }
 
       if (!dlResult.success) {
-        throw new Error('Falha ao baixar o arquivo de audio.')
+        throw new Error('Falha ao baixar audio.')
       }
 
-      setLocalAudioPath(dlResult.localPath)
+      // 4. Detect duration
+      const durationMs = await getAudioDuration(dlResult.localPath)
+
+      setGeneratedAudio({
+        index: 0,
+        text: fullText,
+        localPath: dlResult.localPath,
+        durationMs,
+        creditCost: taskResult.credit_cost
+      })
+
       setPhase('done')
-
-      // Refresh credits after generation
       loadCredits()
-
-      addToast({ type: 'success', message: 'Audio gerado com sucesso via ElevenLabs.' })
+      addToast({ type: 'success', message: 'Audio gerado com sucesso.' })
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido.'
       setPhase('error')
-      const msg = err instanceof Error ? err.message : 'Erro ao gerar audio.'
       setErrorMessage(msg)
-      addToast({ type: 'error', message: msg })
-    } finally {
-      pollingRef.current = false
     }
   }
 
   // -----------------------------------------------------------------------
-  // Detect audio duration from the result audio element
+  // Confirm: create single AudioBlock and advance pipeline
   // -----------------------------------------------------------------------
 
-  const handleAudioLoaded = (): void => {
-    if (resultAudioRef.current && resultAudioRef.current.duration) {
-      setAudioDurationMs(Math.round(resultAudioRef.current.duration * 1000))
-    }
-  }
-
-  // -----------------------------------------------------------------------
-  // Confirm: create AudioBlocks and advance pipeline
-  // -----------------------------------------------------------------------
-
-  const handleConfirm = (): void => {
-    if (!localAudioPath || audioDurationMs === null) {
-      addToast({ type: 'warning', message: 'Aguarde o audio carregar.' })
-      return
-    }
+  const handleConfirm = async (): Promise<void> => {
+    if (!generatedAudio) return
 
     const audioBlocks = [
       {
         id: uuidv4(),
         index: 1,
-        filePath: localAudioPath,
+        filePath: generatedAudio.localPath,
         startMs: 0,
-        endMs: audioDurationMs,
-        durationMs: audioDurationMs,
+        endMs: generatedAudio.durationMs,
+        durationMs: generatedAudio.durationMs,
         linkedBlockId: null,
         source: 'tts' as const
       }
     ]
 
     setAudioBlocks(audioBlocks)
+
+    const draftPath = useProjectStore.getState().capCutDraftPath
+    if (draftPath) {
+      try {
+        await window.api.clearAudioSegments(draftPath)
+        await window.api.insertAudioBatch({
+          draftPath,
+          audioFiles: audioBlocks.map((b) => b.filePath),
+          durationsMs: audioBlocks.map((b) => b.durationMs),
+          useExistingTrack: false
+        })
+        await window.api.syncMetadata(draftPath)
+      } catch {
+        addToast({ type: 'warning', message: 'Audio gerado mas nao inserido no CapCut.' })
+      }
+    }
+
     completeStage(2)
     addToast({ type: 'success', message: 'Etapa 2 concluida.' })
     setTimeout(() => setCurrentStage(3), 400)
   }
 
   // -----------------------------------------------------------------------
-  // Reset to try again
+  // Reset
   // -----------------------------------------------------------------------
 
   const handleRefazer = (): void => {
-    pollingRef.current = false
+    cancelledRef.current = true
     setPhase('idle')
-    setTaskId(null)
-    setPollProgress(0)
+    setGeneratedAudio(null)
+    setTotalCreditCost(0)
     setErrorMessage(null)
-    setCreditCost(null)
-    setRemainingCredits(null)
-    setLocalAudioPath(null)
-    setAudioDurationMs(null)
   }
 
   // -----------------------------------------------------------------------
@@ -385,8 +461,8 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   // Derived state
   // -----------------------------------------------------------------------
 
-  const hasText = editableText.trim().length > 0
-  const isWorking = phase === 'generating' || phase === 'polling' || phase === 'downloading'
+  const isWorking = phase === 'generating'
+  const totalDurationMs = generatedAudio?.durationMs ?? 0
 
   // -----------------------------------------------------------------------
   // Render: API key not configured
@@ -447,6 +523,40 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         </button>
       </div>
 
+      {/* Voice Template selector */}
+      {elevenLabsVoiceTemplates.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-text-muted">Template de voz</span>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <BookMarked className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted" />
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => handleSelectTemplate(e.target.value)}
+                className="w-full appearance-none rounded-lg border border-border bg-bg py-1.5 pl-7 pr-8 text-xs text-text outline-none transition-colors focus:border-primary"
+              >
+                <option value="">Nenhum (manual)</option>
+                {elevenLabsVoiceTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} -- {t.voiceName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedTemplateId && (
+              <button
+                type="button"
+                onClick={() => handleDeleteTemplate(selectedTemplateId)}
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:border-red-500/30 hover:text-red-400"
+                title="Remover template"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Config row: Voice + Model */}
       <div className="grid grid-cols-2 gap-3">
         {/* Voice selector */}
@@ -482,6 +592,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
                         onClick={() => {
                           setSelectedVoiceId(v.voice_id)
                           setVoiceSearch('')
+                          setSelectedTemplateId('')
                         }}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-bg ${
                           v.voice_id === selectedVoiceId ? 'bg-primary/10 text-primary' : 'text-text'
@@ -559,6 +670,160 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         </div>
       </div>
 
+      {/* Voice Settings (collapsible) */}
+      <div className="rounded-lg border border-border">
+        <button
+          type="button"
+          onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+          className="flex w-full items-center justify-between px-3 py-2 text-xs text-text-muted transition-colors hover:text-text"
+        >
+          <span>Voice Settings</span>
+          {showVoiceSettings ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+        </button>
+
+        {showVoiceSettings && (
+          <div className="flex flex-col gap-3 border-t border-border px-3 pb-3 pt-2">
+            {/* Stability */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Stability</span>
+                <span className="text-[11px] font-medium text-text">
+                  {Math.round(voiceSettings.stability * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">Variable</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(voiceSettings.stability * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({ ...s, stability: Number(e.target.value) / 100 }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">Stable</span>
+              </div>
+            </div>
+
+            {/* Similarity */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Similarity</span>
+                <span className="text-[11px] font-medium text-text">
+                  {Math.round(voiceSettings.similarity_boost * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">Low</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(voiceSettings.similarity_boost * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({
+                      ...s,
+                      similarity_boost: Number(e.target.value) / 100
+                    }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">High</span>
+              </div>
+            </div>
+
+            {/* Style Exaggeration */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Style Exaggeration</span>
+                <span className="text-[11px] font-medium text-text">
+                  {Math.round(voiceSettings.style * 100)}%
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">None</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(voiceSettings.style * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({ ...s, style: Number(e.target.value) / 100 }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">Exaggerated</span>
+              </div>
+            </div>
+
+            {/* Speaker Boost */}
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={voiceSettings.use_speaker_boost}
+                onChange={(e) =>
+                  setVoiceSettings((s) => ({ ...s, use_speaker_boost: e.target.checked }))
+                }
+                className="h-3.5 w-3.5 rounded border-border bg-bg accent-primary"
+              />
+              <span className="text-xs text-text-muted">Speaker Boost</span>
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Save as template */}
+      <div className="flex items-center gap-2">
+        {showSaveTemplate ? (
+          <div className="flex flex-1 items-center gap-2">
+            <input
+              type="text"
+              value={newTemplateName}
+              onChange={(e) => setNewTemplateName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSaveTemplate()}
+              placeholder="Nome do template..."
+              autoFocus
+              className="flex-1 rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none transition-colors focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={handleSaveTemplate}
+              disabled={!newTemplateName.trim()}
+              className="flex h-[30px] items-center gap-1.5 rounded-lg bg-primary px-3 text-[11px] font-medium text-white transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:opacity-40"
+            >
+              <Save className="h-3 w-3" />
+              Salvar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSaveTemplate(false)
+                setNewTemplateName('')
+              }}
+              className="text-[11px] text-text-muted transition-colors hover:text-text"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowSaveTemplate(true)}
+            disabled={!selectedVoiceId}
+            className="flex items-center gap-1.5 text-[11px] text-text-muted transition-colors hover:text-primary disabled:opacity-40"
+          >
+            <Save className="h-3 w-3" />
+            Salvar como template
+          </button>
+        )}
+      </div>
+
       {/* With transcript toggle */}
       <label className="flex cursor-pointer items-center gap-2">
         <input
@@ -570,66 +835,48 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         <span className="text-xs text-text-muted">Gerar transcricao (SRT)</span>
       </label>
 
-      {/* Text area */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] text-text-muted">Texto para narracao</span>
-          <span className="text-[10px] text-text-muted/70">{editableText.length} caracteres</span>
+      {/* Block count info */}
+      {storyBlocks.length > 0 && phase === 'idle' && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+          <span className="text-xs text-text-muted">
+            {storyBlocks.length} blocos de legenda serao concatenados em um unico audio
+          </span>
         </div>
-        <textarea
-          value={editableText}
-          onChange={(e) => setEditableText(e.target.value)}
-          placeholder="Insira o texto que sera narrado..."
-          rows={6}
-          className="resize-y rounded-lg border border-border bg-bg px-3 py-2 text-sm leading-relaxed text-text outline-none focus:border-primary"
-        />
-      </div>
+      )}
 
       {/* Generate button */}
       {phase === 'idle' && (
         <button
           type="button"
-          disabled={!hasText || !selectedVoiceId}
+          disabled={storyBlocks.length === 0 || !selectedVoiceId}
           onClick={handleGenerate}
           className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Play className="h-4 w-4" />
-          Gerar Audio (ElevenLabs)
+          Gerar Audio Unico
         </button>
       )}
 
-      {/* Progress during generation/polling/downloading */}
+      {/* Progress during generation */}
       {isWorking && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-text">
-              {phase === 'generating' && 'Enviando para ElevenLabs...'}
-              {phase === 'polling' && 'Processando audio...'}
-              {phase === 'downloading' && 'Baixando audio...'}
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          {phase === 'polling' && (
-            <div className="flex flex-col gap-1">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-bg">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-500"
-                  style={{ width: `${Math.max(pollProgress, 5)}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-text-muted">{pollProgress}% concluido</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="text-sm text-text">Gerando audio...</span>
             </div>
-          )}
-
-          {taskId && (
-            <span className="text-[10px] font-mono text-text-muted/60">Task: {taskId}</span>
-          )}
+            <button
+              type="button"
+              onClick={handleRefazer}
+              className="text-[11px] text-text-muted transition-colors hover:text-red-400"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Error state */}
+      {/* Error state (all blocks failed) */}
       {phase === 'error' && (
         <div className="flex flex-col gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-4">
           <div className="flex items-center gap-2">
@@ -648,7 +895,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       )}
 
       {/* Result */}
-      {phase === 'done' && localAudioPath && (
+      {phase === 'done' && generatedAudio && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -657,19 +904,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
                 <h4 className="text-sm font-medium text-text">Audio gerado</h4>
               </div>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                {audioDurationMs !== null && (
+                <span className="text-xs text-text-muted">
+                  Duracao: {msToDisplay(totalDurationMs)}
+                </span>
+                {totalCreditCost > 0 && (
                   <span className="text-xs text-text-muted">
-                    Duracao: {msToDisplay(audioDurationMs)}
-                  </span>
-                )}
-                {creditCost !== null && (
-                  <span className="text-xs text-text-muted">
-                    Custo: {creditCost.toFixed(2)} creditos
-                  </span>
-                )}
-                {remainingCredits !== null && (
-                  <span className="text-xs text-text-muted">
-                    Restante: {remainingCredits.toFixed(2)}
+                    Custo: {totalCreditCost.toFixed(2)} creditos
                   </span>
                 )}
               </div>
@@ -685,27 +925,18 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={audioDurationMs === null}
-                className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
               >
                 Confirmar audio
               </button>
             </div>
-          </div>
-
           {/* Audio player */}
           <audio
-            ref={resultAudioRef}
             controls
-            onLoadedMetadata={handleAudioLoaded}
-            src={`file://${localAudioPath.replace(/\\/g, '/')}`}
+            src={`file://${generatedAudio.localPath.replace(/\\/g, '/')}`}
             className="w-full"
           />
-
-          {/* File path */}
-          <span className="break-all text-[10px] font-mono text-text-muted/50">
-            {localAudioPath}
-          </span>
+          </div>
         </div>
       )}
     </div>
@@ -718,4 +949,16 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function getAudioDuration(filePath: string): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = new Audio(`file://${filePath.replace(/\\/g, '/')}`)
+    audio.onloadedmetadata = (): void => {
+      resolve(Math.round(audio.duration * 1000))
+    }
+    audio.onerror = (): void => {
+      resolve(0)
+    }
+  })
 }
