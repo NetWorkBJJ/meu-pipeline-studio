@@ -289,6 +289,7 @@ interface ElectronAppAPI {
     capcut: { ok: boolean; path?: string }
     capcutProjects: { ok: boolean; path?: string }
   }>
+  systemClearCache: () => Promise<{ success: boolean }>
 
   // Updater
   updaterCheck: () => Promise<{ success: boolean; version?: string | null; error?: string }>

@@ -1,0 +1,66 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '*.md'
+      - 'directives/**'
+      - '.claude/**'
+      - 'TOKEN_COST_LOG.md'
+      - 'TODO.md'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version
+        id: bump
+        run: node scripts/bump-version.mjs
+        env:
+          CI: true
+
+      - name: Cache Python embeddable
+        uses: actions/cache@v4
+        with:
+          path: resources/python-embed
+          key: python-embed-3.12.8-${{ hashFiles('executions/requirements.txt') }}
+          restore-keys: |
+            python-embed-3.12.8-
+
+      - name: Prepare Python embeddable
+        run: node scripts/prepare-python.mjs
+
+      - name: Build app
+        run: npx electron-vite build
+
+      - name: Package & Publish
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git diff --cached --quiet || git commit -m "chore: bump version to $(node -p \"require('./package.json').version\")"
+          git push

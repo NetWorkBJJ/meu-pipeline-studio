@@ -1,5 +1,6 @@
 import { AppLayout } from './components/layout/AppLayout'
 import { ToastContainer } from './components/shared/Toast'
+import { UpdateBanner } from './components/shared/UpdateBanner'
 import { useStageStore } from './stores/useStageStore'
 import { useProjectStore } from './stores/useProjectStore'
 import { useDirectorPersistence } from './hooks/useDirectorPersistence'
@@ -17,6 +18,7 @@ export function App(): React.JSX.Element {
 
   return (
     <>
+      <UpdateBanner />
       <AppLayout />
       <ToastContainer />
     </>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useLogStore, selectLastLog, selectErrorCount } from '@/stores/useLogStore'
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore'
@@ -15,6 +16,11 @@ export function StatusBar(): React.JSX.Element {
   const lastLog = selectLastLog(logs)
   const errorCount = selectErrorCount(logs)
   const { activeWorkspace } = useWorkspaceStore()
+  const [appVersion, setAppVersion] = useState('')
+
+  useEffect(() => {
+    window.api.updaterGetVersion().then(setAppVersion).catch(() => {})
+  }, [])
 
   return (
     <footer className="flex h-8 items-center justify-between border-t border-border bg-bg px-4 text-[11px] text-text-muted">
@@ -40,6 +46,9 @@ export function StatusBar(): React.JSX.Element {
         <span className="max-w-[300px] truncate font-mono text-text-tertiary">
           {capCutDraftPath || 'Nenhum projeto'}
         </span>
+        {appVersion && (
+          <span className="font-mono text-text-tertiary">v{appVersion}</span>
+        )}
       </div>
     </footer>
   )

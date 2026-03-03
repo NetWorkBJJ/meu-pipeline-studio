@@ -385,6 +385,7 @@ const api = {
 
   // System
   systemHealthCheck: (): Promise<unknown> => ipcRenderer.invoke('system:health-check'),
+  systemClearCache: (): Promise<{ success: boolean }> => ipcRenderer.invoke('system:clear-cache'),
 
   // Updater
   updaterCheck: (): Promise<{ success: boolean; version?: string | null; error?: string }> =>
