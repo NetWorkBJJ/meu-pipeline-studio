@@ -564,6 +564,70 @@ def clear_video_segments(draft_path: str) -> dict:
     }
 
 
+def clear_audio_segments(draft_path: str) -> dict:
+    """Remove all audio segments and their materials from the draft.
+
+    Removes audio materials and auxiliary material types
+    (speeds, placeholder_infos, beats, sound_channel_mappings, vocal_separations).
+    Does NOT remove video segments or text segments.
+    Returns: { removed_segments, removed_materials }
+    """
+    path = Path(draft_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Draft not found: {draft_path}")
+
+    create_backup(draft_path)
+
+    with open(path, "r", encoding="utf-8") as f:
+        draft = json.load(f)
+
+    materials = draft.get("materials", {})
+    removed_segments = 0
+    removed_materials = 0
+
+    # Collect material_ids and extra_material_refs from audio track segments
+    audio_mat_ids = set()
+    aux_ids = set()
+
+    for track in draft.get("tracks", []):
+        if track.get("type") == "audio":
+            for seg in track.get("segments", []):
+                audio_mat_ids.add(seg.get("material_id", ""))
+                for ref in seg.get("extra_material_refs", []):
+                    aux_ids.add(ref)
+            removed_segments += len(track.get("segments", []))
+            track["segments"] = []
+
+    # Remove audio materials
+    if "audios" in materials:
+        before = len(materials["audios"])
+        materials["audios"] = [
+            m for m in materials["audios"] if m.get("id", "") not in audio_mat_ids
+        ]
+        removed_materials += before - len(materials["audios"])
+
+    # Remove auxiliary materials by collected IDs
+    for key in [
+        "speeds", "placeholder_infos", "beats",
+        "sound_channel_mappings", "vocal_separations",
+    ]:
+        if key in materials:
+            before = len(materials[key])
+            materials[key] = [
+                m for m in materials[key] if m.get("id", "") not in aux_ids
+            ]
+            removed_materials += before - len(materials[key])
+
+    _recalculate_duration(draft)
+
+    save_draft(draft, str(path))
+
+    return {
+        "removed_segments": removed_segments,
+        "removed_materials": removed_materials,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Subtitle Timing Update
 # ---------------------------------------------------------------------------
@@ -1332,13 +1396,16 @@ def _get_audio_duration_us(file_path: str) -> int:
 
 
 def insert_audio_batch(draft_path: str, audio_files: list,
-                       use_existing_track: bool = False) -> dict:
+                       use_existing_track: bool = False,
+                       durations_ms: list = None) -> dict:
     """Insert multiple audio files into the CapCut draft.
 
     Args:
         draft_path: Path to draft_content.json.
         audio_files: List of audio file path strings.
         use_existing_track: If True, append to first existing audio track.
+        durations_ms: Optional list of durations in milliseconds (parallel to audio_files).
+                      When provided, skips ffprobe duration detection.
 
     Returns: { inserted, total_duration_us }
     """
@@ -1387,11 +1454,14 @@ def insert_audio_batch(draft_path: str, audio_files: list,
 
     inserted = 0
 
-    for file_path in audio_files:
+    for i, file_path in enumerate(audio_files):
         if not os.path.exists(file_path):
             continue
 
-        dur_us = _get_audio_duration_us(file_path)
+        if durations_ms and i < len(durations_ms) and durations_ms[i] > 0:
+            dur_us = int(durations_ms[i] * 1000)
+        else:
+            dur_us = _get_audio_duration_us(file_path)
 
         audio_mat = _make_audio_material(file_path, dur_us)
         audios_mat.append(audio_mat["material"])

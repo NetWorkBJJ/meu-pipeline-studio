@@ -72,6 +72,7 @@ interface ElectronAppAPI {
 
   clearTextSegments: (draftPath: string) => Promise<unknown>
   clearVideoSegments: (draftPath: string) => Promise<unknown>
+  clearAudioSegments: (draftPath: string) => Promise<unknown>
   generateSrt: (params: Record<string, unknown>) => Promise<unknown>
 
   validateProject: (projectPath: string) => Promise<unknown>

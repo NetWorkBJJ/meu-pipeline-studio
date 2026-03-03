@@ -95,7 +95,8 @@ export function registerCapCutHandlers(): void {
     return callPython('insert_audio_batch', {
       draft_path: params.draftPath,
       audio_files: params.audioFiles,
-      use_existing_track: params.useExistingTrack ?? false
+      use_existing_track: params.useExistingTrack ?? false,
+      durations_ms: params.durationsMs ?? null
     })
   })
 
@@ -150,6 +151,11 @@ export function registerCapCutHandlers(): void {
   ipcMain.handle('capcut:clear-video-segments', async (_event, draftPath: string) => {
     suppressNextChange()
     return callPython('clear_video_segments', { draft_path: draftPath })
+  })
+
+  ipcMain.handle('capcut:clear-audio-segments', async (_event, draftPath: string) => {
+    suppressNextChange()
+    return callPython('clear_audio_segments', { draft_path: draftPath })
   })
 
   ipcMain.handle(

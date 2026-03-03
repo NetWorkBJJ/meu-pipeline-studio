@@ -27,7 +27,6 @@ import type {
   Ai33TTSMetadata,
   Ai33CreditsResponse,
   Ai33VoicesResponse,
-  Ai33TaskProgressEvent,
   ElevenLabsVoiceSettings,
   ElevenLabsVoiceTemplate
 } from '@/types/ai33'
@@ -37,7 +36,15 @@ import { ELEVENLABS_MODELS } from '@/types/ai33'
 // Internal types
 // ---------------------------------------------------------------------------
 
-type PanelPhase = 'idle' | 'generating' | 'polling' | 'downloading' | 'done' | 'error'
+type PanelPhase = 'idle' | 'generating' | 'done' | 'error'
+
+interface GeneratedPart {
+  index: number
+  text: string
+  localPath: string
+  durationMs: number
+  creditCost: number
+}
 
 const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   stability: 0.5,
@@ -92,28 +99,19 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   // Text
   const [editableText, setEditableText] = useState('')
 
-  // Generation state
+  // Generation state (single audio)
   const [phase, setPhase] = useState<PanelPhase>('idle')
-  const [taskId, setTaskId] = useState<string | null>(null)
-  const [pollProgress, setPollProgress] = useState(0)
+  const [generatedAudio, setGeneratedAudio] = useState<GeneratedPart | null>(null)
+  const [totalCreditCost, setTotalCreditCost] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [creditCost, setCreditCost] = useState<number | null>(null)
-  const [remainingCredits, setRemainingCredits] = useState<number | null>(null)
-
-  // Result
-  const [localAudioPath, setLocalAudioPath] = useState<string | null>(null)
-  const [audioDurationMs, setAudioDurationMs] = useState<number | null>(null)
 
   // Audio preview
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
   const [previewPlaying, setPreviewPlaying] = useState(false)
   const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null)
 
-  // Result audio player
-  const resultAudioRef = useRef<HTMLAudioElement | null>(null)
-
-  // Polling ref to track cancellation
-  const pollingRef = useRef(false)
+  // Cancellation ref
+  const cancelledRef = useRef(false)
 
   // -----------------------------------------------------------------------
   // Mount: check API key, load voices, load credits
@@ -141,17 +139,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       setEditableText(storyBlocks.map((b) => b.text).join('\n\n'))
     }
   }, [storyBlocks, editableText])
-
-  // Subscribe to ai33 task progress events
-  useEffect(() => {
-    const unsubscribe = window.api.onAi33TaskProgress((data) => {
-      const evt = data as Ai33TaskProgressEvent
-      if (taskId && evt.taskId === taskId) {
-        setPollProgress(evt.progress)
-      }
-    })
-    return unsubscribe
-  }, [taskId])
 
   // -----------------------------------------------------------------------
   // Template handling
@@ -253,7 +240,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     (voice: Ai33ElevenLabsVoice) => {
       if (!voice.preview_url) return
 
-      // If already playing this voice, stop it
       if (previewPlaying && previewVoiceId === voice.voice_id) {
         if (previewAudioRef.current) {
           previewAudioRef.current.pause()
@@ -264,7 +250,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         return
       }
 
-      // Stop any existing preview
       if (previewAudioRef.current) {
         previewAudioRef.current.pause()
       }
@@ -288,12 +273,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   )
 
   // -----------------------------------------------------------------------
-  // Generate TTS
+  // Generate TTS (single audio from all blocks)
   // -----------------------------------------------------------------------
 
   const handleGenerate = async (): Promise<void> => {
-    if (!editableText.trim()) {
-      addToast({ type: 'warning', message: 'Insira texto para gerar audio.' })
+    if (storyBlocks.length === 0) {
+      addToast({ type: 'warning', message: 'Nenhum bloco de legenda encontrado (Stage 1).' })
       return
     }
     if (!selectedVoiceId) {
@@ -301,19 +286,31 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       return
     }
 
+    const fullText = storyBlocks
+      .slice()
+      .sort((a, b) => a.index - b.index)
+      .map((b) => b.text.trim())
+      .filter((t) => t.length > 0)
+      .join('\n\n')
+
+    if (!fullText) {
+      addToast({ type: 'warning', message: 'Todos os blocos estao vazios.' })
+      return
+    }
+
     setPhase('generating')
     setErrorMessage(null)
-    setCreditCost(null)
-    setRemainingCredits(null)
-    setLocalAudioPath(null)
-    setAudioDurationMs(null)
-    setPollProgress(0)
+    setGeneratedAudio(null)
+    setTotalCreditCost(0)
+    cancelledRef.current = false
+
+    const timestamp = Date.now()
 
     try {
-      // Step 1: Submit TTS task
+      // 1. Create single TTS task with full text
       const createRes = (await window.api.ai33TtsElevenlabs({
         voiceId: selectedVoiceId,
-        text: editableText,
+        text: fullText,
         model_id: modelId,
         with_transcript: withTranscript,
         voice_settings: {
@@ -325,132 +322,122 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       })) as Ai33TaskCreatedResponse
 
       if (!createRes.success || !createRes.task_id) {
-        throw new Error('Falha ao criar task de TTS.')
+        throw new Error('Falha ao criar task.')
       }
 
-      const newTaskId = createRes.task_id
-      setTaskId(newTaskId)
-      setRemainingCredits(createRes.ec_remain_credits)
-      setPhase('polling')
-
-      // Step 2: Poll for completion
-      pollingRef.current = true
+      // 2. Poll until done
       let taskResult: Ai33TaskResponse | null = null
-
-      while (pollingRef.current) {
+      while (!cancelledRef.current) {
         await delay(2000)
-        if (!pollingRef.current) break
+        if (cancelledRef.current) break
 
-        const pollRes = (await window.api.ai33PollTask(newTaskId)) as Ai33TaskResponse
-        setPollProgress(pollRes.progress)
+        const pollRes = (await window.api.ai33PollTask(createRes.task_id)) as Ai33TaskResponse
 
         if (pollRes.status === 'done') {
           taskResult = pollRes
           break
         }
-
         if (pollRes.status === 'error') {
-          throw new Error(pollRes.error_message || 'Erro no processamento do audio.')
+          throw new Error(pollRes.error_message || 'Erro no processamento.')
         }
       }
 
-      if (!taskResult) {
-        // Polling was cancelled
-        setPhase('idle')
+      if (!taskResult || cancelledRef.current) {
+        if (cancelledRef.current) setPhase('idle')
         return
       }
 
-      setCreditCost(taskResult.credit_cost)
+      setTotalCreditCost(taskResult.credit_cost)
 
-      // Step 3: Download audio
-      setPhase('downloading')
+      // 3. Download audio
       const metadata = taskResult.metadata as Ai33TTSMetadata
-
       if (!metadata.audio_url) {
         throw new Error('Resposta sem URL de audio.')
       }
 
-      const downloadRes = await window.api.ai33DownloadFile({
+      const dlResult = (await window.api.ai33DownloadFile({
         url: metadata.audio_url,
-        fileName: `elevenlabs_tts_${Date.now()}.mp3`
-      })
-
-      const dlResult = downloadRes as { success: boolean; localPath: string; size: number }
+        fileName: `elevenlabs_tts_${timestamp}_full.mp3`
+      })) as { success: boolean; localPath: string; size: number }
 
       if (!dlResult.success) {
-        throw new Error('Falha ao baixar o arquivo de audio.')
+        throw new Error('Falha ao baixar audio.')
       }
 
-      setLocalAudioPath(dlResult.localPath)
+      // 4. Detect duration
+      const durationMs = await getAudioDuration(dlResult.localPath)
+
+      setGeneratedAudio({
+        index: 0,
+        text: fullText,
+        localPath: dlResult.localPath,
+        durationMs,
+        creditCost: taskResult.credit_cost
+      })
+
       setPhase('done')
-
-      // Refresh credits after generation
       loadCredits()
-
-      addToast({ type: 'success', message: 'Audio gerado com sucesso via ElevenLabs.' })
+      addToast({ type: 'success', message: 'Audio gerado com sucesso.' })
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro desconhecido.'
       setPhase('error')
-      const msg = err instanceof Error ? err.message : 'Erro ao gerar audio.'
       setErrorMessage(msg)
-      addToast({ type: 'error', message: msg })
-    } finally {
-      pollingRef.current = false
     }
   }
 
   // -----------------------------------------------------------------------
-  // Detect audio duration from the result audio element
+  // Confirm: create single AudioBlock and advance pipeline
   // -----------------------------------------------------------------------
 
-  const handleAudioLoaded = (): void => {
-    if (resultAudioRef.current && resultAudioRef.current.duration) {
-      setAudioDurationMs(Math.round(resultAudioRef.current.duration * 1000))
-    }
-  }
-
-  // -----------------------------------------------------------------------
-  // Confirm: create AudioBlocks and advance pipeline
-  // -----------------------------------------------------------------------
-
-  const handleConfirm = (): void => {
-    if (!localAudioPath || audioDurationMs === null) {
-      addToast({ type: 'warning', message: 'Aguarde o audio carregar.' })
-      return
-    }
+  const handleConfirm = async (): Promise<void> => {
+    if (!generatedAudio) return
 
     const audioBlocks = [
       {
         id: uuidv4(),
         index: 1,
-        filePath: localAudioPath,
+        filePath: generatedAudio.localPath,
         startMs: 0,
-        endMs: audioDurationMs,
-        durationMs: audioDurationMs,
+        endMs: generatedAudio.durationMs,
+        durationMs: generatedAudio.durationMs,
         linkedBlockId: null,
         source: 'tts' as const
       }
     ]
 
     setAudioBlocks(audioBlocks)
+
+    const draftPath = useProjectStore.getState().capCutDraftPath
+    if (draftPath) {
+      try {
+        await window.api.clearAudioSegments(draftPath)
+        await window.api.insertAudioBatch({
+          draftPath,
+          audioFiles: audioBlocks.map((b) => b.filePath),
+          durationsMs: audioBlocks.map((b) => b.durationMs),
+          useExistingTrack: false
+        })
+        await window.api.syncMetadata(draftPath)
+      } catch {
+        addToast({ type: 'warning', message: 'Audio gerado mas nao inserido no CapCut.' })
+      }
+    }
+
     completeStage(2)
     addToast({ type: 'success', message: 'Etapa 2 concluida.' })
     setTimeout(() => setCurrentStage(3), 400)
   }
 
   // -----------------------------------------------------------------------
-  // Reset to try again
+  // Reset
   // -----------------------------------------------------------------------
 
   const handleRefazer = (): void => {
-    pollingRef.current = false
+    cancelledRef.current = true
     setPhase('idle')
-    setTaskId(null)
-    setPollProgress(0)
+    setGeneratedAudio(null)
+    setTotalCreditCost(0)
     setErrorMessage(null)
-    setCreditCost(null)
-    setRemainingCredits(null)
-    setLocalAudioPath(null)
-    setAudioDurationMs(null)
   }
 
   // -----------------------------------------------------------------------
@@ -474,8 +461,8 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   // Derived state
   // -----------------------------------------------------------------------
 
-  const hasText = editableText.trim().length > 0
-  const isWorking = phase === 'generating' || phase === 'polling' || phase === 'downloading'
+  const isWorking = phase === 'generating'
+  const totalDurationMs = generatedAudio?.durationMs ?? 0
 
   // -----------------------------------------------------------------------
   // Render: API key not configured
@@ -848,66 +835,48 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         <span className="text-xs text-text-muted">Gerar transcricao (SRT)</span>
       </label>
 
-      {/* Text area */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] text-text-muted">Texto para narracao</span>
-          <span className="text-[10px] text-text-muted/70">{editableText.length} caracteres</span>
+      {/* Block count info */}
+      {storyBlocks.length > 0 && phase === 'idle' && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+          <span className="text-xs text-text-muted">
+            {storyBlocks.length} blocos de legenda serao concatenados em um unico audio
+          </span>
         </div>
-        <textarea
-          value={editableText}
-          onChange={(e) => setEditableText(e.target.value)}
-          placeholder="Insira o texto que sera narrado..."
-          rows={6}
-          className="resize-y rounded-lg border border-border bg-bg px-3 py-2 text-sm leading-relaxed text-text outline-none focus:border-primary"
-        />
-      </div>
+      )}
 
       {/* Generate button */}
       {phase === 'idle' && (
         <button
           type="button"
-          disabled={!hasText || !selectedVoiceId}
+          disabled={storyBlocks.length === 0 || !selectedVoiceId}
           onClick={handleGenerate}
           className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Play className="h-4 w-4" />
-          Gerar Audio (ElevenLabs)
+          Gerar Audio Unico
         </button>
       )}
 
-      {/* Progress during generation/polling/downloading */}
+      {/* Progress during generation */}
       {isWorking && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-sm text-text">
-              {phase === 'generating' && 'Enviando para ElevenLabs...'}
-              {phase === 'polling' && 'Processando audio...'}
-              {phase === 'downloading' && 'Baixando audio...'}
-            </span>
-          </div>
-
-          {/* Progress bar */}
-          {phase === 'polling' && (
-            <div className="flex flex-col gap-1">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-bg">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-500"
-                  style={{ width: `${Math.max(pollProgress, 5)}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-text-muted">{pollProgress}% concluido</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="text-sm text-text">Gerando audio...</span>
             </div>
-          )}
-
-          {taskId && (
-            <span className="text-[10px] font-mono text-text-muted/60">Task: {taskId}</span>
-          )}
+            <button
+              type="button"
+              onClick={handleRefazer}
+              className="text-[11px] text-text-muted transition-colors hover:text-red-400"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Error state */}
+      {/* Error state (all blocks failed) */}
       {phase === 'error' && (
         <div className="flex flex-col gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-4">
           <div className="flex items-center gap-2">
@@ -926,7 +895,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       )}
 
       {/* Result */}
-      {phase === 'done' && localAudioPath && (
+      {phase === 'done' && generatedAudio && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -935,19 +904,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
                 <h4 className="text-sm font-medium text-text">Audio gerado</h4>
               </div>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                {audioDurationMs !== null && (
+                <span className="text-xs text-text-muted">
+                  Duracao: {msToDisplay(totalDurationMs)}
+                </span>
+                {totalCreditCost > 0 && (
                   <span className="text-xs text-text-muted">
-                    Duracao: {msToDisplay(audioDurationMs)}
-                  </span>
-                )}
-                {creditCost !== null && (
-                  <span className="text-xs text-text-muted">
-                    Custo: {creditCost.toFixed(2)} creditos
-                  </span>
-                )}
-                {remainingCredits !== null && (
-                  <span className="text-xs text-text-muted">
-                    Restante: {remainingCredits.toFixed(2)}
+                    Custo: {totalCreditCost.toFixed(2)} creditos
                   </span>
                 )}
               </div>
@@ -963,27 +925,18 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={audioDurationMs === null}
-                className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98]"
               >
                 Confirmar audio
               </button>
             </div>
-          </div>
-
           {/* Audio player */}
           <audio
-            ref={resultAudioRef}
             controls
-            onLoadedMetadata={handleAudioLoaded}
-            src={`file://${localAudioPath.replace(/\\/g, '/')}`}
+            src={`file://${generatedAudio.localPath.replace(/\\/g, '/')}`}
             className="w-full"
           />
-
-          {/* File path */}
-          <span className="break-all text-[10px] font-mono text-text-muted/50">
-            {localAudioPath}
-          </span>
+          </div>
         </div>
       )}
     </div>
@@ -996,4 +949,16 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function getAudioDuration(filePath: string): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = new Audio(`file://${filePath.replace(/\\/g, '/')}`)
+    audio.onloadedmetadata = (): void => {
+      resolve(Math.round(audio.duration * 1000))
+    }
+    audio.onerror = (): void => {
+      resolve(0)
+    }
+  })
 }

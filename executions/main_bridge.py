@@ -113,6 +113,12 @@ def clear_video_segments(params):
     return _clear(params["draft_path"])
 
 
+def clear_audio_segments(params):
+    """Remove all audio segments and materials from a CapCut draft."""
+    from capcut_writer import clear_audio_segments as _clear
+    return _clear(params["draft_path"])
+
+
 def update_subtitle_timings(params):
     """Update subtitle timings in a CapCut draft."""
     from capcut_writer import update_subtitle_timings as _update_subtitle_timings
@@ -262,6 +268,7 @@ def insert_audio_batch(params):
         draft_path=params["draft_path"],
         audio_files=params["audio_files"],
         use_existing_track=params.get("use_existing_track", False),
+        durations_ms=params.get("durations_ms", None),
     )
 
 
@@ -487,6 +494,7 @@ METHODS = {
     "write_text_segments": write_text_segments,
     "clear_text_segments": clear_text_segments,
     "clear_video_segments": clear_video_segments,
+    "clear_audio_segments": clear_audio_segments,
     "update_subtitle_timings": update_subtitle_timings,
     "sync_metadata": sync_metadata,
     "generate_srt": generate_srt,

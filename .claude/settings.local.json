@@ -18,7 +18,8 @@
       "Bash(python -c:*)",
       "WebFetch(domain:docs.byteplus.com)",
       "Bash(xargs:*)",
-      "Bash(npm run typecheck:web)"
+      "Bash(npm run typecheck:web)",
+      "Bash(git checkout -b mac-rollback ec67045)"
     ]
   },
   "enableAllProjectMcpServers": true,

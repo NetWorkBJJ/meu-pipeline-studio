@@ -92,7 +92,7 @@ export function GoogleTTSPanel(): React.JSX.Element {
     }
   }
 
-  const handleConfirm = (): void => {
+  const handleConfirm = async (): Promise<void> => {
     if (!result) return
 
     let cumulativeMs = 0
@@ -114,6 +114,23 @@ export function GoogleTTSPanel(): React.JSX.Element {
       })
 
     setAudioBlocks(audioBlocks)
+
+    const draftPath = useProjectStore.getState().capCutDraftPath
+    if (draftPath) {
+      try {
+        await window.api.clearAudioSegments(draftPath)
+        await window.api.insertAudioBatch({
+          draftPath,
+          audioFiles: audioBlocks.map((b) => b.filePath),
+          durationsMs: audioBlocks.map((b) => b.durationMs),
+          useExistingTrack: false
+        })
+        await window.api.syncMetadata(draftPath)
+      } catch {
+        addToast({ type: 'warning', message: 'Audio gerado mas nao inserido no CapCut.' })
+      }
+    }
+
     completeStage(2)
     addToast({ type: 'success', message: 'Etapa 2 concluida.' })
     setTimeout(() => setCurrentStage(3), 400)
