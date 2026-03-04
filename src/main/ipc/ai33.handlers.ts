@@ -144,6 +144,7 @@ export function registerAi33Handlers(): void {
         model_id?: string
         with_transcript?: boolean
         output_format?: string
+        speed?: number
         voice_settings?: Record<string, unknown>
       }
     ) => {
@@ -154,6 +155,7 @@ export function registerAi33Handlers(): void {
           text: params.text,
           model_id: params.model_id,
           with_transcript: params.with_transcript,
+          speed: params.speed,
           voice_settings: params.voice_settings
         },
         params.output_format

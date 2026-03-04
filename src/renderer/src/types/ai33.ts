@@ -379,6 +379,7 @@ export interface ElevenLabsVoiceSettings {
   similarity_boost: number // 0.0-1.0
   style: number // 0.0-1.0
   use_speaker_boost: boolean
+  speed?: number // 0.7-1.2, default 1.0
 }
 
 export interface ElevenLabsVoiceTemplate {

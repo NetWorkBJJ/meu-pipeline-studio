@@ -218,8 +218,9 @@ const initialState = {
       voiceSettings: {
         stability: 0.35,
         similarity_boost: 0.75,
-        style: 0.33,
-        use_speaker_boost: true
+        style: 0.25,
+        use_speaker_boost: false,
+        speed: 1.12
       },
       createdAt: 1740000000000
     }
@@ -530,7 +531,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'meu-pipeline-project',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         mediaPreset: state.mediaPreset,
@@ -549,7 +550,7 @@ export const useProjectStore = create<ProjectState>()(
             if (!dc.llmModel) dc.llmModel = 'claude-opus-4-6'
           }
         }
-        if (version < 3) {
+        if (version < 4) {
           state.elevenLabsVoiceTemplates = [
             {
               id: 'preset-lena-voice',
@@ -560,8 +561,9 @@ export const useProjectStore = create<ProjectState>()(
               voiceSettings: {
                 stability: 0.35,
                 similarity_boost: 0.75,
-                style: 0.33,
-                use_speaker_boost: true
+                style: 0.25,
+                use_speaker_boost: false,
+                speed: 1.12
               },
               createdAt: 1740000000000
             }

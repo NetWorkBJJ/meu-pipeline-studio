@@ -266,6 +266,7 @@ export class Ai33Service {
       text: string
       model_id?: string
       with_transcript?: boolean
+      speed?: number
       voice_settings?: Record<string, unknown>
     },
     outputFormat = 'mp3_44100_128'
@@ -274,6 +275,9 @@ export class Ai33Service {
       text: request.text,
       model_id: request.model_id ?? 'eleven_multilingual_v2',
       with_transcript: request.with_transcript ?? false
+    }
+    if (request.speed !== undefined) {
+      body.speed = request.speed
     }
     if (request.voice_settings) {
       body.voice_settings = request.voice_settings

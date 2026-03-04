@@ -52,7 +52,8 @@ const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   stability: 0.5,
   similarity_boost: 0.75,
   style: 0.0,
-  use_speaker_boost: true
+  use_speaker_boost: true,
+  speed: 1.0
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +320,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         text: fullText,
         model_id: modelId,
         with_transcript: withTranscript,
+        speed: voiceSettings.speed ?? 1.0,
         voice_settings: {
           stability: voiceSettings.stability,
           similarity_boost: voiceSettings.similarity_boost,
@@ -773,6 +775,30 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
 
         {showVoiceSettings && (
           <div className="flex flex-col gap-3 border-t border-border px-3 pb-3 pt-2">
+            {/* Speed */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-text-muted">Speed</span>
+                <span className="text-[11px] font-medium text-text">
+                  {(voiceSettings.speed ?? 1.0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted/60">Slower</span>
+                <input
+                  type="range"
+                  min="70"
+                  max="120"
+                  value={Math.round((voiceSettings.speed ?? 1.0) * 100)}
+                  onChange={(e) =>
+                    setVoiceSettings((s) => ({ ...s, speed: Number(e.target.value) / 100 }))
+                  }
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-[10px] text-text-muted/60">Faster</span>
+              </div>
+            </div>
+
             {/* Stability */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
