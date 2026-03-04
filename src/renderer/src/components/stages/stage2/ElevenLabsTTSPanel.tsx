@@ -64,6 +64,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   const {
     storyBlocks,
     setAudioBlocks,
+    updateStoryBlock,
     elevenLabsVoiceTemplates,
     addElevenLabsVoiceTemplate,
     removeElevenLabsVoiceTemplate
@@ -492,10 +493,23 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     )
     setAudioBlocks(audioBlocks)
 
-    // Insert into CapCut as single audio segment (always 1 file on the timeline)
+    // Update storyBlock timings with SRT data (replaces estimated timings from Stage 1)
+    const hasSrtMatch = srtMatchResults && srtMatchResults.length === storyBlocks.length
+    if (hasSrtMatch) {
+      for (const match of srtMatchResults) {
+        updateStoryBlock(match.blockId, {
+          startMs: match.startMs,
+          endMs: match.endMs,
+          durationMs: match.durationMs
+        })
+      }
+    }
+
+    // Insert audio + text segments into CapCut
     const draftPath = useProjectStore.getState().capCutDraftPath
     if (draftPath) {
       try {
+        // 1. Audio: clear + insert
         await window.api.clearAudioSegments(draftPath)
         await window.api.insertAudioBatch({
           draftPath,
@@ -503,6 +517,40 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
           durationsMs: [generatedAudio.durationMs],
           useExistingTrack: false
         })
+
+        // 2. Text segments: clear + insert (only with valid SRT match)
+        if (hasSrtMatch) {
+          await window.api.clearTextSegments(draftPath)
+
+          const updatedBlocks = useProjectStore.getState().storyBlocks
+          const textBlocks = [...updatedBlocks]
+            .sort((a, b) => a.index - b.index)
+            .map((b) => ({
+              text: b.text,
+              start_ms: b.startMs,
+              end_ms: b.endMs
+            }))
+
+          const textResult = (await window.api.writeTextSegments(draftPath, textBlocks)) as {
+            added_count: number
+            segments: Array<{ segment_id: string; material_id: string; text: string }>
+          }
+
+          if (textResult.segments) {
+            const sorted = [...useProjectStore.getState().storyBlocks].sort(
+              (a, b) => a.index - b.index
+            )
+            for (let i = 0; i < textResult.segments.length && i < sorted.length; i++) {
+              const seg = textResult.segments[i]
+              updateStoryBlock(sorted[i].id, {
+                textMaterialId: seg.material_id,
+                textSegmentId: seg.segment_id
+              })
+            }
+          }
+        }
+
+        // 3. Sync metadata once after all writes
         await window.api.syncMetadata(draftPath)
       } catch {
         addToast({ type: 'warning', message: 'Audio gerado mas nao inserido no CapCut.' })
