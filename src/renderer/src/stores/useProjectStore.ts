@@ -210,32 +210,18 @@ const initialState = {
   clickUpTaskRef: null as ClickUpTaskRef | null,
   elevenLabsVoiceTemplates: [
     {
-      id: 'preset-lena',
-      name: 'Lena',
+      id: 'preset-lena-voice',
+      name: 'Lena Voice',
       voiceId: 'KoVIHoyLDrQyd4pGalbs',
       voiceName: 'Autumn Veil - Warm and Reflective',
       modelId: 'eleven_multilingual_v2',
       voiceSettings: {
-        stability: 0.5,
+        stability: 0.35,
         similarity_boost: 0.75,
-        style: 0.0,
+        style: 0.33,
         use_speaker_boost: true
       },
       createdAt: 1740000000000
-    },
-    {
-      id: 'preset-lena-2',
-      name: 'LENA 2',
-      voiceId: 'KoVIHoyLDrQyd4pGalbs',
-      voiceName: 'Autumn Veil - Warm and Reflective',
-      modelId: 'eleven_multilingual_v2',
-      voiceSettings: {
-        stability: 0.5,
-        similarity_boost: 0.7,
-        style: 0.0,
-        use_speaker_boost: true
-      },
-      createdAt: 1740000000001
     }
   ] as ElevenLabsVoiceTemplate[]
 }
@@ -544,7 +530,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'meu-pipeline-project',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         mediaPreset: state.mediaPreset,
@@ -563,27 +549,23 @@ export const useProjectStore = create<ProjectState>()(
             if (!dc.llmModel) dc.llmModel = 'claude-opus-4-6'
           }
         }
-        if (version < 2) {
-          const templates = (state.elevenLabsVoiceTemplates ?? []) as ElevenLabsVoiceTemplate[]
-          if (!templates.some((t) => t.id === 'preset-lena-2')) {
-            state.elevenLabsVoiceTemplates = [
-              ...templates,
-              {
-                id: 'preset-lena-2',
-                name: 'LENA 2',
-                voiceId: 'KoVIHoyLDrQyd4pGalbs',
-                voiceName: 'Autumn Veil - Warm and Reflective',
-                modelId: 'eleven_multilingual_v2',
-                voiceSettings: {
-                  stability: 0.5,
-                  similarity_boost: 0.7,
-                  style: 0.0,
-                  use_speaker_boost: true
-                },
-                createdAt: 1740000000001
-              }
-            ]
-          }
+        if (version < 3) {
+          state.elevenLabsVoiceTemplates = [
+            {
+              id: 'preset-lena-voice',
+              name: 'Lena Voice',
+              voiceId: 'KoVIHoyLDrQyd4pGalbs',
+              voiceName: 'Autumn Veil - Warm and Reflective',
+              modelId: 'eleven_multilingual_v2',
+              voiceSettings: {
+                stability: 0.35,
+                similarity_boost: 0.75,
+                style: 0.33,
+                use_speaker_boost: true
+              },
+              createdAt: 1740000000000
+            }
+          ]
         }
         return state as unknown as ProjectState
       }
