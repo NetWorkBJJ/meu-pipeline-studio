@@ -20,6 +20,8 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { msToDisplay } from '@/lib/time'
+import { parseSrt, matchSrtToBlocks } from '@/lib/srt'
+import type { SrtMatchResult } from '@/lib/srt'
 import type {
   Ai33ElevenLabsVoice,
   Ai33TaskResponse,
@@ -104,6 +106,10 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   const [generatedAudio, setGeneratedAudio] = useState<GeneratedPart | null>(null)
   const [totalCreditCost, setTotalCreditCost] = useState(0)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // Transcript sync
+  const [srtMatchResults, setSrtMatchResults] = useState<SrtMatchResult[] | null>(null)
+  const [srtDownloadFailed, setSrtDownloadFailed] = useState(false)
 
   // Audio preview
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -375,6 +381,62 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         creditCost: taskResult.credit_cost
       })
 
+      // 5. Download and parse SRT transcript for precise block timing
+      setSrtMatchResults(null)
+      setSrtDownloadFailed(false)
+
+      if (withTranscript && metadata.srt_url) {
+        try {
+          const srtDlResult = (await window.api.ai33DownloadFile({
+            url: metadata.srt_url,
+            fileName: `elevenlabs_tts_${timestamp}_full.srt`
+          })) as { success: boolean; localPath: string; size: number }
+
+          if (srtDlResult.success) {
+            // Read SRT via main process IPC (fetch('file://') can fail in Electron)
+            const srtContent = await window.api.readTextFile(srtDlResult.localPath)
+            console.log('[ElevenLabs] SRT content length:', srtContent.length)
+            const parsed = parseSrt(srtContent)
+            console.log('[ElevenLabs] SRT parsed blocks:', parsed.length)
+
+            if (parsed.length > 0) {
+              const matches = matchSrtToBlocks(parsed, storyBlocks)
+              const validMatches = matches.filter((m) => m.durationMs > 0)
+              console.log(
+                '[ElevenLabs] SRT match results:',
+                matches.length,
+                'valid:',
+                validMatches.length,
+                'blocks:',
+                storyBlocks.length
+              )
+              if (validMatches.length === matches.length) {
+                setSrtMatchResults(matches)
+              } else {
+                console.warn('[ElevenLabs] SRT match incomplete, falling back to proportional')
+                setSrtDownloadFailed(true)
+              }
+            } else {
+              console.warn('[ElevenLabs] SRT parse returned 0 blocks')
+              setSrtDownloadFailed(true)
+            }
+          } else {
+            console.warn('[ElevenLabs] SRT download failed')
+            setSrtDownloadFailed(true)
+          }
+        } catch (srtErr) {
+          console.error('[ElevenLabs] SRT processing error:', srtErr)
+          setSrtDownloadFailed(true)
+        }
+      } else {
+        console.log(
+          '[ElevenLabs] SRT skipped: withTranscript=',
+          withTranscript,
+          'srt_url=',
+          metadata.srt_url
+        )
+      }
+
       setPhase('done')
       loadCredits()
       addToast({ type: 'success', message: 'Audio gerado com sucesso.' })
@@ -392,29 +454,51 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   const handleConfirm = async (): Promise<void> => {
     if (!generatedAudio) return
 
-    const audioBlocks = [
-      {
-        id: uuidv4(),
-        index: 1,
-        filePath: generatedAudio.localPath,
-        startMs: 0,
-        endMs: generatedAudio.durationMs,
-        durationMs: generatedAudio.durationMs,
-        linkedBlockId: null,
-        source: 'tts' as const
-      }
-    ]
+    // Create AudioBlocks: per-block with precise timing (transcript) or single (fallback)
+    const audioBlocks =
+      srtMatchResults && srtMatchResults.length === storyBlocks.length
+        ? srtMatchResults.map((match, i) => ({
+            id: uuidv4(),
+            index: i + 1,
+            filePath: generatedAudio.localPath,
+            startMs: match.startMs,
+            endMs: match.endMs,
+            durationMs: match.durationMs,
+            linkedBlockId: match.blockId,
+            source: 'tts' as const
+          }))
+        : [
+            {
+              id: uuidv4(),
+              index: 1,
+              filePath: generatedAudio.localPath,
+              startMs: 0,
+              endMs: generatedAudio.durationMs,
+              durationMs: generatedAudio.durationMs,
+              linkedBlockId: null,
+              source: 'tts' as const
+            }
+          ]
 
+    console.log(
+      '[ElevenLabs] handleConfirm: audioBlocks created:',
+      audioBlocks.length,
+      'hasLinkedBlockId:',
+      audioBlocks.some((b) => b.linkedBlockId !== null),
+      'first:',
+      JSON.stringify(audioBlocks[0])
+    )
     setAudioBlocks(audioBlocks)
 
+    // Insert into CapCut as single audio segment (always 1 file on the timeline)
     const draftPath = useProjectStore.getState().capCutDraftPath
     if (draftPath) {
       try {
         await window.api.clearAudioSegments(draftPath)
         await window.api.insertAudioBatch({
           draftPath,
-          audioFiles: audioBlocks.map((b) => b.filePath),
-          durationsMs: audioBlocks.map((b) => b.durationMs),
+          audioFiles: [generatedAudio.localPath],
+          durationsMs: [generatedAudio.durationMs],
           useExistingTrack: false
         })
         await window.api.syncMetadata(draftPath)
@@ -438,6 +522,8 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     setGeneratedAudio(null)
     setTotalCreditCost(0)
     setErrorMessage(null)
+    setSrtMatchResults(null)
+    setSrtDownloadFailed(false)
   }
 
   // -----------------------------------------------------------------------
@@ -910,6 +996,18 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
                 {totalCreditCost > 0 && (
                   <span className="text-xs text-text-muted">
                     Custo: {totalCreditCost.toFixed(2)} creditos
+                  </span>
+                )}
+                {srtMatchResults && (
+                  <span className="flex items-center gap-1 text-xs text-green-400">
+                    <CheckCircle className="h-3 w-3" />
+                    {srtMatchResults.length} blocos sincronizados
+                  </span>
+                )}
+                {srtDownloadFailed && (
+                  <span className="flex items-center gap-1 text-xs text-amber-400">
+                    <AlertTriangle className="h-3 w-3" />
+                    Sync proporcional (sem transcript)
                   </span>
                 )}
               </div>

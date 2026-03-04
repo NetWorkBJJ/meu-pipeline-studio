@@ -67,6 +67,8 @@ const api = {
   openCapCut: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('project:open-capcut'),
 
+  readTextFile: (filePath: string): Promise<string> =>
+    ipcRenderer.invoke('file:read-text', filePath),
   selectFiles: (filters: FileFilter[]): Promise<string[]> =>
     ipcRenderer.invoke('file:select-files', filters),
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke('file:select-directory'),

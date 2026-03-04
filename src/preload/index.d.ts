@@ -6,6 +6,7 @@ interface FileFilter {
 }
 
 interface ElectronAppAPI {
+  readTextFile: (filePath: string) => Promise<string>
   selectCapCutDraft: () => Promise<string | null>
   saveProject: (data: string) => Promise<void>
   loadProject: (path: string) => Promise<string>

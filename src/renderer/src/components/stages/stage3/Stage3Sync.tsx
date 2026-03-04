@@ -226,7 +226,7 @@ export function Stage3Sync(): React.JSX.Element {
   }
 
   const handleConfirm = async (): Promise<void> => {
-    if (capCutDraftPath) {
+    if (capCutDraftPath && isCapCutAudio) {
       try {
         // Atomic write: flatten audio + sync subtitle timings + sync video in one operation
         await window.api.syncProject({
@@ -348,6 +348,7 @@ export function Stage3Sync(): React.JSX.Element {
             loading={loading}
             reloading={reloading}
             hasDraftPath={!!capCutDraftPath}
+            isCapCutAudio={isCapCutAudio}
             onSync={handleSyncClick}
             onAccept={handleAcceptExisting}
             onReload={handleReloadFromCapCut}
@@ -392,6 +393,7 @@ function SummaryView({
   loading,
   reloading,
   hasDraftPath,
+  isCapCutAudio,
   onSync,
   onAccept,
   onReload
@@ -406,6 +408,7 @@ function SummaryView({
   loading: boolean
   reloading: boolean
   hasDraftPath: boolean
+  isCapCutAudio: boolean
   onSync: () => void
   onAccept: () => void
   onReload: () => void
@@ -500,7 +503,7 @@ function SummaryView({
           </p>
         </div>
         <div className="flex gap-2">
-          {hasDraftPath && (
+          {hasDraftPath && isCapCutAudio && (
             <button
               onClick={onReload}
               disabled={reloading}

@@ -222,6 +222,20 @@ const initialState = {
         use_speaker_boost: true
       },
       createdAt: 1740000000000
+    },
+    {
+      id: 'preset-lena-2',
+      name: 'LENA 2',
+      voiceId: 'KoVIHoyLDrQyd4pGalbs',
+      voiceName: 'Autumn Veil - Warm and Reflective',
+      modelId: 'eleven_multilingual_v2',
+      voiceSettings: {
+        stability: 0.5,
+        similarity_boost: 0.7,
+        style: 0.0,
+        use_speaker_boost: true
+      },
+      createdAt: 1740000000001
     }
   ] as ElevenLabsVoiceTemplate[]
 }
@@ -505,7 +519,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'meu-pipeline-project',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         mediaPreset: state.mediaPreset,
@@ -520,9 +534,30 @@ export const useProjectStore = create<ProjectState>()(
         if (version === 0) {
           const dc = state.directorConfig as Record<string, unknown> | undefined
           if (dc) {
-            // Force provider to claude (previously allowed codex/gemini/chatgpt)
             dc.llmProvider = 'claude'
             if (!dc.llmModel) dc.llmModel = 'claude-opus-4-6'
+          }
+        }
+        if (version < 2) {
+          const templates = (state.elevenLabsVoiceTemplates ?? []) as ElevenLabsVoiceTemplate[]
+          if (!templates.some((t) => t.id === 'preset-lena-2')) {
+            state.elevenLabsVoiceTemplates = [
+              ...templates,
+              {
+                id: 'preset-lena-2',
+                name: 'LENA 2',
+                voiceId: 'KoVIHoyLDrQyd4pGalbs',
+                voiceName: 'Autumn Veil - Warm and Reflective',
+                modelId: 'eleven_multilingual_v2',
+                voiceSettings: {
+                  stability: 0.5,
+                  similarity_boost: 0.7,
+                  style: 0.0,
+                  use_speaker_boost: true
+                },
+                createdAt: 1740000000001
+              }
+            ]
           }
         }
         return state as unknown as ProjectState

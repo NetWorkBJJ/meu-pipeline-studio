@@ -1,4 +1,5 @@
 import { ipcMain, dialog } from 'electron'
+import { readFile } from 'fs/promises'
 
 interface FileFilter {
   name: string
@@ -6,6 +7,10 @@ interface FileFilter {
 }
 
 export function registerFileHandlers(): void {
+  ipcMain.handle('file:read-text', async (_event, filePath: string) => {
+    return readFile(filePath, 'utf-8')
+  })
+
   ipcMain.handle('file:select-directory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']

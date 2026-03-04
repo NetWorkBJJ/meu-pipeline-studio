@@ -17,6 +17,7 @@ interface AudioBlock {
   startMs: number
   endMs: number
   durationMs: number
+  linkedBlockId?: string | null
 }
 
 interface SyncResult {
@@ -78,6 +79,41 @@ export function autoSyncBlocks(storyBlocks: StoryBlock[], audioBlocks: AudioBloc
   const sorted = [...storyBlocks].sort((a, b) => a.index - b.index)
   const audioSorted = [...audioBlocks].sort((a, b) => a.startMs - b.startMs)
 
+  console.log(
+    '[SyncEngine] autoSyncBlocks: storyBlocks=',
+    sorted.length,
+    'audioBlocks=',
+    audioSorted.length,
+    'hasLinkedIds=',
+    audioBlocks.some((ab) => ab.linkedBlockId)
+  )
+
+  // Transcript-based: if audio blocks have linkedBlockId, use direct ID matching
+  const hasLinkedIds = audioBlocks.some((ab) => ab.linkedBlockId)
+  if (hasLinkedIds) {
+    const linkedMap = new Map<string, AudioBlock>()
+    for (const ab of audioBlocks) {
+      if (ab.linkedBlockId) linkedMap.set(ab.linkedBlockId, ab)
+    }
+    let linkedCount = 0
+    const synced = sorted.map((block) => {
+      const audio = linkedMap.get(block.id)
+      if (audio) {
+        linkedCount++
+        return {
+          ...block,
+          startMs: audio.startMs,
+          endMs: audio.endMs,
+          durationMs: audio.durationMs,
+          linkedAudioId: audio.id
+        }
+      }
+      return { ...block, linkedAudioId: null }
+    })
+    console.log('[SyncEngine] Case 1 (transcript): linked=', linkedCount, 'unlinked=', sorted.length - linkedCount)
+    return { syncedBlocks: synced, linkedCount, unlinkedCount: sorted.length - linkedCount }
+  }
+
   // Single audio block covering multiple story blocks: distribute proportionally
   if (audioSorted.length === 1 && sorted.length > 1) {
     const audio = audioSorted[0]
@@ -100,10 +136,12 @@ export function autoSyncBlocks(storyBlocks: StoryBlock[], audioBlocks: AudioBloc
         linkedAudioId: audio.id
       }
     })
+    console.log('[SyncEngine] Case 2 (proportional): all', sorted.length, 'blocks linked, audio duration=', audio.durationMs)
     return { syncedBlocks: synced, linkedCount: sorted.length, unlinkedCount: 0 }
   }
 
   // Default: 1:1 index matching
+  console.log('[SyncEngine] Case 3 (1:1 index): audioBlocks=', audioSorted.length, 'storyBlocks=', sorted.length)
   let linkedCount = 0
   const synced = sorted.map((block, i) => {
     if (i < audioSorted.length) {
