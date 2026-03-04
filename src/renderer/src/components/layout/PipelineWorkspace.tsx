@@ -8,6 +8,7 @@ import { TimelinePanel } from '../timeline/TimelinePanel'
 import { useStageStore } from '@/stores/useStageStore'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useLogStore } from '@/stores/useLogStore'
 import { Stage1Script } from '../stages/stage1/Stage1Script'
 import { Stage2Audio } from '../stages/stage2/Stage2Audio'
 import { Stage3Sync } from '../stages/stage3/Stage3Sync'
@@ -64,6 +65,26 @@ export function PipelineWorkspace(): React.JSX.Element {
         subtitleCount: number
         tracks: Array<{ type: string; segments: number }>
       }
+
+      const { addLog } = useLogStore.getState()
+      const totalSegments = change.tracks?.reduce((sum, t) => sum + t.segments, 0) ?? 0
+      const textSegments = change.tracks?.filter((t) => t.type === 'text').reduce((sum, t) => sum + t.segments, 0) ?? 0
+      const audioSegments = change.tracks?.filter((t) => t.type === 'audio').reduce((sum, t) => sum + t.segments, 0) ?? 0
+
+      addLog('info', `[draft-watcher] Mudanca externa detectada: ${totalSegments} seg total, ${textSegments} texto, ${audioSegments} audio, ${change.subtitleCount} legendas`)
+
+      // Log current in-memory state for comparison
+      const { storyBlocks, audioBlocks } = useProjectStore.getState()
+      addLog('info', `[draft-watcher] Estado em memoria: ${storyBlocks.length} storyBlocks, ${audioBlocks.length} audioBlocks`)
+      if (storyBlocks.length > 0) {
+        const first = storyBlocks[0]
+        const last = storyBlocks[storyBlocks.length - 1]
+        addLog('info', `[draft-watcher] StoryBlocks timing: primeiro=[${first.startMs}-${first.endMs}ms], ultimo=[${last.startMs}-${last.endMs}ms], linkedAudio=${first.linkedAudioId ? 'sim' : 'nao'}`)
+      }
+      if (audioBlocks.length > 0) {
+        addLog('info', `[draft-watcher] AudioBlocks: ${audioBlocks.map((a) => `[${a.startMs}-${a.endMs}ms linked=${a.linkedBlockId || 'null'}]`).join(', ')}`)
+      }
+
       setExternalChange(change)
     })
 
@@ -77,8 +98,27 @@ export function PipelineWorkspace(): React.JSX.Element {
   const handleReloadFromCapCut = useCallback(async () => {
     if (!capCutDraftPath) return
 
+    const { addLog } = useLogStore.getState()
+    const before = useProjectStore.getState()
+    addLog('warning', `[reload] ANTES do reload: ${before.storyBlocks.length} storyBlocks, ${before.audioBlocks.length} audioBlocks`)
+    if (before.storyBlocks.length > 0) {
+      const first = before.storyBlocks[0]
+      addLog('warning', `[reload] StoryBlocks[0] timing ANTES: start=${first.startMs}ms end=${first.endMs}ms linkedAudio=${first.linkedAudioId || 'null'}`)
+    }
+
     try {
       await useProjectStore.getState().loadFullProject(capCutDraftPath)
+
+      const after = useProjectStore.getState()
+      addLog('warning', `[reload] DEPOIS do reload: ${after.storyBlocks.length} storyBlocks, ${after.audioBlocks.length} audioBlocks`)
+      if (after.storyBlocks.length > 0) {
+        const first = after.storyBlocks[0]
+        addLog('warning', `[reload] StoryBlocks[0] timing DEPOIS: start=${first.startMs}ms end=${first.endMs}ms linkedAudio=${first.linkedAudioId || 'null'}`)
+      }
+      if (after.audioBlocks.length > 0) {
+        addLog('warning', `[reload] AudioBlocks DEPOIS: ${after.audioBlocks.map((a) => `[${a.startMs}-${a.endMs}ms]`).join(', ')}`)
+      }
+
       addToast({ type: 'info', message: 'Projeto recarregado.' })
     } catch {
       addToast({ type: 'error', message: 'Erro ao recarregar dados do CapCut.' })

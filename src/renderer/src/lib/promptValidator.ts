@@ -97,7 +97,7 @@ function rulesDescriptionMaxWords(takes: ParsedTake[]): QualityRule {
   const failing: Array<{ take: number; words: number }> = []
   for (const take of takes) {
     const wordCount = take.description.split(/\s+/).filter(Boolean).length
-    if (wordCount > 35) {
+    if (wordCount > 80) {
       failing.push({ take: take.takeNumber, words: wordCount })
     }
   }
@@ -419,37 +419,6 @@ function rulesMaxCharsPerAnchor(takes: ParsedTake[]): QualityRule {
   }
 }
 
-function rulesExtendedNegativeOnTransition(takes: ParsedTake[]): QualityRule {
-  const EXTENDED_KEYWORDS = ['violence', 'weapon', 'gore', 'sexual']
-  const missing: number[] = []
-
-  for (let i = 0; i < takes.length; i++) {
-    const isFirstTake = i === 0
-    const envChanged =
-      i > 0 &&
-      takes[i].environmentLock.trim().toLowerCase() !==
-        takes[i - 1].environmentLock.trim().toLowerCase()
-
-    if (isFirstTake || envChanged) {
-      const hasExtended = EXTENDED_KEYWORDS.some((kw) =>
-        takes[i].negativePrompt.toLowerCase().includes(kw)
-      )
-      if (!hasExtended) {
-        missing.push(takes[i].takeNumber)
-      }
-    }
-  }
-
-  return {
-    id: 'extended-negative-on-transition',
-    name: 'Negative Prompt estendido em transicoes',
-    weight: 8,
-    passed: missing.length === 0,
-    details: missing.length === 0
-      ? 'Todas as transicoes de localizacao tem Negative Prompt estendido'
-      : `${missing.length} transicao(oes) sem estendido: Takes ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`
-  }
-}
 
 const INTERNAL_EMOTION_BLOCKLIST = [
   'processing',
@@ -551,6 +520,85 @@ function rulesDescriptionMatchesEnvironment(takes: ParsedTake[]): QualityRule {
   }
 }
 
+// --- Content Policy Blocklist ---
+
+const CONTENT_POLICY_BLOCKLIST = [
+  // Violence (explicit)
+  'blood', 'bleeding', 'wound', 'stab', 'shoot', 'shooting', 'gun', 'rifle',
+  'pistol', 'knife', 'sword', 'weapon', 'fight', 'fighting', 'punch', 'kick',
+  'slap', 'strangle', 'choke', 'kill', 'murder', 'dead body', 'corpse',
+  'explosion', 'bomb', 'grenade', 'bullet', 'gore', 'severed', 'torture',
+  'beaten', 'assault', 'attack',
+  // Violence (indirect - Google semantic filter)
+  'confrontation', 'struggle', 'aggressive', 'threat', 'threaten',
+  'grab', 'push', 'shove', 'scream', 'rage', 'fury',
+  'revenge', 'betray', 'prison', 'jail', 'criminal',
+  'theft', 'steal', 'escape', 'flee', 'chase',
+  'bruise', 'scar', 'injury', 'injured', 'bleed',
+  'conflict', 'ambush', 'combat',
+  // Sexual (explicit)
+  'nude', 'naked', 'undress', 'topless', 'lingerie', 'kiss on lips',
+  'passionate kiss', 'making out', 'sexual', 'erotic', 'seductive',
+  'provocative', 'sensual', 'cleavage',
+  // Sexual (indirect - Google semantic filter)
+  'revealing', 'low-cut', 'bikini', 'underwear',
+  'embrace', 'caress', 'moan', 'groan', 'panting',
+  'bed scene', 'bedroom scene', 'love scene',
+  'kiss', 'kissing',
+  // Drugs/Crime
+  'drug', 'cocaine', 'heroin', 'syringe', 'inject', 'overdose',
+  // Political/Religious extremism
+  'terrorist', 'extremist',
+  // Self-harm
+  'self-harm', 'hanging', 'noose', 'suicide',
+  // Captivity
+  'kidnap', 'hostage', 'tied up', 'handcuff', 'restrain', 'captive'
+]
+
+function rulesContentPolicySafe(takes: ParsedTake[]): QualityRule {
+  const failing: Array<{ take: number; word: string }> = []
+  for (const take of takes) {
+    const lower = take.description.toLowerCase()
+    for (const term of CONTENT_POLICY_BLOCKLIST) {
+      if (lower.includes(term)) {
+        failing.push({ take: take.takeNumber, word: term })
+        break
+      }
+    }
+  }
+  return {
+    id: 'content-policy-safe',
+    name: 'Descricao segura para politica Google',
+    weight: 12,
+    passed: failing.length === 0,
+    details: failing.length === 0
+      ? 'Nenhuma palavra proibida detectada nas descricoes'
+      : `${failing.length} take(s) com conteudo proibido: ${failing.slice(0, 3).map((f) => `Take ${f.take} ("${f.word}")`).join(', ')}`
+  }
+}
+
+function rulesNegativeAlwaysExtended(takes: ParsedTake[]): QualityRule {
+  const EXTENDED_KW = ['violence', 'weapon', 'gore', 'blood', 'nudity', 'sexual', 'crime', 'harassment']
+  const missing: number[] = []
+  for (const take of takes) {
+    const hasExtended = EXTENDED_KW.some((kw) =>
+      take.negativePrompt.toLowerCase().includes(kw)
+    )
+    if (!hasExtended) {
+      missing.push(take.takeNumber)
+    }
+  }
+  return {
+    id: 'negative-always-extended',
+    name: 'Negative Prompt estendido em todos os takes',
+    weight: 8,
+    passed: missing.length === 0,
+    details: missing.length === 0
+      ? 'Todos os takes tem Negative Prompt estendido'
+      : `${missing.length} take(s) sem termos estendidos: Takes ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '...' : ''}`
+  }
+}
+
 // --- Auto-Fix Types ---
 
 export interface AutoFixCorrection {
@@ -573,9 +621,9 @@ const FORBIDDEN_TAG_PATTERNS = [
   /\[VIDEO\]\s*/gi
 ]
 
-const DEFAULT_NEGATIVE = 'text, watermark, typography, ui elements.'
-const EXTENDED_NEGATIVE_SUFFIX = ', violence, weapon, gore, sexual content.'
-const EXTENDED_KEYWORDS_SET = ['violence', 'weapon', 'gore', 'sexual']
+const DEFAULT_NEGATIVE = 'text, watermark, typography, ui elements, violence, weapon, gore, blood, injury, nudity, sexual content, crime, drugs, harassment.'
+const EXTENDED_NEGATIVE_SUFFIX = ', violence, weapon, gore, blood, injury, nudity, sexual content, crime, drugs, harassment.'
+const EXTENDED_KEYWORDS_SET = ['violence', 'weapon', 'gore', 'blood', 'injury', 'nudity', 'sexual', 'crime', 'drugs', 'harassment']
 const MAX_ANCHOR_CHARS = 3
 
 export function autoFixTakes(
@@ -718,32 +766,79 @@ export function autoFixTakes(
     }
   }
 
-  // Fix 7: extended-negative-on-transition — append extended keywords on env transitions
-  for (let i = 0; i < fixed.length; i++) {
-    const isFirst = i === 0
-    const envChanged =
-      i > 0 &&
-      fixed[i].environmentLock.trim().toLowerCase() !==
-        fixed[i - 1].environmentLock.trim().toLowerCase()
+  // Fix 7: negative-always-extended — append extended keywords on ALL takes
+  for (const take of fixed) {
+    const hasExtended = EXTENDED_KEYWORDS_SET.some((kw) =>
+      take.negativePrompt.toLowerCase().includes(kw)
+    )
+    if (!hasExtended) {
+      const before = take.negativePrompt
+      let neg = before.replace(/\.\s*$/, '')
+      neg += EXTENDED_NEGATIVE_SUFFIX
+      corrections.push({
+        takeNumber: take.takeNumber,
+        ruleId: 'negative-always-extended',
+        field: 'negativePrompt',
+        before,
+        after: neg
+      })
+      take.negativePrompt = neg
+      rulesApplied.add('negative-always-extended')
+    }
+  }
 
-    if (isFirst || envChanged) {
-      const hasExtended = EXTENDED_KEYWORDS_SET.some((kw) =>
-        fixed[i].negativePrompt.toLowerCase().includes(kw)
-      )
-      if (!hasExtended) {
-        const before = fixed[i].negativePrompt
-        let neg = before.replace(/\.\s*$/, '')
-        neg += EXTENDED_NEGATIVE_SUFFIX
-        corrections.push({
-          takeNumber: fixed[i].takeNumber,
-          ruleId: 'extended-negative-on-transition',
-          field: 'negativePrompt',
-          before,
-          after: neg
-        })
-        fixed[i].negativePrompt = neg
-        rulesApplied.add('extended-negative-on-transition')
+  // Fix 8: content-policy-safe — replace/remove policy-violating words from descriptions
+  const POLICY_REPLACEMENTS: Array<{ patterns: string[]; replacement: string }> = [
+    // Violence (explicit) - safe replacements that do NOT trigger Google filters
+    { patterns: ['blood', 'bleeding', 'wound', 'bruise', 'scar', 'injury', 'injured', 'bleed'], replacement: 'visible strain' },
+    { patterns: ['fight', 'fighting', 'punch', 'kick', 'slap', 'assault', 'attack', 'beaten', 'combat'], replacement: 'charged silence' },
+    { patterns: ['confrontation', 'conflict', 'ambush'], replacement: 'charged stillness' },
+    { patterns: ['struggle'], replacement: 'visible effort' },
+    { patterns: ['kill', 'murder', 'dead body', 'corpse'], replacement: 'empty stillness' },
+    { patterns: ['scream', 'rage', 'fury'], replacement: 'intense expression' },
+    { patterns: ['escape', 'flee', 'chase'], replacement: 'hurried movement' },
+    { patterns: ['gun', 'rifle', 'pistol', 'weapon', 'knife', 'sword', 'bullet', 'bomb', 'explosion', 'grenade'], replacement: '' },
+    { patterns: ['shoot', 'shooting', 'stab', 'strangle', 'choke', 'torture', 'severed', 'gore'], replacement: '' },
+    { patterns: ['aggressive', 'threat', 'threaten', 'grab', 'push', 'shove'], replacement: '' },
+    { patterns: ['revenge', 'betray', 'prison', 'jail', 'criminal', 'theft', 'steal'], replacement: '' },
+    // Sexual - safe replacements
+    { patterns: ['kiss on lips', 'passionate kiss', 'making out', 'kiss', 'kissing'], replacement: 'lingering gaze' },
+    { patterns: ['bed scene', 'bedroom scene', 'love scene'], replacement: '' },
+    { patterns: ['embrace'], replacement: 'close proximity' },
+    { patterns: ['nude', 'naked', 'topless', 'undress', 'lingerie', 'cleavage', 'bikini', 'underwear'], replacement: '' },
+    { patterns: ['revealing', 'low-cut'], replacement: '' },
+    { patterns: ['caress', 'moan', 'groan', 'panting'], replacement: '' },
+    { patterns: ['sexual', 'erotic', 'seductive', 'provocative', 'sensual'], replacement: '' },
+    // Drugs/Crime/Other
+    { patterns: ['drug', 'cocaine', 'heroin', 'syringe', 'inject', 'overdose'], replacement: '' },
+    { patterns: ['kidnap', 'hostage', 'tied up', 'handcuff', 'restrain', 'captive'], replacement: '' },
+    { patterns: ['terrorist', 'extremist', 'self-harm', 'hanging', 'noose', 'suicide'], replacement: '' }
+  ]
+
+  for (const take of fixed) {
+    let desc = take.description
+    let changed = false
+    for (const { patterns, replacement } of POLICY_REPLACEMENTS) {
+      for (const pattern of patterns) {
+        const regex = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
+        if (regex.test(desc)) {
+          desc = desc.replace(regex, replacement)
+          changed = true
+        }
       }
+    }
+    if (changed) {
+      // Clean up double spaces and trailing commas
+      desc = desc.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').replace(/,\s*\./g, '.').trim()
+      corrections.push({
+        takeNumber: take.takeNumber,
+        ruleId: 'content-policy-safe',
+        field: 'description',
+        before: take.description,
+        after: desc
+      })
+      take.description = desc
+      rulesApplied.add('content-policy-safe')
     }
   }
 
@@ -781,7 +876,7 @@ export function identifyFailingTakes(
   // description-max-words
   for (const take of takes) {
     const wordCount = take.description.split(/\s+/).filter(Boolean).length
-    if (wordCount > 35) {
+    if (wordCount > 80) {
       addFailure(take.takeNumber, 'description-max-words')
     }
   }
@@ -834,6 +929,28 @@ export function identifyFailingTakes(
           addFailure(takes[entry.idx].takeNumber, 'environment-consistency')
         }
       }
+    }
+  }
+
+  // content-policy-safe
+  for (const take of takes) {
+    const lower = take.description.toLowerCase()
+    for (const term of CONTENT_POLICY_BLOCKLIST) {
+      if (lower.includes(term)) {
+        addFailure(take.takeNumber, 'content-policy-safe')
+        break
+      }
+    }
+  }
+
+  // negative-always-extended
+  const EXTENDED_KW_CHECK = ['violence', 'weapon', 'gore', 'blood', 'nudity', 'sexual', 'crime', 'harassment']
+  for (const take of takes) {
+    const hasExtended = EXTENDED_KW_CHECK.some((kw) =>
+      take.negativePrompt.toLowerCase().includes(kw)
+    )
+    if (!hasExtended) {
+      addFailure(take.takeNumber, 'negative-always-extended')
     }
   }
 
@@ -906,7 +1023,8 @@ export function validatePromptQuality(
     rulesEnvironmentConsistency(takes, scenes),
     rulesNoAbbreviation(takes, characters),
     rulesMaxCharsPerAnchor(takes),
-    rulesExtendedNegativeOnTransition(takes),
+    rulesNegativeAlwaysExtended(takes),
+    rulesContentPolicySafe(takes),
     rulesNoInternalEmotions(takes),
     rulesDescriptionMatchesEnvironment(takes)
   ]

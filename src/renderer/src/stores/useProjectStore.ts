@@ -284,7 +284,32 @@ export const useProjectStore = create<ProjectState>()(
       },
       loadFullProject: async (draftPath) => {
         try {
+          const prevState = useProjectStore.getState()
+          const prevStoryBlocks = prevState.storyBlocks
+          const prevAudioBlocks = prevState.audioBlocks
+
           const raw = (await window.api.loadFullProject(draftPath)) as RawFullProjectResponse
+
+          console.log('[loadFullProject] Raw from disk:', {
+            text_segments: raw.text_segments.length,
+            audio_segments: raw.audio_segments.length,
+            video_segments: raw.video_segments.length
+          })
+          console.log('[loadFullProject] Previous in-memory:', {
+            storyBlocks: prevStoryBlocks.length,
+            audioBlocks: prevAudioBlocks.length,
+            hadLinkedAudio: prevAudioBlocks.some((a) => a.linkedBlockId !== null),
+            hadLinkedStory: prevStoryBlocks.some((s) => s.linkedAudioId !== null)
+          })
+
+          if (prevStoryBlocks.length > 0 && raw.text_segments.length > 0) {
+            const prevFirst = prevStoryBlocks[0]
+            const rawFirst = raw.text_segments[0]
+            console.log('[loadFullProject] Timing comparison StoryBlock[0]:', {
+              prev: { start: prevFirst.startMs, end: prevFirst.endMs, text: prevFirst.text.slice(0, 30) },
+              disk: { start: rawFirst.start_ms, end: rawFirst.end_ms, text: rawFirst.text.slice(0, 30) }
+            })
+          }
 
           const audioBlocks: AudioBlock[] = raw.audio_segments.map((seg, i) => ({
             id: seg.id || crypto.randomUUID(),

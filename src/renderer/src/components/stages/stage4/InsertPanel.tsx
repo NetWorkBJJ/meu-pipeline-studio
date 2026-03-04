@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Captions,
   CheckCircle2,
   ExternalLink,
   Loader2,
@@ -12,8 +13,10 @@ import {
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useStageStore } from '@/stores/useStageStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { useLogStore } from '@/stores/useLogStore'
 import { detectGaps } from '@/lib/scenePlanner'
 
+type InsertMode = 'manual' | 'auto_transcript'
 type InsertStatus = 'idle' | 'inserting' | 'done' | 'error'
 
 interface InsertLog {
@@ -35,6 +38,7 @@ interface InsertPanelProps {
 }
 
 export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
+  const [insertMode, setInsertMode] = useState<InsertMode>('manual')
   const [status, setStatus] = useState<InsertStatus>('idle')
   const [logs, setLogs] = useState<InsertLog[]>([])
   const [existingTracks, setExistingTracks] = useState<AnalysisTrackInfo[]>([])
@@ -194,6 +198,118 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
     }
   }
 
+  const audioBlocks = useProjectStore((s) => s.audioBlocks)
+  const hasTranscriptTiming = audioBlocks.some((a) => a.linkedBlockId)
+
+  const handleAutoTranscriptInsert = async (): Promise<void> => {
+    if (!capCutDraftPath) return
+
+    const { addLog: sysLog } = useLogStore.getState()
+    sysLog('info', `[auto-transcript] Iniciando fluxo Auto Transcript. Draft: ${capCutDraftPath}`)
+    sysLog('info', `[auto-transcript] Estado: ${storyBlocks.length} storyBlocks, hasTranscriptTiming=${hasTranscriptTiming}`)
+
+    if (!hasTranscriptTiming) {
+      addToast({
+        type: 'warning',
+        message: 'Ative "Com Transcript" no Stage 2 (ElevenLabs) para timing preciso.'
+      })
+    }
+
+    setStatus('inserting')
+    setLogs([])
+
+    try {
+      addLog('Criando backup...', 'running')
+      await window.api.createBackup(capCutDraftPath)
+      addLog('Criando backup...', 'done', 'Backup salvo')
+
+      if (textCount > 0) {
+        addLog('Limpando legendas anteriores...', 'running')
+        const clearResult = (await window.api.clearTextSegments(capCutDraftPath)) as {
+          removed_segments: number
+        }
+        addLog(
+          'Limpando legendas anteriores...',
+          'done',
+          `${clearResult.removed_segments} removidas`
+        )
+      }
+
+      if (videoCount > 0) {
+        addLog('Limpando midias anteriores...', 'running')
+        const clearResult = (await window.api.clearVideoSegments(capCutDraftPath)) as {
+          removed_segments: number
+        }
+        addLog(
+          'Limpando midias anteriores...',
+          'done',
+          `${clearResult.removed_segments} removidas`
+        )
+      }
+
+      addLog('Escrevendo legendas (transcript)...', 'running')
+      const textBlocks = storyBlocks.map((b) => ({
+        text: b.text,
+        start_ms: b.startMs,
+        end_ms: b.endMs
+      }))
+      const textResult = (await window.api.writeTextSegments(capCutDraftPath, textBlocks)) as {
+        added_count: number
+        segments: Array<{ segment_id: string; material_id: string; text: string }>
+      }
+      addLog('Escrevendo legendas (transcript)...', 'done', `${textResult.added_count} legendas`)
+
+      if (textResult.segments) {
+        for (let i = 0; i < textResult.segments.length && i < storyBlocks.length; i++) {
+          const seg = textResult.segments[i]
+          updateStoryBlock(storyBlocks[i].id, {
+            textMaterialId: seg.material_id,
+            textSegmentId: seg.segment_id
+          })
+        }
+      }
+
+      const scenesWithMedia = scenes.filter((s) => s.mediaPath)
+      if (scenesWithMedia.length > 0) {
+        addLog('Escrevendo midias...', 'running')
+        const videoScenes = scenesWithMedia.map((s) => ({
+          media_path: s.mediaPath,
+          start_ms: s.startMs,
+          end_ms: s.endMs,
+          media_type: s.mediaType
+        }))
+        const videoResult = (await window.api.writeVideoSegments(
+          capCutDraftPath,
+          videoScenes
+        )) as { added_count: number }
+        addLog('Escrevendo midias...', 'done', `${videoResult.added_count} midias`)
+      }
+
+      addLog('Sincronizando metadata...', 'running')
+      await window.api.syncMetadata(capCutDraftPath)
+      addLog('Sincronizando metadata...', 'done')
+
+      setStatus('done')
+      completeStage(4)
+      addToast({ type: 'success', message: 'Insercao concluida! Abra o projeto no CapCut.' })
+
+      try {
+        await useProjectStore.getState().loadFullProject(capCutDraftPath)
+      } catch {
+        await analyzeExisting()
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido'
+      addLog('Erro', 'error', message)
+      setStatus('error')
+      addToast({ type: 'error', message: 'Erro durante a insercao.' })
+    }
+  }
+
+  const handleInsert = (): Promise<void> => {
+    return insertMode === 'auto_transcript' ? handleAutoTranscriptInsert() : handleClearAndInsert()
+  }
+
   const handleApplyAnimations = async (): Promise<void> => {
     if (!capCutDraftPath) return
     setAnimStatus('applying')
@@ -222,6 +338,57 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
           Escreve legendas e midias no projeto CapCut. Backup automatico antes de cada insercao.
         </p>
       </div>
+
+      {/* Mode toggle */}
+      <div className="flex gap-1 p-1 rounded-lg border border-border bg-surface">
+        <button
+          onClick={() => setInsertMode('manual')}
+          disabled={status === 'inserting'}
+          className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+            insertMode === 'manual'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-text-muted hover:text-text'
+          } disabled:opacity-50`}
+        >
+          Manual
+        </button>
+        <button
+          onClick={() => setInsertMode('auto_transcript')}
+          disabled={status === 'inserting'}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+            insertMode === 'auto_transcript'
+              ? 'bg-primary text-white shadow-sm'
+              : 'text-text-muted hover:text-text'
+          } disabled:opacity-50`}
+        >
+          <Captions className="h-3.5 w-3.5" />
+          Auto Transcript
+        </button>
+      </div>
+
+      {/* Auto transcript info banner */}
+      {insertMode === 'auto_transcript' && status !== 'done' && (
+        <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <Captions className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+          <div className="text-xs text-primary/80">
+            <p className="font-semibold text-primary">Modo Auto Transcript</p>
+            <p className="mt-1">
+              Usa o transcript do ElevenLabs para posicionar legendas com timing preciso.
+              O timing vem do proprio motor TTS, sem precisar abrir o CapCut.
+            </p>
+            {!hasTranscriptTiming && (
+              <p className="mt-1 text-warning">
+                Ative &quot;Com Transcript&quot; no Stage 2 (ElevenLabs) para timing preciso.
+              </p>
+            )}
+            {hasTranscriptTiming && (
+              <p className="mt-1 text-success">
+                Transcript detectado: timing preciso disponivel.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4">
         <div className="flex-1 rounded-lg border border-border bg-surface p-4 shadow-surface">
@@ -331,7 +498,7 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
           </>
         )}
         <button
-          onClick={handleClearAndInsert}
+          onClick={handleInsert}
           disabled={status === 'inserting' || !capCutDraftPath}
           className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -339,6 +506,11 @@ export function InsertPanel({ onRetry }: InsertPanelProps): React.JSX.Element {
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
               Inserindo...
+            </>
+          ) : insertMode === 'auto_transcript' ? (
+            <>
+              <Captions className="h-4 w-4" />
+              {hasExistingContent ? 'Limpar e Inserir (Transcript)' : 'Inserir (Auto Transcript)'}
             </>
           ) : hasExistingContent ? (
             <>
