@@ -211,16 +211,31 @@ const initialState = {
   elevenLabsVoiceTemplates: [
     {
       id: 'preset-lena-voice',
-      name: 'Lena Voice',
+      name: 'Lena Oficial Voice',
       voiceId: 'KoVIHoyLDrQyd4pGalbs',
       voiceName: 'Autumn Veil - Warm and Reflective',
       modelId: 'eleven_multilingual_v2',
       voiceSettings: {
-        stability: 0.35,
+        stability: 0.9,
+        similarity_boost: 0.5,
+        style: 0.3,
+        use_speaker_boost: true,
+        speed: 1
+      },
+      createdAt: 1740000000000
+    },
+    {
+      id: 'preset-jose',
+      name: 'Kay&Rowan',
+      voiceId: 'MFZUKuGQUsGJPQjTS4wC',
+      voiceName: 'Jon - Warm & Grounded Storyteller',
+      modelId: 'eleven_multilingual_v2',
+      voiceSettings: {
+        stability: 0.5,
         similarity_boost: 0.75,
-        style: 0.25,
-        use_speaker_boost: false,
-        speed: 1.12
+        style: 0,
+        use_speaker_boost: true,
+        speed: 1
       },
       createdAt: 1740000000000
     }
@@ -554,16 +569,31 @@ export const useProjectStore = create<ProjectState>()(
           state.elevenLabsVoiceTemplates = [
             {
               id: 'preset-lena-voice',
-              name: 'Lena Voice',
+              name: 'Lena Oficial Voice',
               voiceId: 'KoVIHoyLDrQyd4pGalbs',
               voiceName: 'Autumn Veil - Warm and Reflective',
               modelId: 'eleven_multilingual_v2',
               voiceSettings: {
-                stability: 0.35,
+                stability: 0.9,
+                similarity_boost: 0.5,
+                style: 0.3,
+                use_speaker_boost: true,
+                speed: 1
+              },
+              createdAt: 1740000000000
+            },
+            {
+              id: 'preset-jose',
+              name: 'Kay&Rowan',
+              voiceId: 'MFZUKuGQUsGJPQjTS4wC',
+              voiceName: 'Jon - Warm & Grounded Storyteller',
+              modelId: 'eleven_multilingual_v2',
+              voiceSettings: {
+                stability: 0.5,
                 similarity_boost: 0.75,
-                style: 0.25,
-                use_speaker_boost: false,
-                speed: 1.12
+                style: 0,
+                use_speaker_boost: true,
+                speed: 1
               },
               createdAt: 1740000000000
             }

@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, session, nativeImage } from 'electron'
 import { join, extname, basename } from 'path'
 import { existsSync, mkdirSync, renameSync } from 'fs'
 import { execSync } from 'child_process'
+import iconIco from '../../resources/icon.ico?asset'
 import iconPng from '../../resources/icon.png?asset'
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
@@ -234,9 +235,7 @@ function resolveFileCollision(dir: string, filename: string): string {
 }
 
 function createWindow(): void {
-  const iconFile = process.platform === 'win32'
-    ? join(app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources'), 'icon.ico')
-    : iconPng
+  const iconFile = process.platform === 'win32' ? iconIco : iconPng
   const appIcon = nativeImage.createFromPath(iconFile)
   if (appIcon.isEmpty()) {
     console.warn('Failed to load app icon from:', iconFile)

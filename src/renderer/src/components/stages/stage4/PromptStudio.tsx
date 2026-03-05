@@ -117,11 +117,30 @@ export function PromptStudio({ onConfirm }: PromptStudioProps): React.JSX.Elemen
     return chapters.length > 0 ? chapters : [1]
   }, [scenes])
 
-  // Elapsed time from generation start
-  const elapsed = useMemo(() => {
-    if (!progress.startedAt || !progress.isGeneratingPrompts) return 0
-    return Date.now() - progress.startedAt
-  }, [progress.startedAt, progress.isGeneratingPrompts, progress.completedTakes])
+  // Live ticking timer for generation elapsed time
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [finalElapsedMs, setFinalElapsedMs] = useState<number | null>(null)
+  const elapsedRef = useRef(0)
+
+  useEffect(() => {
+    if (!progress.isGeneratingPrompts || !progress.startedAt) {
+      // Generation ended - capture final time
+      if (elapsedRef.current > 0) {
+        setFinalElapsedMs(elapsedRef.current)
+      }
+      return
+    }
+    // Generation started - reset and start ticking
+    setFinalElapsedMs(null)
+    setElapsedMs(0)
+    elapsedRef.current = 0
+    const interval = setInterval(() => {
+      const ms = Date.now() - progress.startedAt!
+      elapsedRef.current = ms
+      setElapsedMs(ms)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [progress.isGeneratingPrompts, progress.startedAt])
 
   // Listen for LLM progress events from Python bridge
   useEffect(() => {
@@ -845,7 +864,7 @@ Tipo: ${scene.mediaType}`
               <div className="flex items-center gap-3 text-[10px] text-text-muted">
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {formatElapsed(elapsed)}
+                  {formatElapsed(elapsedMs)}
                 </span>
                 {avgBatchMs > 0 && (
                   <>
@@ -902,12 +921,27 @@ Tipo: ${scene.mediaType}`
           </div>
         )}
 
-        {/* Completed batch summary (after generation ends) */}
-        {!progress.isGeneratingPrompts && progress.batchResults.length > 0 && progress.totalBatches > 1 && (
+        {/* Completed generation timer (single batch) */}
+        {!progress.isGeneratingPrompts && finalElapsedMs !== null && progress.batchResults.length > 0 && progress.totalBatches <= 1 && (
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
+            <Clock className="h-3 w-3 text-emerald-400" />
+            <span className="text-[10px] text-emerald-400">
+              {progress.completedTakes} takes gerados em {formatElapsed(finalElapsedMs)}
+            </span>
+          </div>
+        )}
+
+        {/* Completed batch summary (after generation ends, multi-batch) */}
+        {!progress.isGeneratingPrompts && finalElapsedMs !== null && progress.batchResults.length > 0 && progress.totalBatches > 1 && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/50 bg-bg p-2">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3 w-3 text-emerald-400" />
+              <span className="text-[10px] text-emerald-400 font-medium">
+                {formatElapsed(finalElapsedMs)}
+              </span>
+            </div>
             <span className="text-[10px] text-text-muted">
               {progress.completedTakes}/{progress.totalScenes} takes em {progress.totalBatches} lotes
-              {progress.startedAt && ` (${formatElapsed(Date.now() - progress.startedAt)})`}
             </span>
             <div className="flex flex-wrap gap-1">
               {progress.batchResults.map((batch) => {
