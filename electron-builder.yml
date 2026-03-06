@@ -18,6 +18,7 @@ files:
   - '!directives/**'
   - '!.claude/**'
   - '!*.md'
+icon: build/icon.ico
 asarUnpack:
   - resources/**
 extraResources:
@@ -49,6 +50,10 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  createStartMenuShortcut: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 mac:
   icon: build/icon.icns
   entitlementsInherit: build/entitlements.mac.plist

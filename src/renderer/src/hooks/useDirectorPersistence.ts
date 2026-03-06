@@ -13,6 +13,7 @@ function buildSnapshot(
     rawScript: state.rawScript,
     scenes: state.scenes,
     storyBlocks: state.storyBlocks,
+    audioBlocks: state.audioBlocks,
     directorConfig: state.directorConfig,
     characterRefs: state.characterRefs
   })
@@ -35,11 +36,13 @@ export function useDirectorPersistence(): void {
         state.scenes === prevState.scenes &&
         state.rawScript === prevState.rawScript &&
         state.storyBlocks === prevState.storyBlocks &&
+        state.audioBlocks === prevState.audioBlocks &&
         state.characterRefs === prevState.characterRefs
       ) return
 
-      const { capCutDraftPath, scenes } = state
-      if (!capCutDraftPath || scenes.length === 0) return
+      const { capCutDraftPath, scenes, storyBlocks, audioBlocks } = state
+      const hasData = scenes.length > 0 || storyBlocks.length > 0 || audioBlocks.length > 0
+      if (!capCutDraftPath || !hasData) return
 
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current)
@@ -62,8 +65,9 @@ export function useDirectorPersistence(): void {
   useEffect(() => {
     const handleBeforeUnload = (): void => {
       const state = useProjectStore.getState()
-      const { capCutDraftPath, scenes } = state
-      if (!capCutDraftPath || scenes.length === 0) return
+      const { capCutDraftPath, scenes, storyBlocks, audioBlocks } = state
+      const hasData = scenes.length > 0 || storyBlocks.length > 0 || audioBlocks.length > 0
+      if (!capCutDraftPath || !hasData) return
       saveSnapshot(capCutDraftPath, buildSnapshot(state))
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -73,7 +77,8 @@ export function useDirectorPersistence(): void {
 
 export function saveDirectorNow(): void {
   const state = useProjectStore.getState()
-  const { capCutDraftPath, scenes } = state
-  if (!capCutDraftPath || scenes.length === 0) return
+  const { capCutDraftPath, scenes, storyBlocks, audioBlocks } = state
+  const hasData = scenes.length > 0 || storyBlocks.length > 0 || audioBlocks.length > 0
+  if (!capCutDraftPath || !hasData) return
   saveSnapshot(capCutDraftPath, buildSnapshot(state))
 }

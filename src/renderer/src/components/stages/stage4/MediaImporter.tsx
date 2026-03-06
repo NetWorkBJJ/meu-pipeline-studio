@@ -219,6 +219,16 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
             <Upload className="h-3.5 w-3.5" />
             Selecionar arquivos
           </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onConfirm}
+            disabled={scenesWithMedia.length === 0}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Confirmar
+          </motion.button>
         </div>
       </div>
 
@@ -317,20 +327,6 @@ export function MediaImporter({ onConfirm }: MediaImporterProps): React.JSX.Elem
             )}
           </div>
         ))}
-      </div>
-
-      {/* Confirm button */}
-      <div className="flex justify-end pt-2 border-t border-border">
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onConfirm}
-          disabled={scenesWithMedia.length === 0}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Confirmar
-        </motion.button>
       </div>
 
       {/* Match review modal */}

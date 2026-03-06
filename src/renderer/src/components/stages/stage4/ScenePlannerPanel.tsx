@@ -221,19 +221,8 @@ export function ScenePlannerPanel({ onConfirm }: ScenePlannerPanelProps): React.
       {/* Scene list */}
       {scenes.length > 0 && (
         <>
-          <div className="overflow-auto max-h-[calc(100vh-480px)] space-y-2">
-            {scenes.map((scene) => (
-              <SceneCard
-                key={scene.id}
-                scene={scene}
-                blocks={storyBlocks}
-                onUpdate={(id, updates) => updateScene(id, updates)}
-              />
-            ))}
-          </div>
-
           {/* Confirm */}
-          <div className="flex justify-end pt-2 border-t border-border">
+          <div className="flex justify-end">
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
@@ -243,6 +232,17 @@ export function ScenePlannerPanel({ onConfirm }: ScenePlannerPanelProps): React.
               <CheckCircle2 className="h-3.5 w-3.5" />
               Confirmar planejamento
             </motion.button>
+          </div>
+
+          <div className="overflow-auto max-h-[calc(100vh-480px)] space-y-2">
+            {scenes.map((scene) => (
+              <SceneCard
+                key={scene.id}
+                scene={scene}
+                blocks={storyBlocks}
+                onUpdate={(id, updates) => updateScene(id, updates)}
+              />
+            ))}
           </div>
         </>
       )}

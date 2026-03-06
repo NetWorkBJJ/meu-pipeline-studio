@@ -15,7 +15,6 @@ import type {
   CharacterRef,
   ClickUpTaskRef
 } from '@/types/project'
-import type { ElevenLabsVoiceTemplate } from '@/types/ai33'
 
 interface RecentProject {
   name: string
@@ -99,6 +98,7 @@ export interface DirectorStateSnapshot {
   rawScript?: string
   scenes?: Scene[]
   storyBlocks?: StoryBlock[]
+  audioBlocks?: AudioBlock[]
   directorConfig?: Partial<DirectorConfig>
   characterRefs?: CharacterRef[]
 }
@@ -122,7 +122,6 @@ interface ProjectState {
   directorProgress: DirectorProgress
   characterRefs: CharacterRef[]
   clickUpTaskRef: ClickUpTaskRef | null
-  elevenLabsVoiceTemplates: ElevenLabsVoiceTemplate[]
 
   setCapCutDraftPath: (path: string | null) => void
   setRawScript: (script: string) => void
@@ -153,8 +152,6 @@ interface ProjectState {
   setCharacterRefs: (refs: CharacterRef[]) => void
   setClickUpTaskRef: (ref: ClickUpTaskRef | null) => void
   loadDirectorState: (snapshot: DirectorStateSnapshot) => void
-  addElevenLabsVoiceTemplate: (template: ElevenLabsVoiceTemplate) => void
-  removeElevenLabsVoiceTemplate: (id: string) => void
 }
 
 const initialState = {
@@ -207,39 +204,7 @@ const initialState = {
     startedAt: null
   } as DirectorProgress,
   characterRefs: [] as CharacterRef[],
-  clickUpTaskRef: null as ClickUpTaskRef | null,
-  elevenLabsVoiceTemplates: [
-    {
-      id: 'preset-lena-voice',
-      name: 'Lena Oficial Voice',
-      voiceId: 'KoVIHoyLDrQyd4pGalbs',
-      voiceName: 'Autumn Veil - Warm and Reflective',
-      modelId: 'eleven_multilingual_v2',
-      voiceSettings: {
-        stability: 0.9,
-        similarity_boost: 0.5,
-        style: 0.3,
-        use_speaker_boost: true,
-        speed: 1
-      },
-      createdAt: 1740000000000
-    },
-    {
-      id: 'preset-jose',
-      name: 'Kay&Rowan',
-      voiceId: 'MFZUKuGQUsGJPQjTS4wC',
-      voiceName: 'Jon - Warm & Grounded Storyteller',
-      modelId: 'eleven_multilingual_v2',
-      voiceSettings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0,
-        use_speaker_boost: true,
-        speed: 1
-      },
-      createdAt: 1740000000000
-    }
-  ] as ElevenLabsVoiceTemplate[]
+  clickUpTaskRef: null as ClickUpTaskRef | null
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -513,6 +478,10 @@ export const useProjectStore = create<ProjectState>()(
           rawScript: snapshot.rawScript ?? state.rawScript,
           scenes: migratedScenes ?? state.scenes,
           storyBlocks: snapshot.storyBlocks ?? state.storyBlocks,
+          audioBlocks:
+            snapshot.audioBlocks && snapshot.audioBlocks.length > 0
+              ? snapshot.audioBlocks
+              : state.audioBlocks,
           directorConfig: snapshot.directorConfig
             ? { ...state.directorConfig, ...snapshot.directorConfig }
             : state.directorConfig,
@@ -525,16 +494,6 @@ export const useProjectStore = create<ProjectState>()(
         if (snapshot.scenes && snapshot.scenes.length > 0) {
           useStageStore.getState().setFreeNavigation(true)
         }
-      },
-      addElevenLabsVoiceTemplate: (template) => {
-        set((state) => ({
-          elevenLabsVoiceTemplates: [...state.elevenLabsVoiceTemplates, template]
-        }))
-      },
-      removeElevenLabsVoiceTemplate: (id) => {
-        set((state) => ({
-          elevenLabsVoiceTemplates: state.elevenLabsVoiceTemplates.filter((t) => t.id !== id)
-        }))
       },
       resetProject: () => {
         set((state) => ({
@@ -553,8 +512,7 @@ export const useProjectStore = create<ProjectState>()(
         ttsDefaults: state.ttsDefaults,
         recentProjects: state.recentProjects,
         directorConfig: state.directorConfig,
-        characterRefs: state.characterRefs,
-        elevenLabsVoiceTemplates: state.elevenLabsVoiceTemplates
+        characterRefs: state.characterRefs
       }),
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>
@@ -564,40 +522,6 @@ export const useProjectStore = create<ProjectState>()(
             dc.llmProvider = 'claude'
             if (!dc.llmModel) dc.llmModel = 'claude-opus-4-6'
           }
-        }
-        if (version < 4) {
-          state.elevenLabsVoiceTemplates = [
-            {
-              id: 'preset-lena-voice',
-              name: 'Lena Oficial Voice',
-              voiceId: 'KoVIHoyLDrQyd4pGalbs',
-              voiceName: 'Autumn Veil - Warm and Reflective',
-              modelId: 'eleven_multilingual_v2',
-              voiceSettings: {
-                stability: 0.9,
-                similarity_boost: 0.5,
-                style: 0.3,
-                use_speaker_boost: true,
-                speed: 1
-              },
-              createdAt: 1740000000000
-            },
-            {
-              id: 'preset-jose',
-              name: 'Kay&Rowan',
-              voiceId: 'MFZUKuGQUsGJPQjTS4wC',
-              voiceName: 'Jon - Warm & Grounded Storyteller',
-              modelId: 'eleven_multilingual_v2',
-              voiceSettings: {
-                stability: 0.5,
-                similarity_boost: 0.75,
-                style: 0,
-                use_speaker_boost: true,
-                speed: 1
-              },
-              createdAt: 1740000000000
-            }
-          ]
         }
         return state as unknown as ProjectState
       }

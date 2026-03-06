@@ -1,19 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Play,
-  Pause,
   Loader2,
-  Search,
   AlertTriangle,
   CheckCircle,
   RefreshCw,
-  Volume2,
-  Coins,
-  ChevronDown,
-  ChevronRight,
-  Save,
-  Trash2,
-  BookMarked
+  Coins
 } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -23,16 +15,12 @@ import { msToDisplay } from '@/lib/time'
 import { parseSrt, matchSrtToBlocks } from '@/lib/srt'
 import type { SrtMatchResult } from '@/lib/srt'
 import type {
-  Ai33ElevenLabsVoice,
   Ai33TaskResponse,
   Ai33TaskCreatedResponse,
   Ai33TTSMetadata,
   Ai33CreditsResponse,
-  Ai33VoicesResponse,
-  ElevenLabsVoiceSettings,
-  ElevenLabsVoiceTemplate
+  ElevenLabsVoiceSettings
 } from '@/types/ai33'
-import { ELEVENLABS_MODELS } from '@/types/ai33'
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -48,27 +36,49 @@ interface GeneratedPart {
   creditCost: number
 }
 
-const DEFAULT_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
-  stability: 0.5,
-  similarity_boost: 0.75,
-  style: 0.0,
-  use_speaker_boost: true,
-  speed: 1.0
+interface VoicePreset {
+  id: string
+  name: string
+  voiceId: string
+  modelId: string
+  voiceSettings: ElevenLabsVoiceSettings
 }
+
+const VOICE_PRESETS: VoicePreset[] = [
+  {
+    id: 'preset-lena-voice',
+    name: 'Lena Oficial Voice',
+    voiceId: 'KoVIHoyLDrQyd4pGalbs',
+    modelId: 'eleven_multilingual_v2',
+    voiceSettings: {
+      stability: 0.9,
+      similarity_boost: 0.5,
+      style: 0.3,
+      use_speaker_boost: true,
+      speed: 1.0
+    }
+  },
+  {
+    id: 'preset-jose',
+    name: 'Kay&Rowan',
+    voiceId: 'MFZUKuGQUsGJPQjTS4wC',
+    modelId: 'eleven_multilingual_v2',
+    voiceSettings: {
+      stability: 0.5,
+      similarity_boost: 0.75,
+      style: 0,
+      use_speaker_boost: true,
+      speed: 1.0
+    }
+  }
+]
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function ElevenLabsTTSPanel(): React.JSX.Element {
-  const {
-    storyBlocks,
-    setAudioBlocks,
-    updateStoryBlock,
-    elevenLabsVoiceTemplates,
-    addElevenLabsVoiceTemplate,
-    removeElevenLabsVoiceTemplate
-  } = useProjectStore()
+  const { storyBlocks, audioBlocks, setAudioBlocks, updateStoryBlock } = useProjectStore()
   const { completeStage, setCurrentStage } = useStageStore()
   const { addToast } = useUIStore()
 
@@ -79,23 +89,8 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   const [credits, setCredits] = useState<number | null>(null)
   const [loadingCredits, setLoadingCredits] = useState(false)
 
-  // Voices
-  const [voices, setVoices] = useState<Ai33ElevenLabsVoice[]>([])
-  const [loadingVoices, setLoadingVoices] = useState(false)
-  const [voiceSearch, setVoiceSearch] = useState('')
-  const [selectedVoiceId, setSelectedVoiceId] = useState('')
-
-  // Model
-  const [modelId, setModelId] = useState<string>(ELEVENLABS_MODELS[0].id)
-
-  // Voice settings
-  const [voiceSettings, setVoiceSettings] = useState<ElevenLabsVoiceSettings>(DEFAULT_VOICE_SETTINGS)
-  const [showVoiceSettings, setShowVoiceSettings] = useState(false)
-
-  // Template
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
-  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
-  const [newTemplateName, setNewTemplateName] = useState('')
+  // Preset
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(VOICE_PRESETS[0].id)
 
   // Transcript
   const [withTranscript, setWithTranscript] = useState(true)
@@ -113,16 +108,13 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   const [srtMatchResults, setSrtMatchResults] = useState<SrtMatchResult[] | null>(null)
   const [srtDownloadFailed, setSrtDownloadFailed] = useState(false)
 
-  // Audio preview
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
-  const [previewPlaying, setPreviewPlaying] = useState(false)
-  const [previewVoiceId, setPreviewVoiceId] = useState<string | null>(null)
-
   // Cancellation ref
   const cancelledRef = useRef(false)
 
+  const selectedPreset = VOICE_PRESETS.find((p) => p.id === selectedPresetId) ?? VOICE_PRESETS[0]
+
   // -----------------------------------------------------------------------
-  // Mount: check API key, load voices, load credits
+  // Mount: check API key, load credits
   // -----------------------------------------------------------------------
 
   useEffect(() => {
@@ -131,7 +123,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         const keyExists = await window.api.ai33HasApiKey()
         setHasApiKey(keyExists)
         if (keyExists) {
-          loadVoices()
           loadCredits()
         }
       } catch {
@@ -141,6 +132,42 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     init()
   }, [])
 
+  // Restore "done" state from persisted audioBlocks
+  useEffect(() => {
+    if (phase !== 'idle' || generatedAudio) return
+    const ttsBlocks = audioBlocks.filter((b) => b.source === 'tts')
+    if (ttsBlocks.length === 0) return
+
+    const firstBlock = ttsBlocks[0]
+    const totalDuration = ttsBlocks.length === 1
+      ? firstBlock.durationMs
+      : ttsBlocks.reduce((max, b) => Math.max(max, b.endMs), 0)
+
+    setGeneratedAudio({
+      index: 0,
+      text: '',
+      localPath: firstBlock.filePath,
+      durationMs: totalDuration,
+      creditCost: 0
+    })
+
+    // If multiple blocks are linked, they came from SRT matching
+    if (ttsBlocks.length > 1 && ttsBlocks.every((b) => b.linkedBlockId)) {
+      setSrtMatchResults(
+        ttsBlocks.map((b, i) => ({
+          blockId: b.linkedBlockId!,
+          blockIndex: i,
+          startMs: b.startMs,
+          endMs: b.endMs,
+          durationMs: b.durationMs,
+          srtIndices: []
+        }))
+      )
+    }
+
+    setPhase('done')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Populate text from Stage 1 storyBlocks
   useEffect(() => {
     if (storyBlocks.length > 0 && !editableText) {
@@ -149,82 +176,8 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   }, [storyBlocks, editableText])
 
   // -----------------------------------------------------------------------
-  // Template handling
-  // -----------------------------------------------------------------------
-
-  const handleSelectTemplate = (templateId: string): void => {
-    setSelectedTemplateId(templateId)
-    if (!templateId) return
-
-    const template = elevenLabsVoiceTemplates.find((t) => t.id === templateId)
-    if (!template) return
-
-    setSelectedVoiceId(template.voiceId)
-    setModelId(template.modelId)
-    setVoiceSettings({ ...template.voiceSettings })
-  }
-
-  const handleSaveTemplate = (): void => {
-    const name = newTemplateName.trim()
-    if (!name) {
-      addToast({ type: 'warning', message: 'Digite um nome para o template.' })
-      return
-    }
-    if (!selectedVoiceId) {
-      addToast({ type: 'warning', message: 'Selecione uma voz primeiro.' })
-      return
-    }
-
-    const voiceName = selectedVoice?.name || selectedVoiceId
-
-    const template: ElevenLabsVoiceTemplate = {
-      id: uuidv4(),
-      name,
-      voiceId: selectedVoiceId,
-      voiceName,
-      modelId,
-      voiceSettings: { ...voiceSettings },
-      createdAt: Date.now()
-    }
-
-    addElevenLabsVoiceTemplate(template)
-    setSelectedTemplateId(template.id)
-    setShowSaveTemplate(false)
-    setNewTemplateName('')
-    addToast({ type: 'success', message: `Template "${name}" salvo.` })
-  }
-
-  const handleDeleteTemplate = (id: string): void => {
-    removeElevenLabsVoiceTemplate(id)
-    if (selectedTemplateId === id) {
-      setSelectedTemplateId('')
-    }
-    addToast({ type: 'info', message: 'Template removido.' })
-  }
-
-  // -----------------------------------------------------------------------
   // Data loaders
   // -----------------------------------------------------------------------
-
-  const loadVoices = async (): Promise<void> => {
-    setLoadingVoices(true)
-    try {
-      const res = (await window.api.ai33GetVoices()) as Ai33VoicesResponse
-      if (res.voices && res.voices.length > 0) {
-        setVoices(res.voices)
-        if (!selectedVoiceId) {
-          setSelectedVoiceId(res.voices[0].voice_id)
-        }
-      }
-    } catch (err) {
-      addToast({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Erro ao carregar vozes.'
-      })
-    } finally {
-      setLoadingVoices(false)
-    }
-  }
 
   const loadCredits = async (): Promise<void> => {
     setLoadingCredits(true)
@@ -241,56 +194,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   }
 
   // -----------------------------------------------------------------------
-  // Voice preview
-  // -----------------------------------------------------------------------
-
-  const handlePreviewVoice = useCallback(
-    (voice: Ai33ElevenLabsVoice) => {
-      if (!voice.preview_url) return
-
-      if (previewPlaying && previewVoiceId === voice.voice_id) {
-        if (previewAudioRef.current) {
-          previewAudioRef.current.pause()
-          previewAudioRef.current.currentTime = 0
-        }
-        setPreviewPlaying(false)
-        setPreviewVoiceId(null)
-        return
-      }
-
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause()
-      }
-
-      const audio = new Audio(voice.preview_url)
-      previewAudioRef.current = audio
-      setPreviewVoiceId(voice.voice_id)
-      setPreviewPlaying(true)
-
-      audio.play().catch(() => {
-        setPreviewPlaying(false)
-        setPreviewVoiceId(null)
-      })
-
-      audio.onended = (): void => {
-        setPreviewPlaying(false)
-        setPreviewVoiceId(null)
-      }
-    },
-    [previewPlaying, previewVoiceId]
-  )
-
-  // -----------------------------------------------------------------------
   // Generate TTS (single audio from all blocks)
   // -----------------------------------------------------------------------
 
   const handleGenerate = async (): Promise<void> => {
     if (storyBlocks.length === 0) {
       addToast({ type: 'warning', message: 'Nenhum bloco de legenda encontrado (Stage 1).' })
-      return
-    }
-    if (!selectedVoiceId) {
-      addToast({ type: 'warning', message: 'Selecione uma voz.' })
       return
     }
 
@@ -313,11 +222,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     cancelledRef.current = false
 
     const timestamp = Date.now()
+    const { voiceId, modelId, voiceSettings } = selectedPreset
 
     try {
       // 1. Create single TTS task with full text
       const createRes = (await window.api.ai33TtsElevenlabs({
-        voiceId: selectedVoiceId,
+        voiceId,
         text: fullText,
         model_id: modelId,
         with_transcript: withTranscript,
@@ -396,7 +306,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
           })) as { success: boolean; localPath: string; size: number }
 
           if (srtDlResult.success) {
-            // Read SRT via main process IPC (fetch('file://') can fail in Electron)
             const srtContent = await window.api.readTextFile(srtDlResult.localPath)
             console.log('[ElevenLabs] SRT content length:', srtContent.length)
             const parsed = parseSrt(srtContent)
@@ -451,13 +360,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
   }
 
   // -----------------------------------------------------------------------
-  // Confirm: create single AudioBlock and advance pipeline
+  // Confirm: create AudioBlocks and advance pipeline
   // -----------------------------------------------------------------------
 
   const handleConfirm = async (): Promise<void> => {
     if (!generatedAudio) return
 
-    // Create AudioBlocks: per-block with precise timing (transcript) or single (fallback)
     const audioBlocks =
       srtMatchResults && srtMatchResults.length === storyBlocks.length
         ? srtMatchResults.map((match, i) => ({
@@ -493,7 +401,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     )
     setAudioBlocks(audioBlocks)
 
-    // Update storyBlock timings with SRT data (replaces estimated timings from Stage 1)
     const hasSrtMatch = srtMatchResults && srtMatchResults.length === storyBlocks.length
     if (hasSrtMatch) {
       for (const match of srtMatchResults) {
@@ -509,7 +416,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     const draftPath = useProjectStore.getState().capCutDraftPath
     if (draftPath) {
       try {
-        // 1. Audio: clear + insert
         await window.api.clearAudioSegments(draftPath)
         await window.api.insertAudioBatch({
           draftPath,
@@ -518,7 +424,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
           useExistingTrack: false
         })
 
-        // 2. Text segments: clear + insert (only with valid SRT match)
         if (hasSrtMatch) {
           await window.api.clearTextSegments(draftPath)
 
@@ -550,7 +455,6 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
           }
         }
 
-        // 3. Sync metadata once after all writes
         await window.api.syncMetadata(draftPath)
       } catch {
         addToast({ type: 'warning', message: 'Audio gerado mas nao inserido no CapCut.' })
@@ -574,24 +478,8 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
     setErrorMessage(null)
     setSrtMatchResults(null)
     setSrtDownloadFailed(false)
+    setAudioBlocks([])
   }
-
-  // -----------------------------------------------------------------------
-  // Filtered voices
-  // -----------------------------------------------------------------------
-
-  const filteredVoices = voices.filter((v) => {
-    if (!voiceSearch.trim()) return true
-    const search = voiceSearch.toLowerCase()
-    const nameMatch = v.name.toLowerCase().includes(search)
-    const categoryMatch = v.category?.toLowerCase().includes(search) ?? false
-    const labelMatch = v.labels
-      ? Object.values(v.labels).some((val) => val.toLowerCase().includes(search))
-      : false
-    return nameMatch || categoryMatch || labelMatch
-  })
-
-  const selectedVoice = voices.find((v) => v.voice_id === selectedVoiceId)
 
   // -----------------------------------------------------------------------
   // Derived state
@@ -659,329 +547,21 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         </button>
       </div>
 
-      {/* Voice Template selector */}
-      {elevenLabsVoiceTemplates.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] text-text-muted">Template de voz</span>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <BookMarked className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted" />
-              <select
-                value={selectedTemplateId}
-                onChange={(e) => handleSelectTemplate(e.target.value)}
-                className="w-full appearance-none rounded-lg border border-border bg-bg py-1.5 pl-7 pr-8 text-xs text-text outline-none transition-colors focus:border-primary"
-              >
-                <option value="">Nenhum (manual)</option>
-                {elevenLabsVoiceTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} -- {t.voiceName}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {selectedTemplateId && (
-              <button
-                type="button"
-                onClick={() => handleDeleteTemplate(selectedTemplateId)}
-                className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-border text-text-muted transition-colors hover:border-red-500/30 hover:text-red-400"
-                title="Remover template"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Config row: Voice + Model */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* Voice selector */}
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-text-muted">Voz</span>
-
-          {loadingVoices ? (
-            <div className="flex h-[34px] items-center gap-2 rounded-lg border border-border bg-bg px-2.5">
-              <Loader2 className="h-3 w-3 animate-spin text-text-muted" />
-              <span className="text-xs text-text-muted">Carregando vozes...</span>
-            </div>
-          ) : (
-            <div className="relative">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted" />
-                <input
-                  type="text"
-                  value={voiceSearch}
-                  onChange={(e) => setVoiceSearch(e.target.value)}
-                  placeholder={selectedVoice ? selectedVoice.name : 'Buscar voz...'}
-                  className="w-full rounded-lg border border-border bg-bg py-1.5 pl-7 pr-2.5 text-xs text-text outline-none transition-colors focus:border-primary"
-                />
-              </div>
-              {voiceSearch.trim() && (
-                <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
-                  {filteredVoices.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-text-muted">Nenhuma voz encontrada</div>
-                  ) : (
-                    filteredVoices.map((v) => (
-                      <button
-                        key={v.voice_id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedVoiceId(v.voice_id)
-                          setVoiceSearch('')
-                          setSelectedTemplateId('')
-                        }}
-                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-bg ${
-                          v.voice_id === selectedVoiceId ? 'bg-primary/10 text-primary' : 'text-text'
-                        }`}
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-medium">{v.name}</span>
-                          {v.category && (
-                            <span className="text-[10px] text-text-muted">{v.category}</span>
-                          )}
-                        </div>
-                        {v.preview_url && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handlePreviewVoice(v)
-                            }}
-                            className="flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text"
-                          >
-                            {previewPlaying && previewVoiceId === v.voice_id ? (
-                              <Pause className="h-3 w-3" />
-                            ) : (
-                              <Volume2 className="h-3 w-3" />
-                            )}
-                          </button>
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Selected voice chip */}
-          {selectedVoice && !voiceSearch.trim() && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-text-muted">
-                {selectedVoice.name}
-                {selectedVoice.category ? ` (${selectedVoice.category})` : ''}
-              </span>
-              {selectedVoice.preview_url && (
-                <button
-                  type="button"
-                  onClick={() => handlePreviewVoice(selectedVoice)}
-                  className="flex items-center gap-1 text-[10px] text-primary transition-colors hover:text-primary-light"
-                >
-                  {previewPlaying && previewVoiceId === selectedVoice.voice_id ? (
-                    <Pause className="h-3 w-3" />
-                  ) : (
-                    <Volume2 className="h-3 w-3" />
-                  )}
-                  Preview
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Model selector */}
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-text-muted">Modelo</span>
-          <select
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            className="rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none transition-colors focus:border-primary"
-          >
-            {ELEVENLABS_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Voice Settings (collapsible) */}
-      <div className="rounded-lg border border-border">
-        <button
-          type="button"
-          onClick={() => setShowVoiceSettings(!showVoiceSettings)}
-          className="flex w-full items-center justify-between px-3 py-2 text-xs text-text-muted transition-colors hover:text-text"
+      {/* Voice preset selector */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[11px] text-text-muted">Voz</span>
+        <select
+          value={selectedPresetId}
+          onChange={(e) => setSelectedPresetId(e.target.value)}
+          disabled={isWorking || phase === 'done'}
+          className="rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none transition-colors focus:border-primary disabled:opacity-50"
         >
-          <span>Voice Settings</span>
-          {showVoiceSettings ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
-        </button>
-
-        {showVoiceSettings && (
-          <div className="flex flex-col gap-3 border-t border-border px-3 pb-3 pt-2">
-            {/* Speed */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-text-muted">Speed</span>
-                <span className="text-[11px] font-medium text-text">
-                  {(voiceSettings.speed ?? 1.0).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-text-muted/60">Slower</span>
-                <input
-                  type="range"
-                  min="70"
-                  max="120"
-                  value={Math.round((voiceSettings.speed ?? 1.0) * 100)}
-                  onChange={(e) =>
-                    setVoiceSettings((s) => ({ ...s, speed: Number(e.target.value) / 100 }))
-                  }
-                  className="flex-1 accent-primary"
-                />
-                <span className="text-[10px] text-text-muted/60">Faster</span>
-              </div>
-            </div>
-
-            {/* Stability */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-text-muted">Stability</span>
-                <span className="text-[11px] font-medium text-text">
-                  {Math.round(voiceSettings.stability * 100)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-text-muted/60">Variable</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(voiceSettings.stability * 100)}
-                  onChange={(e) =>
-                    setVoiceSettings((s) => ({ ...s, stability: Number(e.target.value) / 100 }))
-                  }
-                  className="flex-1 accent-primary"
-                />
-                <span className="text-[10px] text-text-muted/60">Stable</span>
-              </div>
-            </div>
-
-            {/* Similarity */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-text-muted">Similarity</span>
-                <span className="text-[11px] font-medium text-text">
-                  {Math.round(voiceSettings.similarity_boost * 100)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-text-muted/60">Low</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(voiceSettings.similarity_boost * 100)}
-                  onChange={(e) =>
-                    setVoiceSettings((s) => ({
-                      ...s,
-                      similarity_boost: Number(e.target.value) / 100
-                    }))
-                  }
-                  className="flex-1 accent-primary"
-                />
-                <span className="text-[10px] text-text-muted/60">High</span>
-              </div>
-            </div>
-
-            {/* Style Exaggeration */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-text-muted">Style Exaggeration</span>
-                <span className="text-[11px] font-medium text-text">
-                  {Math.round(voiceSettings.style * 100)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-text-muted/60">None</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(voiceSettings.style * 100)}
-                  onChange={(e) =>
-                    setVoiceSettings((s) => ({ ...s, style: Number(e.target.value) / 100 }))
-                  }
-                  className="flex-1 accent-primary"
-                />
-                <span className="text-[10px] text-text-muted/60">Exaggerated</span>
-              </div>
-            </div>
-
-            {/* Speaker Boost */}
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={voiceSettings.use_speaker_boost}
-                onChange={(e) =>
-                  setVoiceSettings((s) => ({ ...s, use_speaker_boost: e.target.checked }))
-                }
-                className="h-3.5 w-3.5 rounded border-border bg-bg accent-primary"
-              />
-              <span className="text-xs text-text-muted">Speaker Boost</span>
-            </label>
-          </div>
-        )}
-      </div>
-
-      {/* Save as template */}
-      <div className="flex items-center gap-2">
-        {showSaveTemplate ? (
-          <div className="flex flex-1 items-center gap-2">
-            <input
-              type="text"
-              value={newTemplateName}
-              onChange={(e) => setNewTemplateName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSaveTemplate()}
-              placeholder="Nome do template..."
-              autoFocus
-              className="flex-1 rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none transition-colors focus:border-primary"
-            />
-            <button
-              type="button"
-              onClick={handleSaveTemplate}
-              disabled={!newTemplateName.trim()}
-              className="flex h-[30px] items-center gap-1.5 rounded-lg bg-primary px-3 text-[11px] font-medium text-white transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:opacity-40"
-            >
-              <Save className="h-3 w-3" />
-              Salvar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowSaveTemplate(false)
-                setNewTemplateName('')
-              }}
-              className="text-[11px] text-text-muted transition-colors hover:text-text"
-            >
-              Cancelar
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowSaveTemplate(true)}
-            disabled={!selectedVoiceId}
-            className="flex items-center gap-1.5 text-[11px] text-text-muted transition-colors hover:text-primary disabled:opacity-40"
-          >
-            <Save className="h-3 w-3" />
-            Salvar como template
-          </button>
-        )}
+          {VOICE_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* With transcript toggle */}
@@ -990,6 +570,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
           type="checkbox"
           checked={withTranscript}
           onChange={(e) => setWithTranscript(e.target.checked)}
+          disabled={isWorking || phase === 'done'}
           className="h-3.5 w-3.5 rounded border-border bg-bg accent-primary"
         />
         <span className="text-xs text-text-muted">Gerar transcricao (SRT)</span>
@@ -1008,12 +589,12 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
       {phase === 'idle' && (
         <button
           type="button"
-          disabled={storyBlocks.length === 0 || !selectedVoiceId}
+          disabled={storyBlocks.length === 0}
           onClick={handleGenerate}
           className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Play className="h-4 w-4" />
-          Gerar Audio Unico
+          Gerar Audio
         </button>
       )}
 
@@ -1036,7 +617,7 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
         </div>
       )}
 
-      {/* Error state (all blocks failed) */}
+      {/* Error state */}
       {phase === 'error' && (
         <div className="flex flex-col gap-3 rounded-lg border border-red-500/30 bg-red-500/5 p-4">
           <div className="flex items-center gap-2">
@@ -1102,13 +683,13 @@ export function ElevenLabsTTSPanel(): React.JSX.Element {
                 Confirmar audio
               </button>
             </div>
+          </div>
           {/* Audio player */}
           <audio
             controls
             src={`file://${generatedAudio.localPath.replace(/\\/g, '/')}`}
             className="w-full"
           />
-          </div>
         </div>
       )}
     </div>

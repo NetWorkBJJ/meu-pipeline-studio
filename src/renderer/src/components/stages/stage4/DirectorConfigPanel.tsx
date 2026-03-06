@@ -125,6 +125,19 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Confirm */}
+      <div className="flex justify-end">
+        <motion.button
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={onConfirm}
+          className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Confirmar configuracao
+        </motion.button>
+      </div>
+
       {/* Sequence Mode */}
       <div>
         <h4 className="text-sm font-semibold text-text mb-2">Modo de sequencia</h4>
@@ -429,18 +442,6 @@ export function DirectorConfigPanel({ onConfirm }: DirectorConfigPanelProps): Re
         )}
       </div>
 
-      {/* Confirm */}
-      <div className="flex justify-end pt-2 border-t border-border">
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onConfirm}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-surface transition-all duration-150 hover:bg-primary-hover"
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Confirmar configuracao
-        </motion.button>
-      </div>
     </div>
   )
 }

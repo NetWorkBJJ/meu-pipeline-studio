@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, renameSync } from 'fs'
 import { execSync } from 'child_process'
 import iconIco from '../../resources/icon.ico?asset'
 import iconPng from '../../resources/icon.png?asset'
+app.setAppUserModelId('com.workflowaa.app')
+
 import { startPythonBridge, stopPythonBridge } from './python/bridge'
 import { registerAllHandlers } from './ipc/handlers'
 import { loadPersistedDownloadPath } from './ipc/veo3.handlers'
