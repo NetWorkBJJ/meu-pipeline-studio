@@ -69,7 +69,9 @@ export function registerTtsHandlers(): void {
 
       let outputDir = params.outputDir
       if (!outputDir) {
-        const baseDir = join(app.getPath('appData'), 'workflowaa', 'tts-output')
+        const baseDir = process.platform === 'darwin'
+          ? join(app.getPath('home'), 'Movies', 'workflowaa', 'tts-output')
+          : join(app.getPath('appData'), 'workflowaa', 'tts-output')
         await mkdir(baseDir, { recursive: true })
         outputDir = join(baseDir, `tts-${Date.now()}`)
         await mkdir(outputDir, { recursive: true })
