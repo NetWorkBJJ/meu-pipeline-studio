@@ -31,6 +31,7 @@ interface Veo3AutomationState {
 
   // Global
   loadFromProject: () => void
+  loadGapScenesOnly: () => void
   updateCommandStatus: (commandId: string, status: FlowCommandStatus, error?: string) => void
   updateCharacterGalleryName: (characterId: string, galleryItemName: string) => void
   reset: () => void
@@ -83,6 +84,18 @@ export const useVeo3AutomationStore = create<Veo3AutomationState>((set, get) => 
     )
     console.log('[Veo3Automation] Commands built:', commands.length, '| Modes:', modeDist)
 
+    set({ ...initialState, commands })
+  },
+
+  loadGapScenesOnly: () => {
+    const { scenes, characterRefs } = useProjectStore.getState()
+    const gapScenes = scenes.filter((s) => !s.mediaPath && s.prompt.trim())
+
+    console.log(
+      `[Veo3Automation] Gap-only reload: ${gapScenes.length} gap scenes from ${scenes.length} total`
+    )
+
+    const commands = buildFlowCommands(gapScenes, characterRefs)
     set({ ...initialState, commands })
   },
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink, RotateCw, SkipForward } from 'lucide-react'
+import { Play, Pause, Square, AlertTriangle, Loader2, Timer, FolderOpen, ExternalLink, RotateCw, SkipForward, RefreshCw } from 'lucide-react'
 import { useVeo3AutomationStore, DEFAULT_TAB_AUTOMATION } from '@/stores/useVeo3AutomationStore'
 import { useVeo3Store } from '@/stores/useVeo3Store'
 import { useProjectStore } from '@/stores/useProjectStore'
@@ -27,6 +27,7 @@ export function SidepanelControlsTab({
     commands,
     tabStates,
     loadFromProject,
+    loadGapScenesOnly,
     startTab,
     pauseTab,
     resumeTab,
@@ -36,6 +37,9 @@ export function SidepanelControlsTab({
     getFilteredCommands,
     getProgress
   } = useVeo3AutomationStore()
+
+  const scenes = useProjectStore((s) => s.scenes)
+  const gapCount = scenes.filter((s) => !s.mediaPath && s.prompt.trim()).length
 
   const tabState = (tabId ? tabStates[tabId] : null) || DEFAULT_TAB_AUTOMATION
   const { isRunning, isPaused, currentCommandIndex, startedAt, error, chapterFilter, batchPause, retryState } = tabState
@@ -343,6 +347,17 @@ export function SidepanelControlsTab({
             ))}
           </select>
         </div>
+      )}
+
+      {/* Reload gap-only plan */}
+      {!isRunning && gapCount > 0 && (
+        <button
+          onClick={loadGapScenesOnly}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 py-2 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/10"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Recarregar apenas gaps ({gapCount})
+        </button>
       )}
 
       {/* Action buttons */}
