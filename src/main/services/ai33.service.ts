@@ -15,6 +15,7 @@ import { dirname, join } from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 import { app } from 'electron'
+import { execFile } from 'child_process'
 
 const BASE_URL = 'https://api.ai33.pro'
 
@@ -553,8 +554,10 @@ export class Ai33Service {
     destDir?: string,
     fileName?: string
   ): Promise<{ localPath: string; size: number }> {
-    const outputDir =
-      destDir || join(app.getPath('appData'), 'workflowaa', 'ai33-output')
+    const defaultBase = process.platform === 'darwin'
+      ? join(app.getPath('home'), 'Movies', 'workflowaa', 'ai33-output')
+      : join(app.getPath('appData'), 'workflowaa', 'ai33-output')
+    const outputDir = destDir || defaultBase
     await mkdir(outputDir, { recursive: true })
 
     const resolvedName =
@@ -577,6 +580,11 @@ export class Ai33Service {
     await pipeline(nodeStream, fileStream)
 
     const size = fileStream.bytesWritten
+
+    if (process.platform === 'darwin') {
+      execFile('xattr', ['-d', 'com.apple.quarantine', localPath], () => {})
+    }
+
     return { localPath, size }
   }
 }
